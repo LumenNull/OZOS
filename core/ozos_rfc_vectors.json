@@ -1,0 +1,26 @@
+{
+  "rfc": "RFC-OZOS-0080",
+  "status": "GOLDEN_REFERENCE",
+  "magic_hex": "0x47454E01",
+  "vectors": [
+    {
+      "id": 1,
+      "name": "EMPTY_PAYLOAD_KEEP_ALIVE",
+      "nonce": 1000,
+      "payload_len": 0,
+      "mac16_hex": "0x75F9",
+      "header_hex": "0000803fcdcc8c3f9a99993f6666a63f3333b33f0000c03fcdcccc3f9a99d93f6666e63f3333f33f0000004066660640cdcc0c40333313409a99194000002040e803000000000000014e45470000f975",
+      "total_size": 80
+    },
+    {
+      "id": 2,
+      "name": "STANDARD_SOVEREIGN_PAYLOAD",
+      "nonce": 5000,
+      "payload_str": "SOVEREIGN_ID",
+      "payload_len": 12,
+      "mac16_hex": "0x4CCF",
+      "frame_hex": "0000c03fcdcccc3f9a99d93f6666e63f3333f33f0000004066660640cdcc0c40333313409a9919400000204066662640cdcc2c40333333409a993940000040408813000000000000014e45470c00cf4c534f5645524549474e5f4944",
+      "total_size": 92
+    }
+  ]
+}

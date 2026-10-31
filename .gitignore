@@ -1,0 +1,79 @@
+# ==============================================================================
+#   O.Z.O.S (Omni-Zero Operating Shield) - Sovereign Security Defense GitIgnore
+# ==============================================================================
+
+# --- LEVEL 0 CRITICAL SHIELD: ZERO PII & CREDENTIALS ---
+*cccd*
+*identity*
+*passport*
+*secret*
+*.pem
+*.key
+*.pfx
+*.p12
+*.crt
+*.csr
+_OZOS_PRIVATE_VAULT_DO_NOT_COMMIT/
+_LOCAL_*/
+_vault/
+
+# --- LEVEL 1: ZERO BINARY EXECUTABLES & OBJECTS ---
+*.exe
+*.obj
+*.o
+*.a
+*.lib
+*.dll
+*.so
+*.dylib
+*.bin
+*.hex
+*.pdb
+*.ilk
+
+# --- LEVEL 2: ZERO COMPILED WASM (Rebuildable from source) ---
+*.wasm
+
+# --- LEVEL 3: ZERO MULTIMEDIA SAMPLES (Acoustic & Steganographic Tests) ---
+*.wav
+*.mp3
+*.flac
+*.aac
+*.ogg
+*.jpg
+*.jpeg
+*.png
+*.bmp
+*.gif
+*.ico
+*.webp
+*.tiff
+
+# --- LEVEL 4: RUNTIME & PYTHON BYTECODE ---
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.env
+*.venv
+env/
+venv/
+.pytest_cache/
+
+# --- LEVEL 5: OPERATING SYSTEM & EDITOR NOISE ---
+.DS_Store
+Thumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+*.swp
+*.swo
+*~
+.vscode/
+.idea/
+*.sublime-project
+*.sublime-workspace
+
+# --- LEVEL 6: LOCAL TEST ARTIFACTS ---
+100
+*.tmp
+*.log
