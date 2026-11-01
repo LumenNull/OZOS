@@ -2,9 +2,9 @@
 ## SIÊU BẢN THIẾT KẾ ĐỘC LẬP: MA TRẬN 15 TẦNG PHÒNG THỦ KHÉP KÍN (TIER 0 — TIER 14)
 
 > **CẤP ĐỘ PHÂN LOẠI: TUYỆT MẬT / CHỦ QUYỀN ĐỘC LẬP (TOP SECRET / SOVEREIGN CORE)**  
-> **KIẾN TRÚC SƯ TRƯỞNG: NGUYỄN VŨ TRUNG HIẾU & ANTIGRAVITY LEAD RED TEAM**  
+> **KIẾN TRÚC SƯ TRƯỞNG: LUMENNULL (SOVEREIGN ARCHITECT #000000)**  
 > **PHIÊN BẢN: O.Z.O.S V1.0 SOVEREIGN RELEASE (31/10/2026)**  
-> **ĐỊA CHỈ TRẠM CỤC BỘ: `http://localhost:8899`**
+> **ĐỊA CHỈ TRẠM CỤC BỘ: `OFFLINE AIR-GAPPED WORKSTATION`**
 
 ---
 
@@ -64,7 +64,7 @@ Hệ thống được xây dựng trên **15 Tầng Phòng Thủ Khép Kín (Clo
 - **Cảm biến tự hủy (Anti-Tamper Kill-Switch):** Khi phát hiện xâm nhập vật lý (mở vỏ, rọi tia X, dò chân vi mạch), cảm biến phần cứng lập tức kích hoạt đoản mạch, kích nổ vi điện áp xóa sạch bộ nhớ khóa vĩnh viễn trong 2 micro-giây.
 
 ### TẦNG 5: TRẠM CHỈ HUY TÁC CHIẾN TÁCH BIỆT (SOVEREIGN COMMAND COCKPIT)
-- **Bản chất trạm:** Ứng dụng Desktop độc lập chạy trên máy trạm cục bộ (`http://localhost:8899`), hoàn toàn tách rời khỏi các tiện ích web công cộng.
+- **Bản chất trạm:** Ứng dụng Desktop độc lập chạy trên máy trạm cục bộ (`OFFLINE AIR-GAPPED WORKSTATION`), hoàn toàn tách rời khỏi các tiện ích web công cộng.
 - **6 Phân khu tác chiến:**
   1. *Shield Forge:* Rèn giáp CCCD Guilloche & Dấu chéo 45° chống eKYC Deepfake.
   2. *Spectral Spyglass:* Kính soi ma trận tần số 2D-DCT bóc tách nguồn rò rỉ nội bộ.

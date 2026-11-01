@@ -14,8 +14,31 @@ if hasattr(sys.stdout, 'reconfigure'):
     sys.stdout.reconfigure(encoding='utf-8')
 
 DIR = os.path.dirname(os.path.abspath(__file__))
-VECTORS_PATH = os.path.join(DIR, "core", "ozos_rfc_vectors.json")
-OZOS_EXE = os.path.join(DIR, "ozos.exe")
+REPO_ROOT = os.path.abspath(os.path.join(DIR, ".."))
+
+# Cross-platform resolution of RFC vectors path
+VECTORS_CANDIDATES = [
+    os.path.join(REPO_ROOT, "core", "ozos_rfc_vectors.json"),
+    os.path.join(DIR, "core", "ozos_rfc_vectors.json"),
+    os.path.join(DIR, "ozos_rfc_vectors.json"),
+]
+VECTORS_PATH = next((p for p in VECTORS_CANDIDATES if os.path.exists(p)), VECTORS_CANDIDATES[0])
+
+# Cross-platform binary lookup (Windows .exe and Linux/POSIX bare binary)
+EXE_NAMES = ["ozos.exe", "ozos", "ozos_ghost.exe", "ozos_ghost"]
+EXE_DIRS = [DIR, REPO_ROOT, os.getcwd()]
+OZOS_EXE = None
+for d in EXE_DIRS:
+    for name in EXE_NAMES:
+        cand = os.path.join(d, name)
+        if os.path.isfile(cand):
+            OZOS_EXE = cand
+            break
+    if OZOS_EXE:
+        break
+
+if not OZOS_EXE:
+    OZOS_EXE = os.path.join(DIR, "ozos.exe" if sys.platform == "win32" else "ozos")
 
 print("======================================================================")
 print("  [O.Z.O.S] AUTOMATED RFC-OZOS-0080 CONFORMANCE VERIFICATION")

@@ -44,7 +44,7 @@ def apply_cccd_anti_fraud_shield(
     output_image_path: str,
     purpose: str = "XÁC MINH HỒ SƠ ZEROSTUDIO",
     organization: str = "ĐỐI TÁC CÔNG NGHỆ 2026",
-    recipient_name: str = "NGUYỄN VŨ TRUNG HIẾU",
+    recipient_name: str = "SOVEREIGN CITIZEN #000000",
     date_str: str = None
 ) -> dict:
     """

@@ -34,7 +34,7 @@ static bool parse_hex_to_bytes(const char* hex, uint8_t* out, size_t max_len, si
     *out_len = hex_len / 2;
     for (size_t i = 0; i < *out_len; i++) {
         unsigned int b;
-        if (sscanf_s(&hex[i * 2], "%02x", &b) != 1) return false;
+        if (sscanf(&hex[i * 2], "%02x", &b) != 1) return false;
         out[i] = (uint8_t)b;
     }
     return true;
@@ -220,6 +220,10 @@ static void run_acoustic_wake_daemon(uint32_t timeout_sec) {
     }
 
     ozos_mic_close(&mic);
+#else
+    printf("[!] Native physical microphone listener daemon is accelerated via Windows WaveIn.\n");
+    printf("    Run 'ozos_ghost test-loopback' for 100%% bit-exact software acoustic verification.\n");
+    (void)timeout_sec;
 #endif
 }
 
@@ -443,23 +447,7 @@ static bool run_ephemeral_enclave_test(void) {
 }
 
 static inline void ozos_sha256_buffer(uint8_t out32[32], const void* in, size_t in_len) {
-#if defined(_WIN32)
-    HCRYPTPROV prov = 0;
-    HCRYPTHASH hash = 0;
-    DWORD len = 32;
-    if (CryptAcquireContext(&prov, NULL, NULL, PROV_RSA_AES, CRYPT_VERIFYCONTEXT)) {
-        if (CryptCreateHash(prov, CALG_SHA_256, 0, 0, &hash)) {
-            CryptHashData(hash, (const BYTE*)in, (DWORD)in_len, 0);
-            CryptGetHashParam(hash, HP_HASHVAL, out32, &len, 0);
-            CryptDestroyHash(hash);
-        }
-        CryptReleaseContext(prov, 0);
-        return;
-    }
-#endif
-    uint8_t sha512[64];
-    crypto_hash(sha512, (const unsigned char*)in, (unsigned long long)in_len);
-    memcpy(out32, sha512, 32);
+    ozos_sha256((const uint8_t*)in, in_len, out32);
 }
 
 /**

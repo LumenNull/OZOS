@@ -232,7 +232,14 @@ static inline bool ozos_ghost_emit_stealth_syn(ozos_handshake_syn_t* out_syn, ui
     uint8_t a_pub[32];
     ozos_ecdh_keypair(a_pub, out_secret_a);
 
-    uint32_t session_nonce = (uint32_t)GetTickCount();
+    uint32_t session_nonce = 0;
+#if defined(_WIN32)
+    session_nonce = (uint32_t)GetTickCount();
+#else
+    struct timespec ts_syn;
+    clock_gettime(CLOCK_MONOTONIC, &ts_syn);
+    session_nonce = (uint32_t)(ts_syn.tv_sec * 1000 + ts_syn.tv_nsec / 1000000);
+#endif
     ozos_handshake_syn_build(out_syn, a_pub, session_nonce);
 
     size_t sample_count = 0;
@@ -286,10 +293,10 @@ static inline bool ozos_ghost_emit_stealth_ack(const ozos_handshake_syn_t* syn, 
    DARK-FIELD ACOUSTIC WAKE-ON-SOUND LISTENER (NATIVE PHYSICAL MICROPHONE)
    ============================================================================= */
 
-#ifdef _WIN32
 #define OZOS_MIC_CHUNKS       3
 #define OZOS_CHUNK_SAMPLES    1764 /* 40ms @ 44100Hz */
 
+#if defined(_WIN32)
 typedef struct {
     HWAVEIN hWaveIn;
     HANDLE  hEvent;
@@ -299,6 +306,16 @@ typedef struct {
     uint32_t sample_rate;
     bool    is_recording;
 } ozos_mic_recorder_t;
+#else
+typedef struct {
+    void*   handle;
+    size_t  chunk_samples;
+    uint32_t sample_rate;
+    bool    is_recording;
+} ozos_mic_recorder_t;
+#endif
+
+#ifdef _WIN32
 
 /**
  * Initialize physical microphone recorder via Windows WaveIn API.
@@ -408,6 +425,37 @@ static inline void ozos_mic_close(ozos_mic_recorder_t* rec) {
         CloseHandle(rec->hEvent);
         rec->hEvent = NULL;
     }
+    rec->is_recording = false;
+}
+#else
+static inline bool ozos_mic_init(ozos_mic_recorder_t* rec, uint32_t sample_rate, size_t chunk_samples) {
+    if (!rec) return false;
+    memset(rec, 0, sizeof(ozos_mic_recorder_t));
+    rec->sample_rate = sample_rate;
+    rec->chunk_samples = chunk_samples;
+    return true;
+}
+static inline bool ozos_mic_start(ozos_mic_recorder_t* rec) {
+    if (!rec) return false;
+    rec->is_recording = true;
+    return true;
+}
+static inline void ozos_mic_pause(ozos_mic_recorder_t* rec) {
+    if (!rec) return;
+    rec->is_recording = false;
+}
+static inline void ozos_mic_resume(ozos_mic_recorder_t* rec) {
+    if (!rec) return;
+    rec->is_recording = true;
+}
+static inline bool ozos_mic_read_float_chunk(ozos_mic_recorder_t* rec, float* out_samples, size_t max_out, uint32_t timeout_ms) {
+    (void)rec; (void)timeout_ms;
+    if (!out_samples || max_out == 0) return false;
+    memset(out_samples, 0, max_out * sizeof(float));
+    return false;
+}
+static inline void ozos_mic_close(ozos_mic_recorder_t* rec) {
+    if (!rec) return;
     rec->is_recording = false;
 }
 #endif

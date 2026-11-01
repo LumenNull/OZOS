@@ -26,6 +26,9 @@ C_CYAN = "\033[38;5;51m"
 C_DIM = "\033[38;5;244m"
 
 DIR = os.path.dirname(os.path.abspath(__file__))
+REPO_ROOT = os.path.abspath(os.path.join(DIR, ".."))
+if REPO_ROOT not in sys.path:
+    sys.path.insert(0, REPO_ROOT)
 
 print("======================================================================")
 print("  [O.Z.O.S] ADVERSARIAL RED TEAM STRESS TEST SUITE (TRENCH 3)")
@@ -316,7 +319,20 @@ def test_near_ultrasound_stealth_acoustic():
     import wave
 
     test_wav = os.path.join(DIR, "test_stealth_verify.wav")
-    ozos_exe = os.path.join(DIR, "ozos.exe")
+    REPO_ROOT = os.path.abspath(os.path.join(DIR, ".."))
+    EXE_NAMES = ["ozos.exe", "ozos", "ozos_ghost.exe", "ozos_ghost"]
+    EXE_DIRS = [DIR, REPO_ROOT, os.getcwd()]
+    ozos_exe = None
+    for d in EXE_DIRS:
+        for name in EXE_NAMES:
+            cand = os.path.join(d, name)
+            if os.path.isfile(cand):
+                ozos_exe = cand
+                break
+        if ozos_exe:
+            break
+    if not ozos_exe:
+        ozos_exe = os.path.join(DIR, "ozos.exe" if sys.platform == "win32" else "ozos")
     payload = "SOVEREIGN_TRANSCEND_2026"
 
     # 1. Tổng hợp sóng âm cận siêu âm qua ozos.exe

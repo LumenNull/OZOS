@@ -16,8 +16,11 @@
 #include <stdbool.h>
 #include <windows.h>
 #include <ncrypt.h>
+#if defined(OZOS_ENABLE_NETWORK_SOCKETS)
 #include <winsock2.h>
 #include <ws2tcpip.h>
+#pragma comment(lib, "ws2_32.lib")
+#endif
 #include <time.h>
 
 extern void randombytes(unsigned char *buf, unsigned long long len);
@@ -28,7 +31,6 @@ extern void randombytes(unsigned char *buf, unsigned long long len);
 #include "ozos_gossip.h"
 
 #pragma comment(lib, "ncrypt.lib")
-#pragma comment(lib, "ws2_32.lib")
 #pragma comment(lib, "advapi32.lib")
 
 #define OZOS_VERSION_STR "2026.1-SOVEREIGN"
@@ -434,11 +436,21 @@ static size_t ozos_synth_preamble_ex(uint32_t sample_rate, float duration_sec, u
     float f0 = (mode == OZOS_AUDIO_MODE_STEALTH) ? OZOS_STEALTH_PRE_LO : OZOS_FSK_PREAMBLE_LO;
     float f1 = (mode == OZOS_AUDIO_MODE_STEALTH) ? OZOS_STEALTH_PRE_HI : OZOS_FSK_PREAMBLE_HI;
 
+    size_t ramp = (size_t)(sample_rate * 0.005f);
     for (size_t i = 0; i < needed; ++i) {
         float t = (float)i / (float)sample_rate;
         float s0 = sinf(2.0f * OZOS_PI_F * f0 * t);
         float s1 = sinf(2.0f * OZOS_PI_F * f1 * t);
-        out_samples[i] = 0.4f * (s0 + s1);
+        float env = 1.0f;
+        if (ramp > 0) {
+            if (i < ramp) {
+                env = 0.5f * (1.0f - cosf(OZOS_PI_F * (float)i / (float)ramp));
+            } else if (i >= needed - ramp) {
+                size_t rem = needed - 1 - i;
+                env = 0.5f * (1.0f - cosf(OZOS_PI_F * (float)rem / (float)ramp));
+            }
+        }
+        out_samples[i] = 0.4f * (s0 + s1) * env;
     }
     return needed;
 }
@@ -457,7 +469,7 @@ static void cmd_audio_synth(const char* text_data, const char* out_wav, uint8_t 
 
     uint32_t sample_rate = 44100;
     float tone_dur = 0.040f;
-    float pre_dur  = 0.120f;
+    float pre_dur  = 0.040f;
     size_t samples_per_tone = (size_t)(sample_rate * tone_dur);
     size_t samples_pre = (size_t)(sample_rate * pre_dur);
     size_t total_samples = samples_pre * 2 + text_len * samples_per_tone;
@@ -513,7 +525,7 @@ static void cmd_audio_decode(const char* in_wav, int forced_mode) {
     }
 
     float tone_dur = 0.040f;
-    float pre_dur  = 0.120f;
+    float pre_dur  = 0.040f;
     size_t samples_per_tone = (size_t)(sample_rate * tone_dur);
     size_t samples_pre = (size_t)(sample_rate * pre_dur);
 
@@ -613,6 +625,7 @@ static void cmd_benchmark(void) {
    ============================================================================= */
 
 static void cmd_daemon(int port) {
+#if defined(OZOS_ENABLE_NETWORK_SOCKETS)
     WSADATA wsa;
     if (WSAStartup(MAKEWORD(2, 2), &wsa) != 0) {
         printf("Loi khoi tao Winsock.\n");
@@ -672,6 +685,17 @@ static void cmd_daemon(int port) {
 
     closesocket(server_sock);
     WSACleanup();
+#else
+    (void)port;
+    printf("=================================================================\n");
+    printf("  O.Z.O.S // ZERO-SOCKET AIR-GAP POLICY ENFORCED\n");
+    printf("=================================================================\n");
+    printf("  [POLICY] 100%% Zero Open Ports (0 Network Sockets)\n");
+    printf("  [STATUS] Standalone Air-Gap Operation Invariant.\n");
+    printf("  Network listeners are permanently decommissioned to guarantee\n");
+    printf("  impenetrable air-gap isolation across all O.Z.O.S binaries.\n");
+    printf("=================================================================\n");
+#endif
 }
 
 /* =============================================================================

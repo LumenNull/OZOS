@@ -40,6 +40,8 @@ where gcc >nul 2>nul
 if %errorlevel% equ 0 (
     echo [BUILD] Using GCC...
     gcc -O3 -Wall -Icore -o %TARGET% core/ozos_ghost.c core/tweetnacl.c -ladvapi32 -lwinmm
+    if exist core\ozos_main.c gcc -O3 -Wall -Icore -o ozos.exe core/ozos_main.c core/tweetnacl.c -ladvapi32 -lwinmm
+    if exist tests\test_libozos.c gcc -O3 -Wall -Icore -o tests/test_libozos.exe tests/test_libozos.c core/tweetnacl.c -ladvapi32
     goto build_done
 )
 
@@ -47,6 +49,8 @@ where clang >nul 2>nul
 if %errorlevel% equ 0 (
     echo [BUILD] Using Clang...
     clang -O3 -Wall -Icore -o %TARGET% core/ozos_ghost.c core/tweetnacl.c -ladvapi32 -lwinmm
+    if exist core\ozos_main.c clang -O3 -Wall -Icore -o ozos.exe core/ozos_main.c core/tweetnacl.c -ladvapi32 -lwinmm
+    if exist tests\test_libozos.c clang -O3 -Wall -Icore -o tests/test_libozos.exe tests/test_libozos.c core/tweetnacl.c -ladvapi32
     goto build_done
 )
 
@@ -57,10 +61,16 @@ exit /b 1
 echo [BUILD] Using Microsoft MSVC Optimizing Compiler (x64)...
 cl.exe %CFLAGS% /Fe:%TARGET% %SRC% /link %LIBS%
 if %errorlevel% neq 0 (
-    echo [FAIL] Compilation failed.
+    echo [FAIL] Compilation of %TARGET% failed.
     exit /b %errorlevel%
 )
-del *.obj >nul 2>nul
+if exist "core\ozos_main.c" (
+    cl.exe %CFLAGS% /Fe:ozos.exe core\ozos_main.c core\tweetnacl.c /link advapi32.lib winmm.lib >nul 2>nul
+)
+if exist "tests\test_libozos.c" (
+    cl.exe %CFLAGS% /Fe:tests\test_libozos.exe tests\test_libozos.c core\tweetnacl.c /link advapi32.lib >nul 2>nul
+)
+del *.obj core\*.obj tests\*.obj >nul 2>nul
 
 :build_done
 echo =================================================================
@@ -72,18 +82,24 @@ goto :eof
 :do_test
 if not exist "%TARGET%" call :do_build
 echo.
-echo [TEST 1/3] Running Hardware Torture Verification Suite...
+echo [TEST 1/4] Running Hardware Torture Verification Suite...
 %TARGET% torture
 echo.
-echo [TEST 2/3] Running Cosmic & Existential Paradox Suite...
+echo [TEST 2/4] Running Cosmic & Existential Paradox Suite...
 %TARGET% cosmic
 echo.
-echo [TEST 3/3] Verifying Genesis Inscription #000000...
+echo [TEST 3/4] Verifying Genesis Inscription #000000...
 %TARGET% genesis
+if exist "tests\test_libozos.exe" (
+    echo.
+    echo [TEST 4/4] Running 15-Tier Native libozos Suite...
+    tests\test_libozos.exe
+)
 goto :eof
 
 :do_clean
 echo [CLEAN] Removing build artifacts...
 del /q *.exe *.obj *.ilk *.pdb *.wasm *.wav 2>nul
+del /q tests\*.exe tests\*.obj 2>nul
 echo [CLEAN] Clean complete.
 goto :eof

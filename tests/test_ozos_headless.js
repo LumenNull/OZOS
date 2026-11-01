@@ -3,10 +3,45 @@ const fs = require('fs');
 const path = require('path');
 
 const ozosDir = __dirname;
-const createZeroDctModule = require(path.join(ozosDir, 'core', 'zero_dct.js'));
-global.createZeroDctModule = createZeroDctModule;
+const wasmJsCandidates = [
+    path.join(ozosDir, 'core', 'zero_dct.js'),
+    path.join(ozosDir, '..', 'contrib', 'web-cockpit', 'zero_dct.js'),
+    path.join(ozosDir, '..', 'core', 'zero_dct.js')
+];
+const wasmJsPath = wasmJsCandidates.find(p => fs.existsSync(p)) || wasmJsCandidates[0];
 
-const OZOSEngine = require(path.join(ozosDir, 'ozos-engine.js'));
+const wasmBinaryCandidates = [
+    path.join(ozosDir, 'core', 'zero_dct.wasm'),
+    path.join(ozosDir, '..', 'contrib', 'web-cockpit', 'zero_dct.wasm'),
+    path.join(ozosDir, '..', 'core', 'zero_dct.wasm')
+];
+let wasmBinary = null;
+const foundWasmBinary = wasmBinaryCandidates.find(p => fs.existsSync(p));
+if (foundWasmBinary) {
+    wasmBinary = fs.readFileSync(foundWasmBinary);
+} else {
+    const embeddedCandidates = [
+        path.join(ozosDir, 'core', 'zero_dct_embedded.js'),
+        path.join(ozosDir, '..', 'contrib', 'web-cockpit', 'zero_dct_embedded.js')
+    ];
+    const foundEmbedded = embeddedCandidates.find(p => fs.existsSync(p));
+    if (foundEmbedded) {
+        const b64 = require(foundEmbedded);
+        wasmBinary = Buffer.from(b64, 'base64');
+    }
+}
+
+const createZeroDctModule = require(wasmJsPath);
+global.createZeroDctModule = () => createZeroDctModule({
+    wasmBinary: wasmBinary
+});
+
+const engineCandidates = [
+    path.join(ozosDir, 'ozos-engine.js'),
+    path.join(ozosDir, '..', 'contrib', 'web-cockpit', 'ozos-engine.js')
+];
+const enginePath = engineCandidates.find(p => fs.existsSync(p)) || engineCandidates[0];
+const OZOSEngine = require(enginePath);
 
 async function runTests() {
     console.log("=================================================================");
@@ -20,10 +55,10 @@ async function runTests() {
     // Test 1: Đóng gói và kiểm định Genesis Packet 80-byte
     const secretMessage = "O.Z.O.S_SOVEREIGN_AIR_GAP_TOP_SECRET_PAYLOAD_2026";
     const packet = engine.buildPacket(secretMessage, 1005n);
-    console.log(`✅ [2/5] Đã đóng gói Genesis Packet 80-byte: Total size = ${packet.totalSize} bytes (Payload: ${packet.payloadLength} bytes)`);
+    console.log(`✅ [2/5] Đã đóng gói Genesis Packet 80-byte: Total size = ${packet.packetBytes.length} bytes (Payload: ${new TextEncoder().encode(secretMessage).length} bytes)`);
 
     // Test 2: Xác thực gói tin hợp lệ
-    const valResult = engine.validatePacket(packet.rawBytes);
+    const valResult = engine.validatePacket(packet.packetBytes);
     console.log("✅ [3/5] Xác thực gói tin qua C++ lõi:");
     console.log("      • Hợp lệ:", valResult.valid);
     console.log("      • Nonce:", valResult.nonce);
@@ -34,7 +69,7 @@ async function runTests() {
 
     // Test 3: Bẫy Replay Attack (Gửi lại gói tin có Nonce cũ)
     const replayPacket = engine.buildPacket("HACKER_REPLAY_ATTACK", 1000n); // 1000 <= 1005
-    const replayResult = engine.validatePacket(replayPacket.rawBytes);
+    const replayResult = engine.validatePacket(replayPacket.packetBytes);
     console.log("✅ [4/5] Kiểm thử bẫy Replay Attack:");
     console.log("      • Bị chặn đứng:", !replayResult.valid);
     console.log("      • Thông điệp bẫy:", replayResult.error);

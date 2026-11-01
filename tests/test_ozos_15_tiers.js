@@ -37,16 +37,45 @@ if (typeof document === 'undefined') {
 }
 
 // Nạp Lõi WASM Emscripten
-const wasmJsPath = path.join(__dirname, 'core', 'zero_dct.js');
-const wasmBinaryPath = path.join(__dirname, 'core', 'zero_dct.wasm');
-const wasmBinary = fs.readFileSync(wasmBinaryPath);
+const wasmJsCandidates = [
+    path.join(__dirname, 'core', 'zero_dct.js'),
+    path.join(__dirname, '..', 'contrib', 'web-cockpit', 'zero_dct.js'),
+    path.join(__dirname, '..', 'core', 'zero_dct.js')
+];
+const wasmJsPath = wasmJsCandidates.find(p => fs.existsSync(p)) || wasmJsCandidates[0];
+
+const wasmBinaryCandidates = [
+    path.join(__dirname, 'core', 'zero_dct.wasm'),
+    path.join(__dirname, '..', 'contrib', 'web-cockpit', 'zero_dct.wasm'),
+    path.join(__dirname, '..', 'core', 'zero_dct.wasm')
+];
+let wasmBinary = null;
+const foundWasmBinary = wasmBinaryCandidates.find(p => fs.existsSync(p));
+if (foundWasmBinary) {
+    wasmBinary = fs.readFileSync(foundWasmBinary);
+} else {
+    const embeddedCandidates = [
+        path.join(__dirname, 'core', 'zero_dct_embedded.js'),
+        path.join(__dirname, '..', 'contrib', 'web-cockpit', 'zero_dct_embedded.js')
+    ];
+    const foundEmbedded = embeddedCandidates.find(p => fs.existsSync(p));
+    if (foundEmbedded) {
+        const b64 = require(foundEmbedded);
+        wasmBinary = Buffer.from(b64, 'base64');
+    }
+}
 
 const createZeroDctModule = require(wasmJsPath);
 global.createZeroDctModule = () => createZeroDctModule({
     wasmBinary: wasmBinary
 });
 
-const OZOSEngine = require('./ozos-engine.js');
+const engineCandidates = [
+    path.join(__dirname, 'ozos-engine.js'),
+    path.join(__dirname, '..', 'contrib', 'web-cockpit', 'ozos-engine.js')
+];
+const enginePath = engineCandidates.find(p => fs.existsSync(p)) || engineCandidates[0];
+const OZOSEngine = require(enginePath);
 
 async function run15TierSuite() {
     console.log("=================================================================");

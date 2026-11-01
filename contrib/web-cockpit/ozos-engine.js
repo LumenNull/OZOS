@@ -132,14 +132,10 @@ class OZOSEngine {
             const ptr = this.wasm._malloc(packetUint8.length);
             this.wasm.HEAPU8.set(packetUint8, ptr);
             
-            const lastNonceLow = Number(effectiveLastNonce & 0xFFFFFFFFn);
-            const lastNonceHigh = Number(effectiveLastNonce >> 32n);
-            
             const resCode = this.wasm._parse_and_validate_packet(
                 ptr,
                 packetUint8.length,
-                lastNonceLow,
-                lastNonceHigh
+                BigInt(effectiveLastNonce)
             );
             this.wasm._free(ptr);
 
@@ -181,7 +177,7 @@ class OZOSEngine {
             baseImage,
             purpose = "HỒ SƠ XIN VIỆC",
             recipient = "CÔNG TY CÔNG NGHỆ O.Z.O.S",
-            signer = "NGUYỄN VŨ TRUNG HIẾU",
+            signer = "SOVEREIGN CITIZEN #000000",
             dateStr = new Date().toLocaleDateString('vi-VN'),
             enableGuilloche = true,
             enableCrossStamps = true
@@ -276,6 +272,25 @@ class OZOSEngine {
             }
         }
         this._dctBasisReady = true;
+    }
+
+    dct8x8(block, useSimd = true) {
+        if (this.wasm && (useSimd ? this.wasm._dct8x8_simd : this.wasm._dct8x8_scalar)) {
+            const ptrIn = this.wasm._malloc(64 * 4);
+            const ptrOut = this.wasm._malloc(64 * 4);
+            this.wasm.HEAPF32.set(block, ptrIn / 4);
+            if (useSimd && this.wasm._dct8x8_simd) {
+                this.wasm._dct8x8_simd(ptrIn, ptrOut);
+            } else {
+                this.wasm._dct8x8_scalar(ptrIn, ptrOut);
+            }
+            const res = new Float32Array(64);
+            res.set(this.wasm.HEAPF32.subarray(ptrOut / 4, ptrOut / 4 + 64));
+            this.wasm._free(ptrIn);
+            this.wasm._free(ptrOut);
+            return res;
+        }
+        return this._dct8x8(block);
     }
 
     _dct8x8(block) {
