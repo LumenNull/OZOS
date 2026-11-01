@@ -7,13 +7,15 @@
  */
 
 #define _CRT_SECURE_NO_WARNINGS
-#define _WINSOCK_DEPRECATED_NO_WARNINGS
-#define WIN32_LEAN_AND_MEAN
-
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <stdbool.h>
+#include <time.h>
+
+#ifdef _WIN32
+#define _WINSOCK_DEPRECATED_NO_WARNINGS
+#define WIN32_LEAN_AND_MEAN
 #include <windows.h>
 #include <ncrypt.h>
 #if defined(OZOS_ENABLE_NETWORK_SOCKETS)
@@ -21,7 +23,9 @@
 #include <ws2tcpip.h>
 #pragma comment(lib, "ws2_32.lib")
 #endif
-#include <time.h>
+#pragma comment(lib, "ncrypt.lib")
+#pragma comment(lib, "advapi32.lib")
+#endif
 
 extern void randombytes(unsigned char *buf, unsigned long long len);
 
@@ -29,9 +33,6 @@ extern void randombytes(unsigned char *buf, unsigned long long len);
 #include "ozos_crypto.h"
 #include "ozos_brainseed.h"
 #include "ozos_gossip.h"
-
-#pragma comment(lib, "ncrypt.lib")
-#pragma comment(lib, "advapi32.lib")
 
 #define OZOS_VERSION_STR "2026.1-SOVEREIGN"
 #define OZOS_DEFAULT_DAEMON_PORT 7788
@@ -151,6 +152,7 @@ typedef struct {
 
 static bool query_hardware_tpm(ozos_tpm_info_t* info) {
     memset(info, 0, sizeof(ozos_tpm_info_t));
+#ifdef _WIN32
     NCRYPT_PROV_HANDLE hProv = 0;
 
     SECURITY_STATUS s = NCryptOpenStorageProvider(&hProv, MS_PLATFORM_CRYPTO_PROVIDER, 0);
@@ -173,6 +175,29 @@ static bool query_hardware_tpm(ozos_tpm_info_t* info) {
     } else {
         snprintf(seed_input, sizeof(seed_input), "%08X:OZOS_FALLBACK_ROOT", vol_serial);
     }
+#else
+    FILE* tpm_dev = fopen("/dev/tpmrm0", "rb");
+    if (tpm_dev) {
+        info->tpm_available = true;
+        strcpy(info->provider_name, "Linux Hardware TPM 2.0 Enclave (/dev/tpmrm0)");
+        fclose(tpm_dev);
+    } else {
+        info->tpm_available = false;
+        strcpy(info->provider_name, "POSIX Linux Hardware Anchor (/etc/machine-id)");
+    }
+    char seed_input[256] = {0};
+    FILE* mid = fopen("/etc/machine-id", "r");
+    if (mid) {
+        if (fgets(seed_input, sizeof(seed_input), mid)) {
+            char* nl = strchr(seed_input, '\n');
+            if (nl) *nl = '\0';
+        }
+        fclose(mid);
+    }
+    if (seed_input[0] == '\0') {
+        snprintf(seed_input, sizeof(seed_input), "OZOS_POSIX_FALLBACK_ROOT");
+    }
+#endif
 
     uint64_t hash_a = 0x6a09e667f3bcc908ULL;
     uint64_t hash_b = 0xbb67ae8584caa73bULL;
@@ -598,17 +623,27 @@ static void cmd_benchmark(void) {
     memcpy(buf + 80, "BENCHMARK_SOVEREIGN", 19);
 
     int iterations = 1000000;
+    ozos_packet80_t v;
+#ifdef _WIN32
     LARGE_INTEGER freq, start, end;
     QueryPerformanceFrequency(&freq);
 
     QueryPerformanceCounter(&start);
-    ozos_packet80_t v;
     for (int i = 0; i < iterations; ++i) {
         ozos_packet_validate(buf, 99, 999ULL, &v);
     }
     QueryPerformanceCounter(&end);
 
     double total_sec = (double)(end.QuadPart - start.QuadPart) / (double)freq.QuadPart;
+#else
+    struct timespec ts_start, ts_end;
+    clock_gettime(CLOCK_MONOTONIC, &ts_start);
+    for (int i = 0; i < iterations; ++i) {
+        ozos_packet_validate(buf, 99, 999ULL, &v);
+    }
+    clock_gettime(CLOCK_MONOTONIC, &ts_end);
+    double total_sec = (double)(ts_end.tv_sec - ts_start.tv_sec) + (double)(ts_end.tv_nsec - ts_start.tv_nsec) * 1e-9;
+#endif
     double ns_per_packet = (total_sec / iterations) * 1e9;
     double packets_per_sec = iterations / total_sec;
 
