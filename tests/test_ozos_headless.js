@@ -28,13 +28,35 @@ if (foundWasmBinary) {
     if (foundEmbedded) {
         const b64 = require(foundEmbedded);
         wasmBinary = Buffer.from(b64, 'base64');
+        for (const targetWasm of wasmBinaryCandidates) {
+            try {
+                const targetDir = path.dirname(targetWasm);
+                if (fs.existsSync(targetDir) && !fs.existsSync(targetWasm)) {
+                    fs.writeFileSync(targetWasm, wasmBinary);
+                }
+            } catch (e) {}
+        }
     }
 }
 
 const createZeroDctModule = require(wasmJsPath);
-global.createZeroDctModule = () => createZeroDctModule({
-    wasmBinary: wasmBinary
-});
+global.createZeroDctModule = (opts = {}) => {
+    const baseOpts = {
+        wasmBinary: wasmBinary,
+        instantiateWasm: (info, receive) => {
+            if (wasmBinary) {
+                WebAssembly.instantiate(wasmBinary, info).then(res => {
+                    receive(res.instance || res);
+                }).catch(e => {
+                    console.error("[OZOS] instantiateWasm error:", e);
+                });
+                return {};
+            }
+            return false;
+        }
+    };
+    return createZeroDctModule(Object.assign(baseOpts, opts));
+};
 
 const engineCandidates = [
     path.join(ozosDir, 'ozos-engine.js'),

@@ -19,7 +19,7 @@ ifeq ($(UNAME_S),Darwin)
     LDFLAGS += -lm -lpthread
 endif
 
-.PHONY: all test test_libozos clean
+.PHONY: all test test_libozos test_wasm test_redteam wasm clean
 
 all: $(TARGET) $(CLI_TARGET) $(TEST_TARGET)
 
@@ -61,6 +61,28 @@ test: $(TARGET) $(CLI_TARGET) $(TEST_TARGET)
 	@echo "  [TEST 4/4] 15-TIER NATIVE LIBOZOS SUITE (12/12 PILLARS)"
 	@echo "================================================================="
 	./$(TEST_TARGET)
+
+wasm:
+	@echo "================================================================="
+	@echo "  [O.Z.O.S] COMPILING BARE-METAL WASM SIMD128 MODULE (EMCC)"
+	@echo "================================================================="
+	@which emcc >/dev/null 2>&1 || { echo "[NOTICE] emcc not detected in PATH; keeping verified zero_dct.wasm intact."; exit 0; }
+	emcc -O3 -msimd128 -s WASM=1 -s MODULARIZE=1 -s EXPORT_NAME="createZeroDctModule" -s EXPORTED_FUNCTIONS="['_dct_init','_dct8x8_scalar','_dct8x8_simd','_dct8x8_batch_scalar','_dct8x8_batch_simd','_compute_block_fingerprint','_verify_block_integrity_adaptive','_verify_block_integrity','_parse_and_validate_packet','_malloc','_free']" -s EXPORTED_RUNTIME_METHODS="['ccall','cwrap']" core/dct.cpp -o contrib/web-cockpit/zero_dct.js
+	cp contrib/web-cockpit/zero_dct.wasm core/zero_dct.wasm
+	python contrib/web-cockpit/embed_wasm.py
+
+test_wasm:
+	@echo "================================================================="
+	@echo "  [O.Z.O.S] RUNNING WASM HEADLESS & 15-TIER VERIFICATION"
+	@echo "================================================================="
+	node tests/test_ozos_headless.js
+	node tests/test_ozos_15_tiers.js
+
+test_redteam:
+	@echo "================================================================="
+	@echo "  [O.Z.O.S] RUNNING ADVERSARIAL RED TEAM VERIFICATION"
+	@echo "================================================================="
+	python tests/test_adversarial_redteam.py
 
 clean:
 	@echo "[CLEAN] Removing build artifacts..."

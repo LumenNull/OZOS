@@ -33,6 +33,8 @@ _vault/
 
 # --- LEVEL 2: ZERO COMPILED WASM (Rebuildable from source) ---
 *.wasm
+!zero_dct.wasm
+!**/zero_dct.wasm
 
 # --- LEVEL 3: ZERO MULTIMEDIA SAMPLES (Acoustic & Steganographic Tests) ---
 *.wav

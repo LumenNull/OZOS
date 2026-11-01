@@ -71,7 +71,17 @@ class OZOSEngine {
                 throw new Error("Lõi createZeroDctModule không tìm thấy.");
             }
 
-            const moduleConfig = wasmBinary ? { wasmBinary: wasmBinary } : {};
+            const moduleConfig = wasmBinary ? { 
+                wasmBinary: wasmBinary,
+                instantiateWasm: (info, receive) => {
+                    WebAssembly.instantiate(wasmBinary, info).then(res => {
+                        receive(res.instance || res);
+                    }).catch(e => {
+                        console.error("[OZOS] instantiateWasm error:", e);
+                    });
+                    return {};
+                }
+            } : {};
             this.wasm = await createFn(moduleConfig);
             this.isReady = true;
             if (this.wasm._dct_init) this.wasm._dct_init();
