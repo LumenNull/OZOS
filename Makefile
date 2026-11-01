@@ -92,10 +92,10 @@ test_redteam:
 	@echo "================================================================="
 	@echo "  [O.Z.O.S] RUNNING ADVERSARIAL RED TEAM VERIFICATION"
 	@echo "================================================================="
-	@$(PYTHON) -c "import numpy, PIL, cryptography" >/dev/null 2>&1 || { \
-		echo "  [NOTICE] One or more optional dependencies (numpy, Pillow, cryptography) are missing in $(PYTHON)."; \
+	@$(PYTHON) -c "import numpy, PIL" >/dev/null 2>&1 || { \
+		echo "  [NOTICE] Dependencies (numpy, Pillow) missing in $(PYTHON)."; \
 		echo "  [TIP] If tests fail due to missing modules, activate your venv or install:"; \
-		echo "        pip install numpy Pillow cryptography"; \
+		echo "        pip install numpy Pillow"; \
 	}
 	$(PYTHON) tests/test_adversarial_redteam.py
 
@@ -103,6 +103,11 @@ test_rfc:
 	@echo "================================================================="
 	@echo "  [O.Z.O.S] RUNNING RFC-OZOS-0080 CONFORMANCE VERIFICATION"
 	@echo "================================================================="
+	@$(PYTHON) -c "import cryptography" >/dev/null 2>&1 || { \
+		echo "  [NOTICE] Dependency (cryptography) missing in $(PYTHON)."; \
+		echo "  [TIP] RFC-OZOS-0080 cross-verification requires cryptography:"; \
+		echo "        pip install cryptography"; \
+	}
 	$(PYTHON) tests/test_rfc_conformance.py
 
 clean:
