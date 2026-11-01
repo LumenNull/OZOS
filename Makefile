@@ -44,7 +44,7 @@ $(TEST_TARGET): tests/test_libozos.c core/tweetnacl.c
 	$(CC) $(CFLAGS) -o $(TEST_TARGET) tests/test_libozos.c core/tweetnacl.c $(LDFLAGS)
 	@echo "  [SUCCESS] BUILT: $(TEST_TARGET)"
 
-test: $(TARGET) $(TEST_TARGET)
+test: $(TARGET) $(CLI_TARGET) $(TEST_TARGET)
 	@echo "================================================================="
 	@echo "  [TEST 1/4] HARDWARE TORTURE VERIFICATION"
 	@echo "================================================================="

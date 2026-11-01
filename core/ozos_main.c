@@ -25,6 +25,10 @@
 #endif
 #pragma comment(lib, "ncrypt.lib")
 #pragma comment(lib, "advapi32.lib")
+#else
+#ifndef _strtoui64
+#define _strtoui64 strtoull
+#endif
 #endif
 
 extern void randombytes(unsigned char *buf, unsigned long long len);
@@ -1174,19 +1178,19 @@ int main(int argc, char* argv[]) {
         cmd_keygen(custom_seed);
     } else if (strcmp(cmd, "packet-sign") == 0) {
         const char* msg = (argc >= 3) ? argv[2] : "O.Z.O.S SOVEREIGN IDENTITY SIGNED";
-        uint64_t nonce = (argc >= 4) ? _strtoui64(argv[3], NULL, 10) : 1001ULL;
+        uint64_t nonce = (argc >= 4) ? strtoull(argv[3], NULL, 10) : 1001ULL;
         const char* custom_seed = (argc >= 5) ? argv[4] : NULL;
         cmd_packet_sign(msg, nonce, custom_seed);
     } else if (strcmp(cmd, "packet-build") == 0) {
         const char* msg = (argc >= 3) ? argv[2] : "O.Z.O.S SOVEREIGN IDENTITY";
-        uint64_t nonce = (argc >= 4) ? _strtoui64(argv[3], NULL, 10) : 1001ULL;
+        uint64_t nonce = (argc >= 4) ? strtoull(argv[3], NULL, 10) : 1001ULL;
         cmd_packet_build(msg, nonce);
     } else if (strcmp(cmd, "packet-verify") == 0) {
         if (argc < 3) {
             printf("Loi: Vui long truyen vao chuoi Hex: ozos.exe packet-verify <hex>\n");
             return 1;
         }
-        uint64_t last_n = (argc >= 4) ? _strtoui64(argv[3], NULL, 10) : 1000ULL;
+        uint64_t last_n = (argc >= 4) ? strtoull(argv[3], NULL, 10) : 1000ULL;
         cmd_packet_verify(argv[2], last_n);
     } else if (strcmp(cmd, "handshake-syn") == 0) {
         const char* wav_path = (argc >= 3) ? argv[2] : NULL;
