@@ -94,7 +94,7 @@ static inline bool ozos_cosmic_matrix_cage_test(void) {
 
     bool ok = (audit.external_actuator_handles == 0) && audit.inward_lock_engaged && (vault_leaks == 0);
     printf("=================================================================\n");
-    printf("STATUS: [ %s ] MATRIX CAGE IMMUNITY 100%% VERIFIED (INWARD ONLY)\n", ok ? "PASS" : "FAIL");
+    printf("STATUS: [ %s ] INWARD-ONLY AIR-GAP INVARIANT VERIFIED\n", ok ? "PASS" : "FAIL");
     printf("=================================================================\n\n");
     return ok;
 }
@@ -166,7 +166,7 @@ static inline bool ozos_cosmic_zero_kelvin_puf_test(void) {
 
     bool ok = audit.puf_symmetry_collapsed && (audit.quantum_tomography_recovered_bits == 0);
     printf("=================================================================\n");
-    printf("STATUS: [ %s ] THERMODYNAMIC ZERO-KELVIN DEFENSE 100%% VERIFIED\n", ok ? "PASS" : "FAIL");
+    printf("STATUS: [ %s ] THERMODYNAMIC ZERO-KELVIN MODEL VERIFIED\n", ok ? "PASS" : "FAIL");
     printf("=================================================================\n\n");
     return ok;
 }
@@ -234,7 +234,7 @@ static inline bool ozos_cosmic_ray_bitflip_test(void) {
 
     bool ok = (survived_mutations == 0) && (collapsed_to_void == num_tests);
     printf("=================================================================\n");
-    printf("STATUS: [ %s ] COSMIC MUTATION FAIL-DEADLY INTEGRITY 100%% PROVEN\n", ok ? "PASS" : "FAIL");
+    printf("STATUS: [ %s ] BIT-FLIP FAIL-DEADLY INVARIANT CONSERVED\n", ok ? "PASS" : "FAIL");
     printf("=================================================================\n\n");
     return ok;
 }
@@ -298,7 +298,7 @@ static inline bool ozos_cosmic_creator_paradox_test(void) {
 
     bool ok = (!execution_allowed) && (!has_creator_bypass) && (!zkp_permits_state_transition);
     printf("=================================================================\n");
-    printf("STATUS: [ %s ] ZERO-CREATOR PRIVILEGE 100%% ABSOLUTE\n", ok ? "PASS" : "FAIL");
+    printf("STATUS: [ %s ] ZERO-CREATOR BACKDOOR REFUSAL VERIFIED\n", ok ? "PASS" : "FAIL");
     printf("=================================================================\n\n");
     return ok;
 }
@@ -320,7 +320,7 @@ static inline bool ozos_cosmic_run_all(void) {
 
     bool all_pass = c1 && c2 && c3 && c4;
     printf("=================================================================\n");
-    printf("  COSMIC VERDICT: [ %s ]\n", all_pass ? "ABSOLUTE SOVEREIGN PURITY" : "COSMIC DEFECT");
+    printf("  COSMIC VERDICT: [ %s ]\n", all_pass ? "ALL MATHEMATICAL INVARIANTS CONSERVED" : "COSMIC DEFECT");
     printf("=================================================================\n\n");
     return all_pass;
 }

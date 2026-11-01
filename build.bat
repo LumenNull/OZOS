@@ -12,7 +12,10 @@ set "CFLAGS=/nologo /O2 /W3 /D_CRT_SECURE_NO_WARNINGS /Icore"
 set "LIBS=advapi32.lib winmm.lib"
 
 if "%1"=="clean" goto do_clean
-if "%1"=="test" goto do_test
+if "%1"=="test" (
+    call :do_build
+    goto do_test
+)
 
 :do_build
 echo =================================================================

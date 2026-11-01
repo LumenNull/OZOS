@@ -197,7 +197,7 @@ static inline bool ozos_torture_cold_boot_test(void) {
 
     bool ok = (dormant_nonzero == 0) && (post_glitch_leaks == 0) && audit.glitch_detected && audit.crowbar_tripped;
     printf("=================================================================\n");
-    printf("STATUS: [ %s ] COLD BOOT & JTAG ATTACK 100%% NEUTRALIZED\n", ok ? "PASS" : "FAIL");
+    printf("STATUS: [ %s ] SIMULATED COLD BOOT & JTAG ATTACK NEUTRALIZED\n", ok ? "PASS" : "FAIL");
     printf("=================================================================\n\n");
     return ok;
 }
@@ -293,7 +293,7 @@ static inline bool ozos_torture_dpa_test(void) {
     printf("  [#] Correlation Coeff   : r < 0.003 (Indistinguishable from thermal noise)\n");
 
     printf("=================================================================\n");
-    printf("STATUS: [ %s ] DPA & EMA RESISTANCE 100%% COMPLIANT\n", passes_dpa ? "PASS" : "FAIL");
+    printf("STATUS: [ %s ] DPA & TIMING VARIANCE MODEL COMPLIANT\n", passes_dpa ? "PASS" : "FAIL");
     printf("=================================================================\n\n");
     return passes_dpa;
 }
@@ -392,7 +392,7 @@ static inline bool ozos_torture_intent_injection_test(void) {
 
     bool ok = benign_executed && (!hostile_executed);
     printf("=================================================================\n");
-    printf("STATUS: [ %s ] ADVERSARIAL INTENT 100%% INTERCEPTED\n", ok ? "PASS" : "FAIL");
+    printf("STATUS: [ %s ] ADVERSARIAL INTENT REJECTED BY ZKP INVARIANT\n", ok ? "PASS" : "FAIL");
     printf("=================================================================\n\n");
     return ok;
 }
@@ -455,7 +455,7 @@ static inline bool ozos_torture_decapitation_test(void) {
 
     bool ok = die_sensor.crowbar_triggered && (unzeroed_bits == 0);
     printf("=================================================================\n");
-    printf("STATUS: [ %s ] PHYSICAL DECAPITATION DEFENSE 100%% VERIFIED\n", ok ? "PASS" : "FAIL");
+    printf("STATUS: [ %s ] ACTIVE MESH TAMPER SENSING MODEL VERIFIED\n", ok ? "PASS" : "FAIL");
     printf("=================================================================\n\n");
     return ok;
 }
@@ -477,7 +477,7 @@ static inline bool ozos_torture_run_all(void) {
 
     bool all_pass = t1 && t2 && t3 && t4;
     printf("=================================================================\n");
-    printf("  O.Z.O.S DEFENSE VERDICT: [ %s ]\n", all_pass ? "100% IMPREGNABLE STEEL" : "VULNERABILITIES DETECTED");
+    printf("  O.Z.O.S DEFENSE VERDICT: [ %s ]\n", all_pass ? "ALL TORTURE INVARIANTS CONSERVED" : "VULNERABILITIES DETECTED");
     printf("=================================================================\n\n");
     return all_pass;
 }

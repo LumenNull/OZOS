@@ -116,6 +116,28 @@ OZOS/
 
 ---
 
+## Security Model & Threat Boundaries (Empirical Scoping)
+
+To maintain scientific rigor and prevent misunderstandings, O.Z.O.S formally defines its operational threat boundaries:
+
+1. **Tripwire Gatekeeper vs. Cryptographic Vault:**
+   - **Tripwire MAC16 ($2^{16} = 65,536$ states):** Functions strictly as an $O(1) < 20\text{ ns}$ ultra-fast packet gatekeeper to filter out unaligned noise, invalid magic bytes, or flood/DoS attempts before invoking heavy cryptographic operations. It is an engineering circuit breaker, not a 128-bit cryptographic MAC.
+   - **True Security Boundary:** Sovereign packet integrity and authenticity are cryptographically guaranteed by **Ed25519 signatures (RFC 8032)** combined with **strictly monotonic 64-bit nonces** that neutralize replay attacks.
+
+2. **Software Invariant Simulation vs. Physical Silicon Realism:**
+   - The test suites for laser micro-probing, clock-glitch crowbar resets, 0-Kelvin PUF collapse, and cosmic ray SEU bit-flips are **formal state-transition simulations** designed to verify fail-deadly software invariant conservation.
+   - Physical silicon tamper resistance in production requires deployment on certified secure elements (e.g. CC EAL6+ / physical TPM 2.0 silicon) measured via calibrated oscilloscopes and electromagnetic probes.
+
+3. **Hardware Root of Trust vs. Machine ID Fallback:**
+   - On Windows, hardware root of trust binds to TPM 2.0 via `ncrypt.dll`.
+   - On Linux, true hardware enclave binding requires physical character device nodes (`/dev/tpmrm0` / `/dev/tpm0`). When executed on virtual machines or hardware without TPM, the engine falls back to `/etc/machine-id` as a **Soft Machine Identifier**, which is software-clonable and not an immutable silicon enclave.
+
+4. **Specialized Near-Field Acoustic Conduit (18-20 kHz):**
+   - The Hann-windowed near-ultrasound channel operates as a specialized, line-of-sight, close-proximity ($< 2\text{m}$) air-gapped conduit designed for air-gapped identity attestation.
+   - It is subject to transducer physical frequency response, environmental acoustic noise, room reverberation, and analog microphone limits.
+
+---
+
 ## Building and Verification
 
 ### Windows (MSVC / Clang / GCC)
