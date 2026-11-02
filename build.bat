@@ -8,7 +8,7 @@ REM ============================================================================
 
 set "TARGET=ozos_ghost.exe"
 set "SRC=core\ozos_ghost.c core\tweetnacl.c"
-set "CFLAGS=/nologo /O2 /W3 /D_CRT_SECURE_NO_WARNINGS /Icore"
+set "CFLAGS=/nologo /O2 /W3 /D_CRT_SECURE_NO_WARNINGS /Icore /I."
 set "LIBS=advapi32.lib winmm.lib"
 
 if "%1"=="clean" goto do_clean

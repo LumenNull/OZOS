@@ -53,6 +53,25 @@ static inline int ozos_ed25519_sign_detached(
  * Thẩm định chữ ký số Ed25519 (Detached Verification) bằng khóa công khai bản thể.
  * Chạy 100% trên stack, không cấp phát heap RAM (no_std compliant).
  */
+/**
+ * Kiem tra tinh chuan tac (Canonicity) cua phan tu vo huong S theo RFC 8032 Section 5.1.7:
+ * S phai thoa man nghiem ngat: 0 <= S < L (Triet tieu hoan toan Ed25519 S+L Malleability).
+ * L = 2^252 + 27742317777372353535851937790883648493 (Little-endian byte array).
+ */
+static inline bool ozos_ed25519_is_canonical_s(const uint8_t s[32]) {
+    static const uint8_t L[32] = {
+        0xed, 0xd3, 0xf5, 0x5c, 0x1a, 0x63, 0x12, 0x58,
+        0xd6, 0x9c, 0xf7, 0xa2, 0xde, 0xf9, 0xde, 0x14,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x10
+    };
+    for (int i = 31; i >= 0; --i) {
+        if (s[i] < L[i]) return true;
+        if (s[i] > L[i]) return false;
+    }
+    return false; /* s == L la phi chuan (non-canonical) */
+}
+
 static inline bool ozos_ed25519_verify_detached(
     const uint8_t sig[OZOS_ED25519_SIG_BYTES],
     const uint8_t* msg,
@@ -60,6 +79,11 @@ static inline bool ozos_ed25519_verify_detached(
     const uint8_t pk[OZOS_ED25519_PK_BYTES]
 ) {
     if (!sig || !msg || !pk || msg_len > OZOS_MAX_MSG_LEN) return false;
+
+    /* Bat buoc S < L de loai bo loi Malleability S+L (RFC 8032 Section 5.1.7) */
+    if (!ozos_ed25519_is_canonical_s(sig + 32)) {
+        return false;
+    }
 
     uint8_t sm[OZOS_MAX_MSG_LEN + 64];
     uint8_t m_out[OZOS_MAX_MSG_LEN + 64];

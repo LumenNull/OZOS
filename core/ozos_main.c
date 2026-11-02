@@ -66,6 +66,19 @@ static size_t hex_to_bytes(const char* hex, uint8_t* out, size_t max_out) {
     return count;
 }
 
+static bool is_valid_hex(const char* hex, size_t expected_len) {
+    if (!hex) return false;
+    size_t len = strlen(hex);
+    if (len != expected_len) return false;
+    for (size_t i = 0; i < len; ++i) {
+        char c = hex[i];
+        if (!((c >= '0' && c <= '9') || (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F'))) {
+            return false;
+        }
+    }
+    return true;
+}
+
 #pragma pack(push, 1)
 typedef struct {
     char     riff_tag[4];
@@ -154,69 +167,60 @@ typedef struct {
     char     silicon_hex[65];
 } ozos_tpm_info_t;
 
+#ifdef _WIN32
+#include <wincrypt.h>
+static void ozos_secure_random_bytes(uint8_t* out, size_t len) {
+    HCRYPTPROV hProv = 0;
+    if (CryptAcquireContextA(&hProv, NULL, NULL, PROV_RSA_FULL, CRYPT_VERIFYCONTEXT | CRYPT_SILENT)) {
+        CryptGenRandom(hProv, (DWORD)len, out);
+        CryptReleaseContext(hProv, 0);
+    }
+}
+#else
+static void ozos_secure_random_bytes(uint8_t* out, size_t len) {
+    FILE* ur = fopen("/dev/urandom", "rb");
+    if (ur) {
+        size_t n = fread(out, 1, len, ur);
+        (void)n;
+        fclose(ur);
+    }
+}
+#endif
+
 static bool query_hardware_tpm(ozos_tpm_info_t* info) {
     memset(info, 0, sizeof(ozos_tpm_info_t));
 #ifdef _WIN32
     NCRYPT_PROV_HANDLE hProv = 0;
-
     SECURITY_STATUS s = NCryptOpenStorageProvider(&hProv, MS_PLATFORM_CRYPTO_PROVIDER, 0);
     if (s == ERROR_SUCCESS) {
         info->tpm_available = true;
         strcpy(info->provider_name, "Microsoft Platform Crypto Provider (Hardware TPM 2.0)");
         NCryptFreeObject(hProv);
+        ozos_secure_random_bytes(info->silicon_seed, 32);
     } else {
         info->tpm_available = false;
-        strcpy(info->provider_name, "Software Fallback (Microsoft Software KSP)");
-    }
-
-    HW_PROFILE_INFO hw_info;
-    DWORD vol_serial = 0;
-    GetVolumeInformationA("C:\\", NULL, 0, &vol_serial, NULL, NULL, NULL, 0);
-
-    char seed_input[256];
-    if (GetCurrentHwProfileA(&hw_info)) {
-        snprintf(seed_input, sizeof(seed_input), "%s:%08X:OZOS_TPM20_ROOT", hw_info.szHwProfileGuid, vol_serial);
-    } else {
-        snprintf(seed_input, sizeof(seed_input), "%08X:OZOS_FALLBACK_ROOT", vol_serial);
+        strcpy(info->provider_name, "No Hardware TPM (Software Platform)");
+        memset(info->silicon_seed, 0, 32);
     }
 #else
     FILE* tpm_dev = fopen("/dev/tpmrm0", "rb");
+    if (!tpm_dev) {
+        tpm_dev = fopen("/dev/tpm0", "rb");
+    }
     if (tpm_dev) {
         info->tpm_available = true;
         strcpy(info->provider_name, "Linux Hardware TPM 2.0 Enclave (/dev/tpmrm0)");
+        size_t n = fread(info->silicon_seed, 1, 32, tpm_dev);
+        if (n < 32) {
+            ozos_secure_random_bytes(info->silicon_seed, 32);
+        }
         fclose(tpm_dev);
     } else {
         info->tpm_available = false;
-        strcpy(info->provider_name, "POSIX Linux Hardware Anchor (/etc/machine-id)");
-    }
-    char seed_input[256] = {0};
-    FILE* mid = fopen("/etc/machine-id", "r");
-    if (mid) {
-        if (fgets(seed_input, sizeof(seed_input), mid)) {
-            char* nl = strchr(seed_input, '\n');
-            if (nl) *nl = '\0';
-        }
-        fclose(mid);
-    }
-    if (seed_input[0] == '\0') {
-        snprintf(seed_input, sizeof(seed_input), "OZOS_POSIX_FALLBACK_ROOT");
+        strcpy(info->provider_name, "No Hardware TPM Available (POSIX)");
+        memset(info->silicon_seed, 0, 32);
     }
 #endif
-
-    uint64_t hash_a = 0x6a09e667f3bcc908ULL;
-    uint64_t hash_b = 0xbb67ae8584caa73bULL;
-    size_t seed_len = strlen(seed_input);
-    for (size_t i = 0; i < seed_len; ++i) {
-        hash_a ^= (uint64_t)seed_input[i];
-        hash_a *= 0x100000001b3ULL;
-        hash_b ^= (uint64_t)seed_input[seed_len - 1 - i];
-        hash_b *= 0xcbf29ce484222325ULL;
-    }
-
-    memcpy(info->silicon_seed, &hash_a, 8);
-    memcpy(info->silicon_seed + 8, &hash_b, 8);
-    memcpy(info->silicon_seed + 16, &hash_a, 8);
-    memcpy(info->silicon_seed + 24, &hash_b, 8);
 
     bytes_to_hex(info->silicon_seed, 32, info->silicon_hex);
     return info->tpm_available;
@@ -257,33 +261,78 @@ static void cmd_status(void) {
    COMMAND: [MẢNH GHÉP 1] KEYGEN & SIGN (CHỮ KÝ BẢN THỂ ED25519)
    ============================================================================= */
 
-static void get_sovereign_keys(uint8_t pk[32], uint8_t sk[64], const char* custom_seed_hex) {
+static int get_sovereign_keys(uint8_t pk[32], uint8_t sk[64], const char* custom_seed_hex) {
     uint8_t seed[32];
-    if (custom_seed_hex && strlen(custom_seed_hex) == 64) {
+    if (custom_seed_hex != NULL && custom_seed_hex[0] != '\0') {
+        size_t slen = strlen(custom_seed_hex);
+        if (slen != 64) {
+            fprintf(stderr, "🚨 [LOI CU PHAP] Seed hex phai co do dai chinh xac 64 ky tu (nhan duoc %zu ky tu).\n", slen);
+            fprintf(stderr, "   💡 Vui long kiem tra lai seed, he thong KHONG tu dong fallback khi seed sai do dai!\n");
+            return -1;
+        }
+        if (!is_valid_hex(custom_seed_hex, 64)) {
+            fprintf(stderr, "🚨 [LOI CU PHAP] Seed chua ky tu hex khong hop le.\n");
+            return -1;
+        }
         hex_to_bytes(custom_seed_hex, seed, 32);
     } else {
         ozos_tpm_info_t tpm;
         query_hardware_tpm(&tpm);
+        if (!tpm.tpm_available) {
+            fprintf(stderr, "🚨 [TU CHOI CHU QUYEN] Khong tim thay TPM 2.0 phan cung tren may nay!\n");
+            fprintf(stderr, "   He thong TU CHOI ky im lang bang machine-id cong khai de chong gia mao identity.\n");
+            fprintf(stderr, "   💡 Huong dan: Vui long truyen --seed <64_HEX_SEED> tuong minh.\n");
+            fprintf(stderr, "   💡 Hoac sinh seed chu quyen: ./ozos brainseed-gen\n");
+            return -2;
+        }
         memcpy(seed, tpm.silicon_seed, 32);
     }
     ozos_ed25519_seed_keypair(pk, sk, seed);
+    return 0;
 }
 
 static void cmd_keygen(const char* custom_seed_hex) {
     uint8_t pk[32], sk[64];
+    uint8_t seed[32];
+    char seed_hex[65];
+    char pk_hex[65];
+
     ozos_tpm_info_t tpm;
     query_hardware_tpm(&tpm);
 
-    get_sovereign_keys(pk, sk, custom_seed_hex);
+    if (custom_seed_hex != NULL && custom_seed_hex[0] != '\0') {
+        size_t slen = strlen(custom_seed_hex);
+        if (slen != 64) {
+            fprintf(stderr, "🚨 [LOI CU PHAP] Seed hex phai co do dai chinh xac 64 ky tu (nhan duoc %zu ky tu).\n", slen);
+            exit(1);
+        }
+        if (!is_valid_hex(custom_seed_hex, 64)) {
+            fprintf(stderr, "🚨 [LOI CU PHAP] Seed chua ky tu hex khong hop le.\n");
+            exit(1);
+        }
+        hex_to_bytes(custom_seed_hex, seed, 32);
+        memcpy(seed_hex, custom_seed_hex, 64);
+        seed_hex[64] = '\0';
+    } else if (tpm.tpm_available) {
+        memcpy(seed, tpm.silicon_seed, 32);
+        memcpy(seed_hex, tpm.silicon_hex, 64);
+        seed_hex[64] = '\0';
+    } else {
+        /* No TPM and no custom seed: generate fresh ephemeral CSPRNG seed */
+        ozos_secure_random_bytes(seed, 32);
+        bytes_to_hex(seed, 32, seed_hex);
+        printf("⚠️ [CANH BAO AN NINH]: Khong tim thay TPM 2.0 phan cung!\n");
+        printf("   Tuyet doi KHONG su dung /etc/machine-id lam khoa. Da sinh ngau nhien CSPRNG Seed moi.\n");
+        printf("   Luu lai Master Seed nay de ky va xac thuc tren cac phien lam viec tiep theo.\n\n");
+    }
 
-    char pk_hex[65], seed_hex[65];
+    ozos_ed25519_seed_keypair(pk, sk, seed);
     bytes_to_hex(pk, 32, pk_hex);
-    bytes_to_hex(tpm.silicon_seed, 32, seed_hex);
 
     printf("=================================================================\n");
     printf("  [MẢNH GHÉP 1] KHẢO NGHIỆM CHỮ KÝ BẢN THỂ (ED25519 ROOT OF TRUST)\n");
     printf("=================================================================\n");
-    printf("• TPM 2.0 Status      : %s\n", tpm.tpm_available ? "HOAT DONG (NATIVE SILICON)" : "FALLBACK");
+    printf("• TPM 2.0 Status      : %s\n", tpm.tpm_available ? "HOAT DONG (NATIVE SILICON)" : "KHONG CO TPM (CSPRNG SEED)");
     printf("• Provider            : %s\n", tpm.provider_name);
     printf("• Master Silicon Seed : 0x%s\n", seed_hex);
     printf("• Sovereign Public Key: 0x%s (32 Bytes Ed25519)\n", pk_hex);
@@ -304,7 +353,9 @@ static void cmd_packet_sign(const char* message, uint64_t nonce, const char* cus
     }
 
     uint8_t pk[32], sk[64];
-    get_sovereign_keys(pk, sk, custom_seed_hex);
+    if (get_sovereign_keys(pk, sk, custom_seed_hex) != 0) {
+        exit(1);
+    }
 
     ozos_packet80_t pkt;
     float coeffs[16];
@@ -391,9 +442,9 @@ static void cmd_packet_build(const char* message, uint64_t nonce) {
     free(hex_dump);
 }
 
-static void cmd_packet_verify(const char* hex_str, uint64_t last_seen_nonce) {
+static void cmd_packet_verify(const char* hex_str, uint64_t last_seen_nonce, const char* trusted_author_pk_hex) {
     if (!hex_str) {
-        printf("Loi: ozos packet-verify <hex> [last_seen_nonce]\n");
+        printf("Loi: ozos packet-verify <hex> [last_seen_nonce] [trusted_author_pk]\n");
         return;
     }
 
@@ -407,50 +458,108 @@ static void cmd_packet_verify(const char* hex_str, uint64_t last_seen_nonce) {
     uint8_t* buffer = (uint8_t*)malloc(byte_count);
     if (!buffer) return;
 
+    if (!is_valid_hex(hex_str, hex_len)) {
+        printf("🚨 [TU CHOI] Chuoi Hex khong hop le.\n");
+        free(buffer);
+        return;
+    }
     hex_to_bytes(hex_str, buffer, byte_count);
 
     ozos_packet80_t validated;
     ozos_status_t st = ozos_packet_validate(buffer, byte_count, last_seen_nonce, &validated);
 
     printf("=================================================================\n");
-    printf("  [PACKET VERIFICATION RESULT] KẾT QUẢ THẨM ĐỊNH TỐC ĐỘ CAO\n");
+    printf("  [PACKET VERIFICATION RESULT] KET QUA THAM DINH SOVEREIGN\n");
     printf("=================================================================\n");
 
-    if (st == OZOS_SUCCESS) {
-        printf("Trang thai: ✅ HOP LE TUYET DOI (100%% INVARIANT INTEGRITY)\n");
-        printf("• Nonce          : %llu (Hop le > %llu)\n", validated.nonce, last_seen_nonce);
-        printf("• Magic Header   : 0x%08X (Chuan xac)\n", validated.magic);
-        printf("• Tripwire MAC16 : 0x%04X (Xac thuc trong < 20ns)\n", validated.header_mac16);
-        printf("• Payload Length : %u bytes\n", validated.payload_len);
-
-        char payload_str[1025];
-        size_t copy_len = validated.payload_len > 1024 ? 1024 : validated.payload_len;
-        memcpy(payload_str, buffer + OZOS_PACKET_HEADER_SIZE, copy_len);
-        payload_str[copy_len] = '\0';
-        printf("• Noi dung nhan  : \"%s\"\n", payload_str);
-
-        size_t expected_signed_len = OZOS_PACKET_HEADER_SIZE + validated.payload_len + OZOS_SIG_ATTACHMENT_SIZE;
-        if (byte_count >= expected_signed_len) {
-            uint8_t author_pk[32];
-            bool sig_valid = ozos_verify_packet_frame(buffer, expected_signed_len, author_pk);
-            if (sig_valid) {
-                char pk_hex[65];
-                bytes_to_hex(author_pk, 32, pk_hex);
-                printf("• Chu ky Ban the : ✅ CHỮ KÝ ED25519 HỢP LỆ (PROVABLY AUTHENTIC SOVEREIGN AUTHOR)\n");
-                printf("• Author PubKey  : 0x%s\n", pk_hex);
-            } else {
-                printf("• Chu ky Ban the : 🚨 CHỮ KÝ ED25519 BỊ LÀM GIẢ HOẶC BỊ SỬA ĐỔI!\n");
-            }
-        }
-    } else {
+    if (st != OZOS_SUCCESS) {
         printf("Trang thai: 🚨 BI TU CHOI (TAMPERED OR REPLAY)\n");
         if (st == OZOS_ERR_MAGIC_INVALID) printf("• Root Cause    : Sai Magic Header (Goi tin khong phai cua O.Z.O.S)\n");
         else if (st == OZOS_ERR_MAC16_MISMATCH) printf("• Root Cause    : Sai MAC16 (Phat hien bit lat hoac du lieu bi sua doi)\n");
         else if (st == OZOS_ERR_REPLAY_DETECTED) printf("• Root Cause    : Phat hien Replay Attack (Nonce khong tang don dieu)\n");
         else if (st == OZOS_ERR_PAYLOAD_TRUNCATED) printf("• Root Cause    : Payload bi cat xen hoac khong hop le\n");
+        printf("=================================================================\n");
+        free(buffer);
+        return;
+    }
+
+    /* Kiem tra chieu dai dinh dang chuan (Canonical Framing Invariant) */
+    size_t base_len = OZOS_PACKET_HEADER_SIZE + (size_t)validated.payload_len;
+    size_t expected_signed_len = base_len + OZOS_SIG_ATTACHMENT_SIZE;
+
+    if (byte_count > base_len && byte_count < expected_signed_len) {
+        /* Chu ky bi cat cut */
+        printf("Trang thai: 🚨 BI TU CHOI: GOI TIN BI CAT CUT CHU KY (TRUNCATED SIGNATURE)\n");
+        printf("• Root Cause    : Khung chu ky Ed25519 thieu byte (Co %zu bytes, can %zu bytes)\n",
+               byte_count - base_len, (size_t)OZOS_SIG_ATTACHMENT_SIZE);
+        printf("=================================================================\n");
+        free(buffer);
+        return;
+    }
+
+    if (byte_count > expected_signed_len) {
+        /* Rac noi duoi */
+        printf("Trang thai: 🚨 BI TU CHOI: GOI TIN CHUA RAC NOI DUOI (TRAILING GARBAGE DETECTED)\n");
+        printf("• Root Cause    : Phat hien %zu bytes du thua bat thuong sau phan du lieu hop le!\n",
+               byte_count - expected_signed_len);
+        printf("=================================================================\n");
+        free(buffer);
+        return;
+    }
+
+    /* In thong tin header hop le */
+    printf("• Nonce          : %llu (Hop le > %llu)\n", validated.nonce, last_seen_nonce);
+    printf("• Magic Header   : 0x%08X (Chuan xac)\n", validated.magic);
+    printf("• Tripwire MAC16 : 0x%04X (Xac thuc trong < 20ns)\n", validated.header_mac16);
+    printf("• Payload Length : %u bytes\n", validated.payload_len);
+
+    char payload_str[1025];
+    size_t copy_len = validated.payload_len > 1024 ? 1024 : validated.payload_len;
+    memcpy(payload_str, buffer + OZOS_PACKET_HEADER_SIZE, copy_len);
+    payload_str[copy_len] = '\0';
+    printf("• Noi dung nhan  : \"%s\"\n", payload_str);
+
+    /* Xet duyet tinh xac thuc cua chu ky */
+    if (byte_count == base_len) {
+        /* Goi tin hop le ve cau truc nhung KHONG co chu ky */
+        printf("Trang thai: ⚠️ GOI TIN HOP LE VE KHUNG DINH DANG (NHUNG KHONG CO CHU KY ED25519)\n");
+        printf("• Chu ky Ban the : ⚠️ KHONG CO CHU KY (Goi tin packet-build chua ky chu quyen)\n");
+    } else if (byte_count == expected_signed_len) {
+        /* Goi tin co dinh kem chu ky Ed25519 */
+        uint8_t author_pk[32];
+        bool sig_valid = ozos_verify_packet_frame(buffer, expected_signed_len, author_pk);
+        char pk_hex[65];
+        bytes_to_hex(author_pk, 32, pk_hex);
+
+        if (!sig_valid) {
+            printf("Trang thai: 🚨 BI TU CHOI: CHU KY ED25519 BI LAM GIA HOAC DU LIEU BI SUA DOI!\n");
+            printf("• Chu ky Ban the : 🚨 CHỮ KÝ ED25519 BỊ LÀM GIẢ HOẶC DỮ LIỆU BỊ SỬA ĐỔI!\n");
+            printf("• Author PubKey  : 0x%s\n", pk_hex);
+        } else {
+            /* Chu ky toan hoc dung. Bay gio doi chieu Sovereign Trust Anchor */
+            if (trusted_author_pk_hex != NULL && strlen(trusted_author_pk_hex) == 64) {
+                uint8_t trusted_pk[32];
+                hex_to_bytes(trusted_author_pk_hex, trusted_pk, 32);
+                if (memcmp(author_pk, trusted_pk, 32) == 0) {
+                    printf("Trang thai: ✅ HOP LE TUYET DOI (100%% INVARIANT INTEGRITY & SOVEREIGN VERIFIED)\n");
+                    printf("• Chu ky Ban the : ✅ CHỮ KÝ ED25519 HỢP LỆ VÀ ĐÃ XÁC THỰC TÁC GIẢ CHỦ QUYỀN!\n");
+                    printf("• Author PubKey  : 0x%s [TRUSTED PINNED SOVEREIGN KEY]\n", pk_hex);
+                } else {
+                    printf("Trang thai: 🚨 BI TU CHOI: CHU KY DUNG NHUNG TAC GIA KHONG THUOC DANH BA TIN CAY!\n");
+                    printf("• Chu ky Ban the : ⚠️ CHỮ KÝ ED25519 HỢP LỆ (NHƯNG TÁC GIẢ LẠ / CẢNH BÁO GIẢ MẠO)\n");
+                    printf("• Author PubKey  : 0x%s [CANH BAO: UNTRUSTED / ATTACKER KEY]\n", pk_hex);
+                    printf("• Expected Key   : 0x%s\n", trusted_author_pk_hex);
+                }
+            } else {
+                /* Khong truyen key doi chieu: Canh bao tu tham chieu */
+                printf("Trang thai: ⚠️ HOP LE TOAN HOC (SELF-SIGNED FRAME - CHUA DOI CHIEU DANH BA CHU QUYEN)\n");
+                printf("• Chu ky Ban the : ℹ️ CHỮ KÝ ED25519 HỢP LỆ (SELF-REFERENTIAL - CHƯA ĐỐI CHIẾU SOVEREIGN ANCHOR)\n");
+                printf("• Author PubKey  : 0x%s [CHUA DOI CHIEU SOVEREIGN ANCHOR]\n", pk_hex);
+                printf("  💡 Goi y: ozos.exe packet-verify <hex> [last_n] <trusted_author_pk_hex>\n");
+            }
+        }
     }
     printf("=================================================================\n");
-
     free(buffer);
 }
 
@@ -1187,11 +1296,12 @@ int main(int argc, char* argv[]) {
         cmd_packet_build(msg, nonce);
     } else if (strcmp(cmd, "packet-verify") == 0) {
         if (argc < 3) {
-            printf("Loi: Vui long truyen vao chuoi Hex: ozos.exe packet-verify <hex>\n");
+            printf("Loi: Vui long truyen vao chuoi Hex: ozos.exe packet-verify <hex> [last_n] [trusted_author_pk]\n");
             return 1;
         }
         uint64_t last_n = (argc >= 4) ? strtoull(argv[3], NULL, 10) : 1000ULL;
-        cmd_packet_verify(argv[2], last_n);
+        const char* trusted_pk = (argc >= 5) ? argv[4] : NULL;
+        cmd_packet_verify(argv[2], last_n, trusted_pk);
     } else if (strcmp(cmd, "handshake-syn") == 0) {
         const char* wav_path = (argc >= 3) ? argv[2] : NULL;
         uint32_t session_nonce = (argc >= 4) ? (uint32_t)strtoul(argv[3], NULL, 10) : 0;

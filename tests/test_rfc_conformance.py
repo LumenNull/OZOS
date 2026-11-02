@@ -65,7 +65,7 @@ for vec in vectors:
     cmd = [OZOS_EXE, "packet-verify", frame_hex, str(nonce - 1)]
     res = subprocess.run(cmd, capture_output=True, encoding="utf-8", errors="replace", cwd=DIR)
 
-    if "HOP LE TUYET DOI" not in res.stdout:
+    if "GOI TIN HOP LE" not in res.stdout and "HOP LE TUYET DOI" not in res.stdout:
         print(f"  🚨 LỖI: ozos.exe từ chối véc-tơ {vid}!\n{res.stdout}")
         sys.exit(1)
 

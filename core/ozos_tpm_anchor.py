@@ -50,7 +50,7 @@ class OZOSHardwareTPM:
                 self.has_tpm = False
                 self.provider_name = "Software Fallback"
         else:
-            # POSIX / Linux TPM 2.0 & Machine-ID hardware binding
+            # POSIX / Linux TPM 2.0
             tpm_nodes = ["/dev/tpmrm0", "/dev/tpm0"]
             found_node = next((node for node in tpm_nodes if os.path.exists(node)), None)
             if found_node:
@@ -58,7 +58,7 @@ class OZOSHardwareTPM:
                 self.provider_name = f"Linux Hardware TPM 2.0 Enclave ({found_node})"
             else:
                 self.has_tpm = False
-                self.provider_name = "POSIX Linux Hardware Anchor (/etc/machine-id)"
+                self.provider_name = "No Hardware TPM Available (POSIX)"
 
     def get_hardware_entropy(self, length=32):
         """
@@ -80,29 +80,13 @@ class OZOSHardwareTPM:
 
     def derive_master_seed(self):
         """
-        Tạo hoặc bóc tách Master Seed định danh vật lý của cỗ máy O.Z.O.S.
-        Gắn liền với vi mạch TPM 2.0 và bo mạch chủ.
+        Tao hoac boc tach Master Seed dinh danh vat ly cua co may O.Z.O.S.
+        Gan lien voi vi mach TPM 2.0. Neu khong co TPM, sinh seed ngau nhien tu CSPRNG/TRNG.
+        Tuyet doi KHONG bao gio su dung /etc/machine-id lam key material de chong gia mao.
         """
-        hardware_binding = b""
-        if not self.is_windows:
-            # Đọc định danh phần cứng máy chủ Linux giống C (machine-id)
-            for mid_path in ["/etc/machine-id", "/var/lib/dbus/machine-id"]:
-                if os.path.exists(mid_path):
-                    try:
-                        with open(mid_path, "rb") as f:
-                            hardware_binding = f.read().strip()
-                            if hardware_binding:
-                                break
-                    except Exception:
-                        pass
-            if not hardware_binding:
-                hardware_binding = b"OZOS_POSIX_FALLBACK_ROOT"
-
         entropy = self.get_hardware_entropy(32)
         h = hashlib.sha256()
         h.update(b"O.Z.O.S-SOVEREIGN-TPM-ANCHOR-v1.0")
-        if hardware_binding:
-            h.update(hardware_binding)
         h.update(entropy)
         if self.has_tpm:
             h.update(b"SILICON_TPM20_BOUND")
@@ -110,18 +94,18 @@ class OZOSHardwareTPM:
 
     def export_provenance_badge(self):
         """
-        Xuất chứng thư chứng minh Gốc Tin Cậy Phần Cứng (Hardware Root of Trust)
+        Xuat chung thu chung minh Goc Tin Cay Phan Cung (Hardware Root of Trust)
         """
         seed = self.derive_master_seed()
         badge = {
             "system": "O.Z.O.S (Omni-Zero Operating Shield)",
             "tier": "TIER_04 (Hardware Root of Trust)",
-            "tpm_status": "AVAILABLE" if self.has_tpm else "EMULATED",
+            "tpm_status": "AVAILABLE" if self.has_tpm else "NO_HARDWARE_TPM",
             "provider": self.provider_name,
             "master_silicon_seed_fingerprint": seed[:32],
             "trng_entropy_source": "BCryptGenRandom [SYSTEM_PREFERRED_RNG]" if self.is_windows else "/dev/urandom [C99_POSIX_TRNG]",
             "timestamp": os.getenv("OZOS_BOOT_TIME", "2026-10-31T08:50:00Z"),
-            "admissibility": "COURT_PROVABLE_TPM20" if self.has_tpm else "COURT_PROVABLE_MACHINE_BOUND"
+            "admissibility": "COURT_PROVABLE_TPM20" if self.has_tpm else "UNATTESTED_SOFTWARE_EPHEMERAL"
         }
         return badge
 
