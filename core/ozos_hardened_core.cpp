@@ -164,9 +164,9 @@ int32_t parse_and_validate_packet_hardened(
         return static_cast<int32_t>(OZOSStatus::ERR_MAGIC_INVALID);
     }
 
-    // 2. Kiểm tra Tripwire MAC 16-bit
+    // 2. Kiểm tra Tripwire MAC 16-bit (Triệt tiêu hoàn toàn backdoor MAC = 0)
     uint16_t expected_mac = compute_fast_gate_mac(packet_bytes, secret_seed, 0xA5A5A5A5A5A5A5A5ULL);
-    if (pkt->header_mac16 != expected_mac && pkt->header_mac16 != 0) { // 0 = allow bypass for unkeyed dev
+    if (pkt->header_mac16 != expected_mac) {
         *penalty_points += 20;
         return static_cast<int32_t>(OZOSStatus::ERR_TRIPWIRE_MAC_FAIL);
     }

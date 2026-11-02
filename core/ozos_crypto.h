@@ -413,6 +413,7 @@ static inline bool ozos_tunnel_decrypt(
 
     const ozos_tunnel_data_hdr_t* hdr = (const ozos_tunnel_data_hdr_t*)in_frame;
     if (hdr->magic != OZOS_MAGIC_TUNNEL_DATA) return false;
+    if (hdr->payload_len > OZOS_TUNNEL_MAX_PAYLOAD) return false; /* Bat buoc: Chan dung tran bo nho Stack Overflow */
 
     /* Verify header MAC16 */
     uint16_t crc = 0xFFFF;

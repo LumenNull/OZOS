@@ -442,26 +442,26 @@ static void cmd_packet_build(const char* message, uint64_t nonce) {
     free(hex_dump);
 }
 
-static void cmd_packet_verify(const char* hex_str, uint64_t last_seen_nonce, const char* trusted_author_pk_hex) {
+static int cmd_packet_verify(const char* hex_str, uint64_t last_seen_nonce, const char* trusted_author_pk_hex) {
     if (!hex_str) {
         printf("Loi: ozos packet-verify <hex> [last_seen_nonce] [trusted_author_pk]\n");
-        return;
+        return 1;
     }
 
     size_t hex_len = strlen(hex_str);
     size_t byte_count = hex_len / 2;
     if (byte_count < OZOS_PACKET_HEADER_SIZE) {
         printf("🚨 [TU CHOI] Goi tin qua ngan (< 80 bytes).\n");
-        return;
+        return 1;
     }
 
     uint8_t* buffer = (uint8_t*)malloc(byte_count);
-    if (!buffer) return;
+    if (!buffer) return 1;
 
     if (!is_valid_hex(hex_str, hex_len)) {
         printf("🚨 [TU CHOI] Chuoi Hex khong hop le.\n");
         free(buffer);
-        return;
+        return 1;
     }
     hex_to_bytes(hex_str, buffer, byte_count);
 
@@ -480,7 +480,7 @@ static void cmd_packet_verify(const char* hex_str, uint64_t last_seen_nonce, con
         else if (st == OZOS_ERR_PAYLOAD_TRUNCATED) printf("• Root Cause    : Payload bi cat xen hoac khong hop le\n");
         printf("=================================================================\n");
         free(buffer);
-        return;
+        return 1;
     }
 
     /* Kiem tra chieu dai dinh dang chuan (Canonical Framing Invariant) */
@@ -494,7 +494,7 @@ static void cmd_packet_verify(const char* hex_str, uint64_t last_seen_nonce, con
                byte_count - base_len, (size_t)OZOS_SIG_ATTACHMENT_SIZE);
         printf("=================================================================\n");
         free(buffer);
-        return;
+        return 1;
     }
 
     if (byte_count > expected_signed_len) {
@@ -504,7 +504,7 @@ static void cmd_packet_verify(const char* hex_str, uint64_t last_seen_nonce, con
                byte_count - expected_signed_len);
         printf("=================================================================\n");
         free(buffer);
-        return;
+        return 1;
     }
 
     /* In thong tin header hop le */
@@ -519,11 +519,13 @@ static void cmd_packet_verify(const char* hex_str, uint64_t last_seen_nonce, con
     payload_str[copy_len] = '\0';
     printf("• Noi dung nhan  : \"%s\"\n", payload_str);
 
+    int final_rc = 0;
     /* Xet duyet tinh xac thuc cua chu ky */
     if (byte_count == base_len) {
         /* Goi tin hop le ve cau truc nhung KHONG co chu ky */
         printf("Trang thai: ⚠️ GOI TIN HOP LE VE KHUNG DINH DANG (NHUNG KHONG CO CHU KY ED25519)\n");
         printf("• Chu ky Ban the : ⚠️ KHONG CO CHU KY (Goi tin packet-build chua ky chu quyen)\n");
+        final_rc = 0;
     } else if (byte_count == expected_signed_len) {
         /* Goi tin co dinh kem chu ky Ed25519 */
         uint8_t author_pk[32];
@@ -535,6 +537,7 @@ static void cmd_packet_verify(const char* hex_str, uint64_t last_seen_nonce, con
             printf("Trang thai: 🚨 BI TU CHOI: CHU KY ED25519 BI LAM GIA HOAC DU LIEU BI SUA DOI!\n");
             printf("• Chu ky Ban the : 🚨 CHỮ KÝ ED25519 BỊ LÀM GIẢ HOẶC DỮ LIỆU BỊ SỬA ĐỔI!\n");
             printf("• Author PubKey  : 0x%s\n", pk_hex);
+            final_rc = 1;
         } else {
             /* Chu ky toan hoc dung. Bay gio doi chieu Sovereign Trust Anchor */
             if (trusted_author_pk_hex != NULL && strlen(trusted_author_pk_hex) == 64) {
@@ -544,11 +547,13 @@ static void cmd_packet_verify(const char* hex_str, uint64_t last_seen_nonce, con
                     printf("Trang thai: ✅ HOP LE TUYET DOI (100%% INVARIANT INTEGRITY & SOVEREIGN VERIFIED)\n");
                     printf("• Chu ky Ban the : ✅ CHỮ KÝ ED25519 HỢP LỆ VÀ ĐÃ XÁC THỰC TÁC GIẢ CHỦ QUYỀN!\n");
                     printf("• Author PubKey  : 0x%s [TRUSTED PINNED SOVEREIGN KEY]\n", pk_hex);
+                    final_rc = 0;
                 } else {
                     printf("Trang thai: 🚨 BI TU CHOI: CHU KY DUNG NHUNG TAC GIA KHONG THUOC DANH BA TIN CAY!\n");
                     printf("• Chu ky Ban the : ⚠️ CHỮ KÝ ED25519 HỢP LỆ (NHƯNG TÁC GIẢ LẠ / CẢNH BÁO GIẢ MẠO)\n");
                     printf("• Author PubKey  : 0x%s [CANH BAO: UNTRUSTED / ATTACKER KEY]\n", pk_hex);
                     printf("• Expected Key   : 0x%s\n", trusted_author_pk_hex);
+                    final_rc = 1;
                 }
             } else {
                 /* Khong truyen key doi chieu: Canh bao tu tham chieu */
@@ -556,11 +561,13 @@ static void cmd_packet_verify(const char* hex_str, uint64_t last_seen_nonce, con
                 printf("• Chu ky Ban the : ℹ️ CHỮ KÝ ED25519 HỢP LỆ (SELF-REFERENTIAL - CHƯA ĐỐI CHIẾU SOVEREIGN ANCHOR)\n");
                 printf("• Author PubKey  : 0x%s [CHUA DOI CHIEU SOVEREIGN ANCHOR]\n", pk_hex);
                 printf("  💡 Goi y: ozos.exe packet-verify <hex> [last_n] <trusted_author_pk_hex>\n");
+                final_rc = 0;
             }
         }
     }
     printf("=================================================================\n");
     free(buffer);
+    return final_rc;
 }
 
 /* =============================================================================
@@ -662,10 +669,23 @@ static void cmd_audio_decode(const char* in_wav, int forced_mode) {
         return;
     }
 
+    /* Kiem tra tinh hop le cua sample_rate: Phong ve chia cho 0 va tran bo nho float_block */
+    if (sample_rate < 8000 || sample_rate > 48000) {
+        printf("🚨 [AUDIO DECODE] Sample rate khong hop le (%u Hz). Chi chap nhan tu 8000 Hz den 48000 Hz.\n", sample_rate);
+        free(raw_samples);
+        return;
+    }
+
     float tone_dur = 0.040f;
     float pre_dur  = 0.040f;
     size_t samples_per_tone = (size_t)(sample_rate * tone_dur);
     size_t samples_pre = (size_t)(sample_rate * pre_dur);
+
+    if (samples_per_tone == 0 || samples_per_tone > 2048) {
+        printf("🚨 [AUDIO DECODE] Samples per tone khong hop le (%zu).\n", samples_per_tone);
+        free(raw_samples);
+        return;
+    }
 
     if (num_samples < samples_pre * 2 + samples_per_tone) {
         printf("🚨 File qua ngan.\n");
@@ -731,7 +751,7 @@ static void cmd_benchmark(void) {
     float coeffs[16] = {1.0f};
     ozos_packet_build(&pkt, 1000ULL, coeffs, 16);
 
-    uint8_t buf[96];
+    uint8_t buf[128];
     memcpy(buf, &pkt, 80);
     memcpy(buf + 80, "BENCHMARK_SOVEREIGN", 19);
 
@@ -821,8 +841,8 @@ static void cmd_daemon(int port) {
                 ozos_tpm_info_t tpm;
                 query_hardware_tpm(&tpm);
                 snprintf(resp_buf, sizeof(resp_buf),
-                         "{\"status\":\"OK\",\"tpm\":%s,\"provider\":\"%s\",\"seed\":\"0x%s\"}\n",
-                         tpm.tpm_available ? "true" : "false", tpm.provider_name, tpm.silicon_hex);
+                         "{\"status\":\"OK\",\"tpm\":%s,\"provider\":\"%s\"}\n",
+                         tpm.tpm_available ? "true" : "false", tpm.provider_name);
             } else {
                 snprintf(resp_buf, sizeof(resp_buf), "{\"status\":\"OK\",\"msg\":\"OZOS_DAEMON_ALIVE\"}\n");
             }
@@ -1052,6 +1072,11 @@ static void cmd_tunnel_decrypt(const char* frame_hex, const char* session_key_he
     size_t byte_count = hex_len / 2;
     if (byte_count < sizeof(ozos_tunnel_data_hdr_t) + 16) {
         printf("🚨 Khung du lieu qua ngan.\n");
+        return;
+    }
+    if (byte_count > sizeof(ozos_tunnel_data_hdr_t) + 16 + OZOS_TUNNEL_MAX_PAYLOAD) {
+        printf("🚨 Khung du lieu vuot qua gioi han bo nho cho phep (> %zu bytes).\n",
+               sizeof(ozos_tunnel_data_hdr_t) + 16 + (size_t)OZOS_TUNNEL_MAX_PAYLOAD);
         return;
     }
     uint8_t session_key[32];
@@ -1301,7 +1326,7 @@ int main(int argc, char* argv[]) {
         }
         uint64_t last_n = (argc >= 4) ? strtoull(argv[3], NULL, 10) : 1000ULL;
         const char* trusted_pk = (argc >= 5) ? argv[4] : NULL;
-        cmd_packet_verify(argv[2], last_n, trusted_pk);
+        return cmd_packet_verify(argv[2], last_n, trusted_pk);
     } else if (strcmp(cmd, "handshake-syn") == 0) {
         const char* wav_path = (argc >= 3) ? argv[2] : NULL;
         uint32_t session_nonce = (argc >= 4) ? (uint32_t)strtoul(argv[3], NULL, 10) : 0;

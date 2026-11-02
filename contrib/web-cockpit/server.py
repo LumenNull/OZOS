@@ -27,7 +27,9 @@ class OZOSRequestHandler(http.server.SimpleHTTPRequestHandler):
         self.send_header('Cross-Origin-Opener-Policy', 'same-origin')
         self.send_header('Cross-Origin-Embedder-Policy', 'require-corp')
         self.send_header('Cache-Control', 'no-cache, no-store, must-revalidate')
-        self.send_header('Access-Control-Allow-Origin', '*')
+        origin = self.headers.get('Origin', '') if hasattr(self, 'headers') and self.headers else ''
+        if origin in ['http://localhost:8899', 'http://127.0.0.1:8899']:
+            self.send_header('Access-Control-Allow-Origin', origin)
         self.send_header('Access-Control-Allow-Methods', 'GET, POST, OPTIONS')
         self.send_header('Access-Control-Allow-Headers', 'Content-Type')
         super().end_headers()
@@ -37,6 +39,12 @@ class OZOSRequestHandler(http.server.SimpleHTTPRequestHandler):
         self.end_headers()
 
     def do_POST(self):
+        origin = self.headers.get('Origin')
+        if origin and origin not in ['http://localhost:8899', 'http://127.0.0.1:8899']:
+            self.send_response(403)
+            self.end_headers()
+            self.wfile.write(b'{"error":"Forbidden: Cross-Origin Request Blocked"}\n')
+            return
         if self.path == '/api/cmd':
             content_length = int(self.headers.get('Content-Length', 0))
             body = self.rfile.read(content_length).decode('utf-8')
@@ -77,7 +85,7 @@ class OZOSRequestHandler(http.server.SimpleHTTPRequestHandler):
 if __name__ == '__main__':
     os.chdir(DIRECTORY)
     socketserver.TCPServer.allow_reuse_address = True
-    with socketserver.TCPServer(("", PORT), OZOSRequestHandler) as httpd:
+    with socketserver.TCPServer(("127.0.0.1", PORT), OZOSRequestHandler) as httpd:
         print("=================================================================")
         print("  [OK] O.Z.O.S SOVEREIGN COMMAND STATION & NATIVE BRIDGE ACTIVE")
         print(f"  [URL] http://localhost:{PORT}")

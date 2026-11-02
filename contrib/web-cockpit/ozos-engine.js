@@ -135,36 +135,50 @@ class OZOSEngine {
             return { valid: false, error: "Gói tin nhỏ hơn 80 bytes (Kích thước tối thiểu)." };
         }
 
+        // BẮT BUỘC: Lõi WASM phải được khởi tạo thành công trước khi thẩm định
+        if (!this.wasm || !this.wasm._parse_and_validate_packet) {
+            return { valid: false, code: -1, error: "Lõi WASM chưa được khởi tạo. Từ chối thẩm định bảo vệ chủ quyền." };
+        }
+
         const effectiveLastNonce = (lastSeenNonce !== null) ? BigInt(lastSeenNonce) : this.lastSeenPeerNonce;
 
-        // Nếu có lõi WASM C++, gọi hàm _parse_and_validate_packet
-        if (this.wasm && this.wasm._parse_and_validate_packet) {
-            const ptr = this.wasm._malloc(packetUint8.length);
-            this.wasm.HEAPU8.set(packetUint8, ptr);
-            
-            const resCode = this.wasm._parse_and_validate_packet(
-                ptr,
-                packetUint8.length,
-                BigInt(effectiveLastNonce)
-            );
-            this.wasm._free(ptr);
+        const ptr = this.wasm._malloc(packetUint8.length);
+        this.wasm.HEAPU8.set(packetUint8, ptr);
+        
+        const resCode = this.wasm._parse_and_validate_packet(
+            ptr,
+            packetUint8.length,
+            BigInt(effectiveLastNonce)
+        );
+        this.wasm._free(ptr);
 
-            if (resCode !== 0) {
-                let errDesc = "Lỗi xác thực gói tin WASM";
-                if (resCode === 1) errDesc = "Mã định danh Magic Header không hợp lệ (Giả mạo gói tin)";
-                if (resCode === 2) errDesc = "Độ dài gói tin không khớp với Payload Length";
-                if (resCode === 3) errDesc = `Tấn công phát lại (Replay Attack): Nonce <= Nonce cũ (${effectiveLastNonce})`;
-                return { valid: false, code: resCode, error: errDesc };
-            }
+        if (resCode !== 0) {
+            let errDesc = "Lỗi xác thực gói tin WASM";
+            if (resCode === 1) errDesc = "Mã định danh Magic Header không hợp lệ (Giả mạo gói tin)";
+            if (resCode === 2) errDesc = "Độ dài gói tin không khớp với Payload Length";
+            if (resCode === 3) errDesc = `Tấn công phát lại (Replay Attack): Nonce <= Nonce cũ (${effectiveLastNonce})`;
+            return { valid: false, code: resCode, error: errDesc };
         }
 
         // Bóc tách dữ liệu
         const view = new DataView(packetUint8.buffer, packetUint8.byteOffset, packetUint8.byteLength);
         const incomingNonce = view.getBigUint64(4, true);
         const payloadLen = view.getUint32(76, true);
+
+        // Chống tràn số học (WASM32 wrap) & giới hạn độ dài
+        if (payloadLen > 65535 || 80 + payloadLen > packetUint8.length) {
+            return { valid: false, code: 2, error: "Payload length không hợp lệ hoặc bị cắt cụt." };
+        }
+
+        // Chống rác nối đuôi (Trailing garbage)
+        if (packetUint8.length > 80 + payloadLen) {
+            return { valid: false, code: 4, error: "Phát hiện rác nối đuôi bất thường (Trailing garbage detected)." };
+        }
+
         const payloadBytes = packetUint8.slice(80, 80 + payloadLen);
         const payloadText = new TextDecoder().decode(payloadBytes);
 
+        // Chỉ cập nhật nonce sau khi vượt qua toàn bộ kiểm duyệt
         this.lastSeenPeerNonce = incomingNonce;
 
         return {
@@ -815,7 +829,8 @@ class OZOSEngine {
             expectedHash = ((expectedHash ^ BigInt(packetUint8[i])) * 0x100000001B3n) & 0xFFFFFFFFFFFFFFFFn;
         }
         const expectedMac = Number((expectedHash ^ (expectedHash >> 16n) ^ (expectedHash >> 32n)) & 0xFFFFn);
-        if (incomingMac !== expectedMac && incomingMac !== 0) {
+        // Triệt tiêu hoàn toàn backdoor MAC = 0
+        if (incomingMac !== expectedMac) {
             return { valid: false, code: 3, reason: `Tripwire MAC16 thất bại (Nhận 0x${incomingMac.toString(16)} vs Kỳ vọng 0x${expectedMac.toString(16)})` };
         }
 
@@ -826,6 +841,13 @@ class OZOSEngine {
         }
 
         const payloadLen = view.getUint16(76, true);
+        if (packetUint8.length < 80 + payloadLen) {
+            return { valid: false, code: 5, reason: "Khung dữ liệu bị cắt cụt (Truncated payload)" };
+        }
+        if (packetUint8.length > 80 + payloadLen) {
+            return { valid: false, code: 4, reason: "Phát hiện rác nối đuôi (Trailing garbage detected)" };
+        }
+
         const payloadBytes = packetUint8.slice(80, 80 + payloadLen);
         const payloadText = new TextDecoder().decode(payloadBytes);
 
@@ -922,9 +944,11 @@ class OZOSEngine {
             return { valid: false, error: res.reason };
         }
         try {
-            return { valid: true, data: JSON.parse(res.payload), nonce: res.nonce };
+            const parsed = JSON.parse(res.payload);
+            return { valid: true, data: parsed, nonce: res.nonce };
         } catch (e) {
-            return { valid: true, data: res.payload, nonce: res.nonce };
+            // TUYỆT ĐỐI KHÔNG nuốt lỗi khi JSON bị can thiệp
+            return { valid: false, error: "Dữ liệu Vault đã bị can thiệp hoặc sai cấu trúc JSON." };
         }
     }
 

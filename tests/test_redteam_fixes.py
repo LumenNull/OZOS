@@ -1,15 +1,19 @@
 # -*- coding: utf-8 -*-
 """
-O.Z.O.S - Red Team Audit Remediation Verification Suite
-Tests and certifies patches for all 8 vulnerabilities reported by the Red Team:
-- HIGH 1: Default Key Derivation / Machine-ID forgeability neutralized
-- HIGH 2: Self-referential author trust eliminated via Pinned Sovereign Anchor
-- HIGH 3: Verification headline strictly coupled to signature validity
-- MEDIUM 1: Truncated signature frames strictly rejected
-- MEDIUM 2: Trailing garbage strictly rejected (4B - 2000B)
-- MEDIUM 3: Ed25519 S+L signature malleability strictly rejected (RFC 8032)
-- MEDIUM 4: Invalid seed lengths (62 / 66 hex) hard-fail without silent fallback
-- MEDIUM 5: Nonce anti-replay enforcement
+O.Z.O.S - Master Red Team Remediation Verification Suite
+Tests and certifies patches for all vulnerabilities reported across Red Team Rounds 2 and 3:
+- Round 2 HIGH 1: Default Key Derivation / Machine-ID forgeability neutralized
+- Round 2 HIGH 2: Self-referential author trust eliminated via Pinned Sovereign Anchor
+- Round 2 HIGH 3: Verification headline strictly coupled to signature validity
+- Round 2 MEDIUM 1: Truncated signature frames strictly rejected
+- Round 2 MEDIUM 2: Trailing garbage strictly rejected (4B - 2000B)
+- Round 2 MEDIUM 3: Ed25519 S+L signature malleability strictly rejected (RFC 8032)
+- Round 2 MEDIUM 4: Invalid seed lengths (62 / 66 hex) hard-fail without silent fallback
+- Round 2 MEDIUM 5: Nonce anti-replay enforcement
+- Round 3 HIGH 1: Tunnel decrypt stack overflow prevention (payload_len > 512)
+- Round 3 HIGH 2: Audio decode sample rate boundary enforcement (prevent SIGFPE / 0Hz / 96kHz)
+- Round 3 HIGH 3: Enclave buffer boundary enforcement in ozos_ghost sign and ephemeral (payload >= 433B)
+- Round 3 HIGH 4: CLI packet-verify non-zero exit code on untrusted/forged frame and Genesis immutable hash seal
 """
 
 import os
@@ -213,10 +217,81 @@ check_test("Replay attack bi chan khi Nonce nho hon last_seen_nonce (2000 < 2001
            "Phat hien Replay Attack" in out_rep2,
            "Past nonce rejected")
 
+# ----------------------------------------------------------------------
+# 9. TEST ROUND 3 HIGH 1: Tunnel decrypt buffer overflow prevention
+# ----------------------------------------------------------------------
+print("\n[TEST 9/12] Kiem Tra Chong Tran Bo Nho Tunnel Decrypt (Payload > 512B)...")
+fake_key = "00" * 32
+large_frame = "4f5a4844" + "00" * 1200
+code_t1, out_t1, _ = run_ozos("tunnel-decrypt", large_frame, fake_key)
+check_test("Frame vuot qua 560B bi tu choi truoc khi giai ma",
+           "Khung du lieu vuot qua gioi han bo nho cho phep" in out_t1,
+           "Oversize frame rejected gracefully")
+
+# ----------------------------------------------------------------------
+# 10. TEST ROUND 3 HIGH 2: Audio decode sample rate guard (No SIGFPE / No overflow)
+# ----------------------------------------------------------------------
+print("\n[TEST 10/12] Kiem Tra Bao Ve Sample Rate Audio Decode (No SIGFPE / No Overflow)...")
+import wave, struct
+wav_test = os.path.join(REPO_ROOT, "test_guard_sr.wav")
+try:
+    with wave.open(wav_test, "w") as wf:
+        wf.setnchannels(1)
+        wf.setsampwidth(2)
+        wf.setframerate(96000)
+        wf.writeframes(struct.pack('<' + 'h'*1000, *([0]*1000)))
+    code_a1, out_a1, _ = run_ozos("audio-decode", wav_test)
+    check_test("Sample rate 96kHz bi tu choi an toan, khong tran bo nho float_block",
+               "Sample rate khong hop le" in out_a1,
+               "96kHz clamped safely")
+finally:
+    if os.path.exists(wav_test):
+        os.remove(wav_test)
+
+# ----------------------------------------------------------------------
+# 11. TEST ROUND 3 HIGH 3: Ghost sign and ephemeral payload bounds (No enclave overflow)
+# ----------------------------------------------------------------------
+print("\n[TEST 11/12] Kiem Tra Gioi Han Payload Enclave Ghost (Payload >= 433B)...")
+GHOST_EXE = os.path.join(REPO_ROOT, "ozos_ghost.exe")
+words = "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about"
+passphrase = "ZERO_STUDIO_SOVEREIGN_MIND"
+p_gsign = subprocess.run([GHOST_EXE, "sign", words, passphrase, "a" * 433],
+                         stdout=subprocess.PIPE, stderr=subprocess.PIPE, encoding="utf-8", errors="replace", cwd=REPO_ROOT)
+check_test("ozos_ghost sign voi payload 433B bi tu choi graceful (exit code 1, khong abort/overflow)",
+           p_gsign.returncode != 0 and "Payload khong hop le hoac vuot qua 256 bytes" in p_gsign.stdout,
+           "Ghost sign buffer overflow neutralized")
+
+p_gephem = subprocess.run([GHOST_EXE, "ephemeral", words, passphrase, "a" * 433],
+                          stdout=subprocess.PIPE, stderr=subprocess.PIPE, encoding="utf-8", errors="replace", cwd=REPO_ROOT)
+check_test("ozos_ghost ephemeral voi payload 433B bi tu choi graceful (exit code 1, khong ghi de enclave)",
+           p_gephem.returncode != 0 and "Payload khong hop le hoac vuot qua 256 bytes" in p_gephem.stdout,
+           "Enclave collision neutralized")
+
+# ----------------------------------------------------------------------
+# 12. TEST ROUND 3 HIGH 4: CLI exit code on verification failure and Genesis Seal
+# ----------------------------------------------------------------------
+print("\n[TEST 12/12] Kiem Tra Exit Code packet-verify va Chot Chan Genesis Hash...")
+code_exit, _, _ = run_ozos("packet-verify", corrupted_sig_hex, "1000")
+check_test("CLI packet-verify tra ve Exit Code 1 khi chu ky gia mao",
+           code_exit == 1,
+           f"Exit code = {code_exit} (Failed verification strictly non-zero)")
+
+code_exit_ok, _, _ = run_ozos("packet-verify", signed_hex, "1000", sovereign_pk)
+check_test("CLI packet-verify tra ve Exit Code 0 khi xac thuc chu quyen thanh cong",
+           code_exit_ok == 0,
+           f"Exit code = {code_exit_ok} (Success)")
+
+p_genesis = subprocess.run([GHOST_EXE, "genesis"],
+                           stdout=subprocess.PIPE, stderr=subprocess.PIPE, encoding="utf-8", errors="replace", cwd=REPO_ROOT)
+check_test("ozos_ghost genesis khop 100% voi hang so bat bien compile-time (3b5bfe68...)",
+           p_genesis.returncode == 0 and "3b5bfe68f4a491a02c0fec66547ee142d36ba0038cb0c1c52ba8b14e80786edd" in p_genesis.stdout and "SEALED UNTO ETERNITY" in p_genesis.stdout,
+           "Genesis immutable hash verified")
+
 print("\n======================================================================")
 if all_passed:
-    print("  🏆 KET LUAN: 8/8 BAI KIEM TRA ADVERSARIAL RED TEAM DEU PASS 100%!")
-    print("  TOAN BO DIEM GAY MAT MA VA TANG NIEM TIN DA DUOC VA HOAN HAO.")
+    print("  🏆 KET LUAN: 12/12 BAI KIEM TRA MASTER RED TEAM DEU PASS 100%!")
+    print("  TOAN BO DIEM GAY MAT MA, AN TOAN BO NHO & GIAO THUC DA DUOC VA TRIET DE.")
+
     print("======================================================================")
     sys.exit(0)
 else:

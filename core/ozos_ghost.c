@@ -358,7 +358,7 @@ static bool run_ephemeral_enclave_test(void) {
     uint8_t* ed_sk  = seed32 + 32;
     uint8_t* ed_pk  = ed_sk + 64;
     uint8_t* packet_buffer = ed_pk + 32;
-    uint8_t* signed_frame  = packet_buffer + 512;
+    uint8_t* signed_frame  = packet_buffer + 1024;
 
     const char* words = "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about";
     const char* pass  = "ZERO_STUDIO_SOVEREIGN_MIND";
@@ -476,6 +476,19 @@ static bool run_genesis_seal(void) {
     uint8_t hash2[32];
     ozos_sha256_buffer(hash1, full_block, full_len);
     ozos_sha256_buffer(hash2, hash1, 32);
+
+    /* Kiem tra bat bien Hash Genesis doi chieu hang so bat bien (Zero-Tampering) */
+    static const uint8_t OZOS_EXPECTED_GENESIS_HASH[32] = {
+        0x3b, 0x5b, 0xfe, 0x68, 0xf4, 0xa4, 0x91, 0xa0,
+        0x2c, 0x0f, 0xec, 0x66, 0x54, 0x7e, 0xe1, 0x42,
+        0xd3, 0x6b, 0xa0, 0x03, 0x8c, 0xb0, 0xc1, 0xc5,
+        0x2b, 0xa8, 0xb1, 0x4e, 0x80, 0x78, 0x6e, 0xdd
+    };
+    if (memcmp(hash2, OZOS_EXPECTED_GENESIS_HASH, 32) != 0) {
+        printf("🚨 [GENESIS CORRUPTION] Hash mismatch against immutable constant!\n");
+        ozos_ghost_zeroize(full_block, sizeof(full_block));
+        return false;
+    }
 
     /* 3. Ephemeral Sovereign Ed25519 Signature */
     uint8_t gen_sk[64];
@@ -724,9 +737,15 @@ int main(int argc, char* argv[]) {
 
         ozos_ed25519_seed_keypair(ed_pk, ed_sk, seed32);
 
-        uint8_t packet_buffer[512];
         size_t payload_len = strlen(payload);
+        if (payload_len == 0 || payload_len > 256) {
+            printf("[!] Payload khong hop le hoac vuot qua 256 bytes (Chong tran bo nho packet_buffer).\n");
+            ozos_ghost_zeroize(seed32, sizeof(seed32));
+            ozos_ghost_zeroize(ed_sk, sizeof(ed_sk));
+            return 1;
+        }
 
+        uint8_t packet_buffer[1024];
         ozos_packet80_t* hdr = (ozos_packet80_t*)packet_buffer;
         float zero_coeffs[16] = {0};
         ozos_packet_build(hdr, 1001, zero_coeffs, (uint16_t)payload_len);
@@ -734,7 +753,7 @@ int main(int argc, char* argv[]) {
 
         size_t header_plus_payload_len = sizeof(ozos_packet80_t) + payload_len;
 
-        uint8_t final_frame[512];
+        uint8_t final_frame[1024];
         size_t signed_len = ozos_sign_packet_frame(final_frame, sizeof(final_frame), packet_buffer, header_plus_payload_len, ed_pk, ed_sk);
 
         ozos_ghost_zeroize(seed32, sizeof(seed32));
@@ -783,11 +802,18 @@ int main(int argc, char* argv[]) {
             return 1;
         }
 
+        size_t payload_len = strlen(payload);
+        if (payload_len == 0 || payload_len > 256) {
+            printf("[!] Payload khong hop le hoac vuot qua 256 bytes (Chong ghi de enclave RAM).\n");
+            ozos_ghost_free_locked_enclave(enclave, ENCLAVE_SIZE);
+            return 1;
+        }
+
         uint8_t* seed32 = (uint8_t*)enclave;
         uint8_t* ed_sk  = seed32 + 32;
         uint8_t* ed_pk  = ed_sk + 64;
         uint8_t* packet_buffer = ed_pk + 32;
-        uint8_t* signed_frame  = packet_buffer + 512;
+        uint8_t* signed_frame  = packet_buffer + 1024;
 
 #if defined(_WIN32)
         LARGE_INTEGER freq, t_start, t_end;
@@ -803,14 +829,13 @@ int main(int argc, char* argv[]) {
 
         ozos_ed25519_seed_keypair(ed_pk, ed_sk, seed32);
 
-        size_t payload_len = strlen(payload);
         ozos_packet80_t* hdr = (ozos_packet80_t*)packet_buffer;
         float zero_coeffs[16] = {0};
         ozos_packet_build(hdr, 8888, zero_coeffs, (uint16_t)payload_len);
         memcpy(packet_buffer + sizeof(ozos_packet80_t), payload, payload_len);
 
         size_t header_plus_payload_len = sizeof(ozos_packet80_t) + payload_len;
-        size_t signed_len = ozos_sign_packet_frame(signed_frame, 512, packet_buffer, header_plus_payload_len, ed_pk, ed_sk);
+        size_t signed_len = ozos_sign_packet_frame(signed_frame, 1024, packet_buffer, header_plus_payload_len, ed_pk, ed_sk);
 
 #if defined(_WIN32)
         QueryPerformanceCounter(&t_end);
@@ -826,7 +851,7 @@ int main(int argc, char* argv[]) {
         }
 
         uint8_t out_pk[32];
-        uint8_t out_frame[512];
+        uint8_t out_frame[1024];
         memcpy(out_pk, ed_pk, 32);
         memcpy(out_frame, signed_frame, signed_len);
 
