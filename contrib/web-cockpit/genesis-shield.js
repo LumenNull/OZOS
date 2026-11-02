@@ -55,7 +55,7 @@ class GenesisShield {
     // --------------------------------------------------
     buildPacket(magicHeader, nonce, payloadStr) {
         const payloadBytes = new TextEncoder().encode(payloadStr);
-        const totalSize = 4 + 8 + 64 + 4 + payloadBytes.length; // Cấu trúc GENS v1
+        const totalSize = 80 + payloadBytes.length; // Cấu trúc GENS v1: 4 + 8 + 64 + 4 = 80
         
         const buffer = new ArrayBuffer(totalSize);
         const dataView = new DataView(buffer);
@@ -65,8 +65,20 @@ class GenesisShield {
         dataView.setUint32(offset, magicHeader, true); offset += 4;
         dataView.setBigUint64(offset, BigInt(nonce), true); offset += 8;
         
-        // Giả lập neo vân tay cho gói tin
-        for (let i = 0; i < 16; i++) { dataView.setFloat32(offset, i * 1.5, true); offset += 4; }
+        // Tính mã kiểm tra toàn vẹn Payload (FNV-1a 32-bit checksum)
+        let payloadChecksum = 0x811C9DC5;
+        for (let i = 0; i < payloadBytes.length; i++) {
+            payloadChecksum = Math.imul(payloadChecksum ^ payloadBytes[i], 0x01000193) >>> 0;
+        }
+
+        // 15 hệ số vân tay nhận thức
+        for (let i = 0; i < 15; i++) { 
+            dataView.setFloat32(offset, i * 1.5, true); 
+            offset += 4; 
+        }
+        // Slot 15 (Offset 72 - 75): Khóa toàn vẹn Payload
+        dataView.setUint32(offset, payloadChecksum, true); 
+        offset += 4;
         
         dataView.setUint32(offset, payloadBytes.length, true); offset += 4;
         uint8View.set(payloadBytes, offset);
@@ -76,14 +88,59 @@ class GenesisShield {
 
     validatePacket(uint8View, lastSeenNonce) {
         this._checkReady();
-        const totalSize = uint8View.length;
-        const ptr = this.wasm._malloc(totalSize);
-        
-        this.wasm.HEAPU8.set(uint8View, ptr);
-        const status = this.wasm._parse_and_validate_packet(ptr, totalSize, BigInt(lastSeenNonce));
-        
-        this.wasm._free(ptr); // Dọn rác
-        return status;
+        if (!uint8View || uint8View.length < 80) {
+            return 2; // Gói tin nhỏ hơn 80 bytes (Kích thước tối thiểu)
+        }
+
+        const view = new DataView(uint8View.buffer, uint8View.byteOffset, uint8View.byteLength);
+
+        // 1. Kiểm tra Magic Header
+        const magic = view.getUint32(0, true);
+        if (magic !== 0x47454E01) {
+            return 1; // Magic không hợp lệ (Giả mạo gói tin)
+        }
+
+        // 2. Kiểm tra Replay Attack
+        const nonce = view.getBigUint64(4, true);
+        if (nonce <= BigInt(lastSeenNonce)) {
+            return 3; // Tấn công phát lại (Nonce <= lastSeenNonce)
+        }
+
+        // 3. Kiểm tra độ dài & Chống tràn số học WASM32
+        const payloadLen = view.getUint32(76, true);
+        if (payloadLen > 65535 || 80 + payloadLen < 80) {
+            return 2; // Độ dài payload không hợp lệ hoặc wrap
+        }
+        if (uint8View.length < 80 + payloadLen) {
+            return 2; // Payload bị cắt cụt
+        }
+        if (uint8View.length > 80 + payloadLen) {
+            return 4; // Phát hiện rác nối đuôi (Trailing garbage detected)
+        }
+
+        // 4. Kiểm tra toàn vẹn Payload chống sửa đổi tại chỗ
+        if (payloadLen > 0) {
+            let calcChecksum = 0x811C9DC5;
+            for (let i = 0; i < payloadLen; i++) {
+                calcChecksum = Math.imul(calcChecksum ^ uint8View[80 + i], 0x01000193) >>> 0;
+            }
+            const expectedChecksum = view.getUint32(72, true);
+            if (expectedChecksum !== 0 && calcChecksum !== expectedChecksum) {
+                return 5; // Dữ liệu payload bị sửa đổi / lật bit
+            }
+        }
+
+        // 5. Xác thực qua lõi WASM C++ (nếu có)
+        if (this.wasm && this.wasm._parse_and_validate_packet) {
+            const totalSize = uint8View.length;
+            const ptr = this.wasm._malloc(totalSize);
+            this.wasm.HEAPU8.set(uint8View, ptr);
+            const status = this.wasm._parse_and_validate_packet(ptr, totalSize, BigInt(lastSeenNonce));
+            this.wasm._free(ptr);
+            if (status !== 0) return status;
+        }
+
+        return 0; // Hợp lệ tuyệt đối
     }
 
     // --------------------------------------------------
@@ -102,12 +159,18 @@ class GenesisShield {
         const b64 = localStorage.getItem(key);
         if (!b64) return { status: -1, message: "Không tìm thấy file" };
 
-        // Giải mã Base64 ngược về Byte
-        const str = atob(b64);
+        // Giải mã Base64 ngược về Byte kèm bắt lỗi an toàn (Chống Crash khi Base64 hỏng)
+        let str;
+        try {
+            str = atob(b64);
+        } catch (e) {
+            return { status: -2, message: "Dữ liệu Base64 bị hỏng hoặc sai định dạng" };
+        }
+
         const uint8View = new Uint8Array(str.length);
         for(let i = 0; i < str.length; i++) uint8View[i] = str.charCodeAt(i);
 
-        // Đưa cho lõi WASM kiểm duyệt (Chống Hex Edit, Chống Rollback)
+        // Đưa cho lõi kiểm duyệt đa tầng (Chống Hex Edit, Chống Rác, Chống Rollback)
         const status = this.validatePacket(uint8View, currentAppNonce);
         return { status, rawData: uint8View };
     }

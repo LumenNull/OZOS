@@ -11,6 +11,7 @@ class OZOSEngine {
         this.isReady = false;
         this.currentNonce = 1000n;
         this.lastSeenPeerNonce = 0n;
+        this.lastSeenAlignedNonce = 0n;
         this.audioCtx = null;
         this.micStream = null;
         this.analyser = null;
@@ -765,6 +766,7 @@ class OZOSEngine {
 
     /**
      * Tầng 7: Tạo gói tin Zero-Padding SIMD Aligned (80 Bytes)
+     * MAC16 bao phủ toàn vẹn cả Header (0..77) VÀ Payload (80..80+len)
      */
     buildAligned80BytePacket(payloadStr, customNonce = null, secretSeed = 0xA5A5A5A5n) {
         this.currentNonce = (customNonce !== null) ? BigInt(customNonce) : (this.currentNonce + 1n);
@@ -787,16 +789,19 @@ class OZOSEngine {
         // 4. Payload Length 2 bytes tại Offset 0x4C - 0x4D
         view.setUint16(76, payloadBytes.length, true);
 
-        // 5. Tính toán Tripwire MAC 16-bit cho 78 bytes đầu tiên tại Offset 0x4E - 0x4F
+        // 5. Payload Content từ Offset 80 trở đi
+        packet.set(payloadBytes, 80);
+
+        // 6. Tính toán Tripwire MAC 16-bit cho Header (0..77) VÀ Payload (80..80+len)
         let macHash = secretSeed;
         for (let i = 0; i < 78; i++) {
             macHash = ((macHash ^ BigInt(packet[i])) * 0x100000001B3n) & 0xFFFFFFFFFFFFFFFFn;
         }
+        for (let i = 0; i < payloadBytes.length; i++) {
+            macHash = ((macHash ^ BigInt(payloadBytes[i])) * 0x100000001B3n) & 0xFFFFFFFFFFFFFFFFn;
+        }
         const mac16 = Number((macHash ^ (macHash >> 16n) ^ (macHash >> 32n)) & 0xFFFFn);
         view.setUint16(78, mac16, true);
-
-        // 6. Payload Content từ Offset 80 trở đi
-        packet.set(payloadBytes, 80);
 
         return {
             packetBytes: packet,
@@ -809,8 +814,9 @@ class OZOSEngine {
 
     /**
      * Tầng 7: Xác thực gói tin Aligned 80B kèm Dry-Run Nonce & Tripwire MAC16
+     * Bảo vệ toàn vẹn Header lẫn Payload chống sửa đổi tại chỗ trong Vault
      */
-    validateAligned80BytePacket(packetUint8, lastSeenNonce = 0n, secretSeed = 0xA5A5A5A5n) {
+    validateAligned80BytePacket(packetUint8, lastSeenNonce = null, secretSeed = 0xA5A5A5A5n) {
         if (!packetUint8 || packetUint8.length < 80) {
             return { valid: false, code: -1, reason: "Gói tin nhỏ hơn 80 bytes" };
         }
@@ -822,24 +828,6 @@ class OZOSEngine {
             return { valid: false, code: 1, reason: `Magic không hợp lệ (0x${magic.toString(16)})` };
         }
 
-        // 2. Kiểm tra Tripwire MAC 16-bit (Offset 78)
-        const incomingMac = view.getUint16(78, true);
-        let expectedHash = secretSeed;
-        for (let i = 0; i < 78; i++) {
-            expectedHash = ((expectedHash ^ BigInt(packetUint8[i])) * 0x100000001B3n) & 0xFFFFFFFFFFFFFFFFn;
-        }
-        const expectedMac = Number((expectedHash ^ (expectedHash >> 16n) ^ (expectedHash >> 32n)) & 0xFFFFn);
-        // Triệt tiêu hoàn toàn backdoor MAC = 0
-        if (incomingMac !== expectedMac) {
-            return { valid: false, code: 3, reason: `Tripwire MAC16 thất bại (Nhận 0x${incomingMac.toString(16)} vs Kỳ vọng 0x${expectedMac.toString(16)})` };
-        }
-
-        // 3. Dry-Run Nonce Check (Offset 64)
-        const incomingNonce = view.getBigUint64(64, true);
-        if (incomingNonce <= BigInt(lastSeenNonce)) {
-            return { valid: false, code: 2, reason: `Tấn công phát lại (Nonce ${incomingNonce} <= ${lastSeenNonce})` };
-        }
-
         const payloadLen = view.getUint16(76, true);
         if (packetUint8.length < 80 + payloadLen) {
             return { valid: false, code: 5, reason: "Khung dữ liệu bị cắt cụt (Truncated payload)" };
@@ -848,8 +836,35 @@ class OZOSEngine {
             return { valid: false, code: 4, reason: "Phát hiện rác nối đuôi (Trailing garbage detected)" };
         }
 
+        // 2. Kiểm tra Tripwire MAC 16-bit (Offset 78) bao phủ Header (0..77) VÀ Payload (80..80+len)
+        const incomingMac = view.getUint16(78, true);
+        let expectedHash = secretSeed;
+        for (let i = 0; i < 78; i++) {
+            expectedHash = ((expectedHash ^ BigInt(packetUint8[i])) * 0x100000001B3n) & 0xFFFFFFFFFFFFFFFFn;
+        }
+        for (let i = 0; i < payloadLen; i++) {
+            expectedHash = ((expectedHash ^ BigInt(packetUint8[80 + i])) * 0x100000001B3n) & 0xFFFFFFFFFFFFFFFFn;
+        }
+        const expectedMac = Number((expectedHash ^ (expectedHash >> 16n) ^ (expectedHash >> 32n)) & 0xFFFFn);
+        // Triệt tiêu hoàn toàn backdoor MAC = 0 và xác thực toàn vẹn Header + Payload
+        if (incomingMac !== expectedMac) {
+            return { valid: false, code: 3, reason: `Tripwire MAC16 thất bại: Header hoặc Payload đã bị sửa đổi (Nhận 0x${incomingMac.toString(16)} vs Kỳ vọng 0x${expectedMac.toString(16)})` };
+        }
+
+        // 3. Stateful Nonce Anti-Replay
+        const effectiveLastNonce = (lastSeenNonce !== null && lastSeenNonce !== undefined && lastSeenNonce !== 0n)
+            ? BigInt(lastSeenNonce)
+            : this.lastSeenAlignedNonce;
+
+        const incomingNonce = view.getBigUint64(64, true);
+        if (incomingNonce <= effectiveLastNonce) {
+            return { valid: false, code: 2, reason: `Tấn công phát lại (Nonce ${incomingNonce} <= ${effectiveLastNonce})` };
+        }
+
         const payloadBytes = packetUint8.slice(80, 80 + payloadLen);
         const payloadText = new TextDecoder().decode(payloadBytes);
+
+        this.lastSeenAlignedNonce = incomingNonce;
 
         return {
             valid: true,

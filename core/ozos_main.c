@@ -540,7 +540,14 @@ static int cmd_packet_verify(const char* hex_str, uint64_t last_seen_nonce, cons
             final_rc = 1;
         } else {
             /* Chu ky toan hoc dung. Bay gio doi chieu Sovereign Trust Anchor */
-            if (trusted_author_pk_hex != NULL && strlen(trusted_author_pk_hex) == 64) {
+            if (trusted_author_pk_hex != NULL) {
+                if (strlen(trusted_author_pk_hex) != 64 || !is_valid_hex(trusted_author_pk_hex, 64)) {
+                    printf("Trang thai: 🚨 BI TU CHOI: KHOA CHU QUYEN (TRUSTED KEY) SAI DINH DANG!\n");
+                    printf("• Root Cause    : Trusted Public Key phai co do dai dung 64 ky tu hex hop le.\n");
+                    printf("=================================================================\n");
+                    free(buffer);
+                    return 1;
+                }
                 uint8_t trusted_pk[32];
                 hex_to_bytes(trusted_author_pk_hex, trusted_pk, 32);
                 if (memcmp(author_pk, trusted_pk, 32) == 0) {
@@ -1148,10 +1155,10 @@ static void cmd_brainseed_gen(const char* passphrase) {
     printf("=================================================================\n");
 }
 
-static void cmd_brainseed_restore(const char* mnemonic_str, const char* passphrase) {
+static int cmd_brainseed_restore(const char* mnemonic_str, const char* passphrase) {
     if (!mnemonic_str) {
         printf("Loi: ozos brainseed-restore \"<12 tu cach nhau boi dau cach>\" [passphrase]\n");
-        return;
+        return 1;
     }
 
     uint8_t seed32[32];
@@ -1172,11 +1179,14 @@ static void cmd_brainseed_restore(const char* mnemonic_str, const char* passphra
         printf("• Master Seed 32-Byte : 0x%s\n", seed_hex);
         printf("• Sovereign Public Key: 0x%s (Ed25519)\n", pk_hex);
         printf("• Khong gian nho      : 100%% Thuc thi tren Stack (Zero Dynamic Leaks)\n");
+        printf("=================================================================\n");
+        return 0;
     } else {
         printf("Trang thai: 🚨 THẤT BẠI! LỖI TỪ ĐIỂN HOẶC SAI MÃ CHECKSUM!\n");
         printf("Vui lòng kiểm tra lại chính xác 12 từ tiếng Anh theo chuẩn BIP-39.\n");
+        printf("=================================================================\n");
+        return 1;
     }
-    printf("=================================================================\n");
 }
 
 /* =============================================================================
@@ -1365,7 +1375,7 @@ int main(int argc, char* argv[]) {
             return 1;
         }
         const char* passphrase = (argc >= 4) ? argv[3] : "";
-        cmd_brainseed_restore(argv[2], passphrase);
+        return cmd_brainseed_restore(argv[2], passphrase);
     } else if (strcmp(cmd, "gossip-beacon") == 0) {
         uint32_t epoch = (argc >= 3) ? (uint32_t)strtoul(argv[2], NULL, 10) : 100;
         const char* wav_path = (argc >= 4) ? argv[3] : NULL;

@@ -73,7 +73,7 @@ wasm:
 		echo "  [BUILD] Compiling core/dct.cpp with emcc (SIMD128 enabled)..."; \
 		emcc -O3 -msimd128 -s WASM=1 -s MODULARIZE=1 -s EXPORT_NAME="createZeroDctModule" \
 			-s EXPORTED_FUNCTIONS="['_dct_init','_dct8x8_scalar','_dct8x8_simd','_dct8x8_batch_scalar','_dct8x8_batch_simd','_compute_block_fingerprint','_verify_block_integrity_adaptive','_verify_block_integrity','_parse_and_validate_packet','_malloc','_free']" \
-			-s EXPORTED_RUNTIME_METHODS="['ccall','cwrap']" core/dct.cpp -o contrib/web-cockpit/zero_dct.js && \
+			-s EXPORTED_RUNTIME_METHODS="['ccall','cwrap']" core/dct.cpp core/transport.cpp -o contrib/web-cockpit/zero_dct.js && \
 		cp contrib/web-cockpit/zero_dct.wasm core/zero_dct.wasm && \
 		$(PYTHON) contrib/web-cockpit/embed_wasm.py && \
 		echo "  [SUCCESS] zero_dct.wasm compiled and embedded successfully."; \

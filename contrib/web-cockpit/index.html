@@ -1613,7 +1613,7 @@
                     if (code) {
                         log(`[Camera QR Rx] 📷 Đã quét thấy QR Base64: ${code.data.substring(0, 24)}...`, "pass");
                         const rawBytes = ozos.base64ToBytes(code.data);
-                        const val = ozos.validateAligned80BytePacket(rawBytes, 0n);
+                        const val = ozos.validateAligned80BytePacket(rawBytes); // Stateful Nonce Tracking
                         if (val.valid) {
                             document.getElementById('rx-qr-result').textContent = `✅ XÁC THỰC WASM THÀNH CÔNG: "${val.payload}" (Nonce: ${val.nonce})`;
                             log(`[Camera QR Rx] ✅ Gói tin hợp lệ: ${val.payload}`, "pass");
@@ -1654,7 +1654,7 @@
                 (packet, mode) => {
                     const tag = (mode === 'stealth') ? '🔇 CẬN SIÊU ÂM' : '🔊 ÂM THANH';
                     log(`[Sonic Rx] 🎉 Thu trọn vẹn ${packet.length} bytes qua [${tag}]! Đang nạp vào WASM...`, "pass");
-                    const res = ozos.validateAligned80BytePacket(packet, 0n);
+                    const res = ozos.validateAligned80BytePacket(packet); // Stateful Nonce Tracking
                     if (res.valid) {
                         document.getElementById('rx-audio-result').textContent = `[${tag} PAYLOAD]: "${res.payload}" (Nonce: ${res.nonce})`;
                         log(`[Sonic Rx] ✅ Gói tin hợp lệ: "${res.payload}"`, "pass");
@@ -1743,7 +1743,7 @@
         };
         dc.onmessage = e => {
             const rawBytes = ozos.base64ToBytes(e.data);
-            const val = ozos.validateAligned80BytePacket(rawBytes, 0n);
+            const val = ozos.validateAligned80BytePacket(rawBytes); // Stateful Nonce Tracking
             if (val.valid) {
                 log(`[P2P RX] ✅ Nhận gói tin hợp lệ từ Máy Peer: "${val.payload}" (Nonce: ${val.nonce})`, "pass");
             } else {

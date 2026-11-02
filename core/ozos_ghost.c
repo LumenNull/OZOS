@@ -936,12 +936,14 @@ int main(int argc, char* argv[]) {
         fseek(f, 44, SEEK_SET);
 
         long data_bytes = sz - 44;
-        if (data_bytes <= 0) { fclose(f); return 1; }
+        if (data_bytes <= 0 || data_bytes > 50 * 1024 * 1024) { fclose(f); return 1; }
 
         size_t num_samples = data_bytes / 2;
         short* raw_samples = (short*)malloc(num_samples * sizeof(short));
-        fread(raw_samples, 2, num_samples, f);
+        if (!raw_samples) { fclose(f); return 1; }
+        size_t read_bytes = fread(raw_samples, 2, num_samples, f);
         fclose(f);
+        if (read_bytes < num_samples) { free(raw_samples); return 1; }
 
         uint32_t sample_rate = 44100;
         float tone_dur = 0.040f;
@@ -975,7 +977,12 @@ int main(int argc, char* argv[]) {
         printf("[#] Hex Data : ");
         hex_dump_compact(rx_buffer, rx_len);
 
-        uint32_t magic = *(uint32_t*)rx_buffer;
+        if (rx_len < 4) {
+            printf("[!] Packet too short (< 4 bytes for magic header).\n");
+            return 1;
+        }
+        uint32_t magic;
+        memcpy(&magic, rx_buffer, 4);
         if (magic == OZOS_MAGIC_GOSSIP_BEACON) {
             ozos_gossip_beacon_t* b = (ozos_gossip_beacon_t*)rx_buffer;
             printf("[Σ] Type     : GOSSIP BEACON (22 Bytes)\n");

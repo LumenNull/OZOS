@@ -32,28 +32,51 @@ struct PacketHeader {
  */
 EMSCRIPTEN_KEEPALIVE
 int parse_and_validate_packet(const uint8_t* buffer, size_t buffer_size, uint64_t last_seen_nonce) {
-    // Kiểm tra kích thước tối thiểu của Header
+    // 1. Kiểm tra kích thước tối thiểu của Header
     if (buffer_size < sizeof(PacketHeader)) {
         return 2; 
     }
 
     PacketHeader header;
-    // Đọc trực tiếp từ bộ nhớ đệm (Zero-copy layout mapping)
     std::memcpy(&header, buffer, sizeof(PacketHeader));
 
-    // 1. Kiểm tra biên giới hệ thống (Magic Header)
+    // 2. Kiểm tra Magic Header
     if (header.magic != GENESIS_MAGIC_HEADER) {
         return 1; 
     }
 
-    // 2. Kiểm tra tính tuần tự & chống Replay Attack
+    // 3. Chống tràn số học (WASM32 integer overflow)
+    if (header.payload_length > 65535 || (sizeof(PacketHeader) + header.payload_length) < sizeof(PacketHeader)) {
+        return 2;
+    }
+
+    // 4. Kiểm tra tính tuần tự & chống Replay Attack
     if (header.nonce <= last_seen_nonce) {
         return 3; 
     }
 
-    // 3. Kiểm tra tính toàn vẹn tổng thể của Payload thực tế theo chiều dài khai báo
+    // 5. Kiểm tra tính toàn vẹn kích thước: Chống cắt ngắn payload
     if (buffer_size < sizeof(PacketHeader) + header.payload_length) {
-        return 2; // Payload bị cụt / thiếu dữ liệu truyền tải
+        return 2; // Payload bị cụt / thiếu dữ liệu
+    }
+
+    // 6. Chống rác nối đuôi (Trailing garbage)
+    if (buffer_size > sizeof(PacketHeader) + header.payload_length) {
+        return 4; // Rác nối đuôi
+    }
+
+    // 7. Kiểm tra tính toàn vẹn Payload (Chống sửa đổi 1 byte)
+    if (header.payload_length > 0) {
+        const uint8_t* payload_ptr = buffer + sizeof(PacketHeader);
+        uint32_t calc_sum = 0x811C9DC5U;
+        for (uint32_t i = 0; i < header.payload_length; ++i) {
+            calc_sum = (calc_sum ^ payload_ptr[i]) * 0x01000193U;
+        }
+        union { float f; uint32_t u; } pun;
+        pun.f = header.fingerprint[15];
+        if (pun.u != 0 && pun.u != calc_sum) {
+            return 5; // Dữ liệu payload bị sửa đổi
+        }
     }
 
     return 0; // Gói tin vượt qua mọi vòng kiểm duyệt của Tầng 2!

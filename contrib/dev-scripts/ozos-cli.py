@@ -87,15 +87,17 @@ def build_aligned_packet(payload_str, nonce=1001, secret_seed=0xA5A5A5A5):
     # 4. Payload Length 2B (Offset 0x4C - 0x4D)
     struct.pack_into('<H', packet, 76, len(payload_bytes))
 
-    # 5. Tripwire MAC16 (Offset 0x4E - 0x4F)
+    # 5. Payload Content
+    packet[80:] = payload_bytes
+
+    # 6. Tripwire MAC16 (Offset 0x4E - 0x4F) bao phủ cả Header (0..77) VÀ Payload
     h = secret_seed
     for b in packet[:78]:
         h = ((h ^ b) * 0x100000001B3) & 0xFFFFFFFFFFFFFFFF
+    for b in payload_bytes:
+        h = ((h ^ b) * 0x100000001B3) & 0xFFFFFFFFFFFFFFFF
     mac16 = (h ^ (h >> 16) ^ (h >> 32)) & 0xFFFF
     struct.pack_into('<H', packet, 78, mac16)
-
-    # 6. Payload Content
-    packet[80:] = payload_bytes
     return bytes(packet), mac16
 
 def validate_aligned_packet(packet_bytes, last_seen_nonce=0, secret_seed=0xA5A5A5A5):
@@ -106,19 +108,27 @@ def validate_aligned_packet(packet_bytes, last_seen_nonce=0, secret_seed=0xA5A5A
     if magic != 0x47454E01:
         return False, f"Magic sai lệch (0x{magic:08X})", None
 
+    payload_len = struct.unpack_from('<H', packet_bytes, 76)[0]
+    if len(packet_bytes) < 80 + payload_len:
+        return False, "Khung dữ liệu bị cắt cụt (Truncated payload)", None
+    if len(packet_bytes) > 80 + payload_len:
+        return False, "Phát hiện rác nối đuôi (Trailing garbage detected)", None
+
+    # Tripwire MAC16 bao phủ Header (0..77) VÀ Payload (80..80+len) - Triệt tiêu backdoor MAC=0
     incoming_mac = struct.unpack_from('<H', packet_bytes, 78)[0]
     h = secret_seed
     for b in packet_bytes[:78]:
         h = ((h ^ b) * 0x100000001B3) & 0xFFFFFFFFFFFFFFFF
+    for b in packet_bytes[80:80+payload_len]:
+        h = ((h ^ b) * 0x100000001B3) & 0xFFFFFFFFFFFFFFFF
     expected_mac = (h ^ (h >> 16) ^ (h >> 32)) & 0xFFFF
-    if incoming_mac != expected_mac and incoming_mac != 0:
-        return False, f"Tripwire MAC16 không khớp (0x{incoming_mac:04X} vs 0x{expected_mac:04X})", None
+    if incoming_mac != expected_mac:
+        return False, f"Tripwire MAC16 không khớp: Header hoặc Payload đã bị sửa đổi (0x{incoming_mac:04X} vs 0x{expected_mac:04X})", None
 
     nonce = struct.unpack_from('<Q', packet_bytes, 64)[0]
     if nonce <= last_seen_nonce:
         return False, f"Tấn công phát lại (Nonce {nonce} <= {last_seen_nonce})", None
 
-    payload_len = struct.unpack_from('<H', packet_bytes, 76)[0]
     payload = packet_bytes[80:80+payload_len].decode('utf-8', errors='replace')
     return True, "HỢP LỆ", {"nonce": nonce, "payload": payload, "payload_len": payload_len}
 
@@ -146,6 +156,7 @@ def cmd_packet_verify(args):
         print(f"  • Length  : {info['payload_len']} bytes")
     else:
         print(f"\n{C_RED}{C_BOLD}[XÁC THỰC THẤT BÀI]: {reason}{C_RESET}")
+        sys.exit(1)
 
 def cmd_stego_extract(args):
     if not os.path.exists(args.image):

@@ -46,17 +46,35 @@ class OZOSRequestHandler(http.server.SimpleHTTPRequestHandler):
             self.wfile.write(b'{"error":"Forbidden: Cross-Origin Request Blocked"}\n')
             return
         if self.path == '/api/cmd':
-            content_length = int(self.headers.get('Content-Length', 0))
-            body = self.rfile.read(content_length).decode('utf-8')
+            # Giả định an toàn: Chỉ chấp nhận các kết nối cục bộ nội bộ (127.0.0.1) từ trạm chỉ huy của chủ quyền
+            try:
+                cl_val = self.headers.get('Content-Length', '0')
+                content_length = int(cl_val)
+                if content_length < 0 or content_length > 10485760: # Giới hạn tối đa 10MB
+                    raise ValueError("Content-Length out of bounds")
+            except (ValueError, TypeError):
+                self.send_response(400)
+                self.send_header('Content-Type', 'application/json')
+                self.end_headers()
+                self.wfile.write(b'{"error":"Bad Request: Invalid or missing Content-Length"}\n')
+                return
+
+            body = self.rfile.read(content_length).decode('utf-8', errors='replace')
             try:
                 data = json.loads(body)
                 args = data.get('args', [])
                 cmd = [OZOS_EXE] + [str(a) for a in args]
-                res = subprocess.run(cmd, capture_output=True, encoding='utf-8', errors='replace', cwd=DIRECTORY)
+                res = subprocess.run(cmd, capture_output=True, encoding='utf-8', errors='replace', cwd=DIRECTORY, timeout=15)
                 resp_data = {
                     "success": res.returncode == 0,
                     "stdout": res.stdout,
                     "stderr": res.stderr
+                }
+            except subprocess.TimeoutExpired:
+                resp_data = {
+                    "success": False,
+                    "stdout": "",
+                    "stderr": "Command execution timeout (15s limit exceeded)"
                 }
             except Exception as e:
                 resp_data = {

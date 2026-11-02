@@ -157,8 +157,8 @@ static inline void ozos_pbkdf2_sha512_bip39(
 ) {
     size_t pwd_len = strlen(mnemonic);
 
-    /* Salt = "mnemonic" + passphrase */
-    char salt[128] = "mnemonic";
+    /* Salt = "mnemonic" + passphrase (Hỗ trợ passphrase dài tới 500 ký tự, không bị cắt ngầm) */
+    char salt[512] = "mnemonic";
     if (passphrase && strlen(passphrase) > 0) {
         size_t rem = sizeof(salt) - strlen(salt) - 1;
         strncat(salt, passphrase, rem);
@@ -166,7 +166,7 @@ static inline void ozos_pbkdf2_sha512_bip39(
     size_t salt_len = strlen(salt);
 
     /* Initial salt + 0x00000001 (Block 1) */
-    uint8_t salt_block[128 + 4];
+    uint8_t salt_block[512 + 4];
     memcpy(salt_block, salt, salt_len);
     salt_block[salt_len + 0] = 0x00;
     salt_block[salt_len + 1] = 0x00;
@@ -272,7 +272,7 @@ static inline bool ozos_brainseed_restore(
     if (!seed32_out || !mnemonic_str) return false;
 
     /* Tách 12 từ */
-    char copy[256];
+    char copy[512];
     strncpy(copy, mnemonic_str, sizeof(copy) - 1);
     copy[sizeof(copy) - 1] = '\0';
 
@@ -284,6 +284,7 @@ static inline bool ozos_brainseed_restore(
         token = strtok(NULL, " \t\r\n");
     }
     if (count != 12) return false; /* Bắt buộc đúng 12 từ */
+    if (token != NULL) return false; /* Nghiêm ngặt: Thừa từ thứ 13 trở đi -> Bị từ chối */
 
     /* Tìm index của từng từ trong từ điển BIP-39 */
     uint16_t indices[12];
@@ -327,9 +328,16 @@ static inline bool ozos_brainseed_restore(
         return false; /* Sai checksum -> người dùng gõ nhầm từ */
     }
 
-    /* Tính toán Master Seed 64B -> Lấy 32B đầu cho Ed25519 & X25519 */
+    /* Tính toán Master Seed 64B -> Chuẩn hóa 12 từ với khoảng trắng đơn chống phân nhánh danh tính */
+    char normalized_mnemonic[256];
+    normalized_mnemonic[0] = 0;
+    for (int i = 0; i < 12; ++i) {
+        if (i > 0) strcat(normalized_mnemonic, " ");
+        strcat(normalized_mnemonic, words[i]);
+    }
+
     uint8_t seed64[64];
-    ozos_pbkdf2_sha512_bip39(seed64, mnemonic_str, passphrase ? passphrase : "");
+    ozos_pbkdf2_sha512_bip39(seed64, normalized_mnemonic, passphrase ? passphrase : "");
     memcpy(seed32_out, seed64, 32);
 
     return true;
