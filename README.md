@@ -133,7 +133,8 @@ OZOS/
 │   ├── TORTURE_VERIFICATION.md  # JTAG, Cold-Boot, DPA/EMA, ZKP Intent, Decapitation
 │   ├── COSMIC_PARADOX_AUDIT.md  # Matrix Cage, 0K Freezing, Cosmic Ray, Creator Paradox
 │   ├── RFC-OZOS-0080.md     # Formal RFC Protocol Specification
-│   └── OZOS_15_TIER_SOVEREIGN_BLUEPRINT.md # Full 15-tier architecture map
+│   ├── OZOS_15_TIER_SOVEREIGN_BLUEPRINT.md # Full 15-tier architecture map
+│   └── SOVEREIGN_EVOLUTION_ROADMAP.md      # Mandatory Next-Gen Engineering Mandates
 │
 ├── tests/                   # Independent Verification Suites
 │   ├── test_libozos.c       # Native C unit tests for libozos.h
