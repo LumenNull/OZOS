@@ -134,7 +134,8 @@ OZOS/
 │   ├── COSMIC_PARADOX_AUDIT.md  # Matrix Cage, 0K Freezing, Cosmic Ray, Creator Paradox
 │   ├── RFC-OZOS-0080.md     # Formal RFC Protocol Specification
 │   ├── OZOS_15_TIER_SOVEREIGN_BLUEPRINT.md # Full 15-tier architecture map
-│   └── SOVEREIGN_EVOLUTION_ROADMAP.md      # Mandatory Next-Gen Engineering Mandates
+│   ├── SOVEREIGN_EVOLUTION_ROADMAP.md      # Mandatory Next-Gen Engineering Mandates
+│   └── CRYPTOGRAPHIC_AUDIT_DEEP_INSPECTION.md # Master 6-Pillar Cryptographic & Physical Audit
 │
 ├── tests/                   # Independent Verification Suites
 │   ├── test_libozos.c       # Native C unit tests for libozos.h
