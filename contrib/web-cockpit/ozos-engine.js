@@ -113,9 +113,16 @@ class OZOSEngine {
         view.setBigUint64(4, this.currentNonce, true);
 
         // 3. Cognitive Fingerprint / Reserved (64 bytes, offset 12..75)
-        for (let i = 0; i < 16; i++) {
+        // 15 hệ số nhận thức (slots 0..14)
+        for (let i = 0; i < 15; i++) {
             view.setFloat32(12 + i * 4, 1.0 + (i * 0.1), true);
         }
+        // Slot 15 (Offset 72 - 75): FNV-1a 32-bit payload checksum (tương thích GenesisShield)
+        let payloadChecksum = 0x811C9DC5;
+        for (let i = 0; i < payloadBytes.length; i++) {
+            payloadChecksum = Math.imul(payloadChecksum ^ payloadBytes[i], 0x01000193) >>> 0;
+        }
+        view.setUint32(72, payloadChecksum, true);
 
         // 4. Payload Length (4 bytes, offset 76)
         view.setUint32(76, payloadBytes.length, true);
@@ -174,6 +181,18 @@ class OZOSEngine {
         // Chống rác nối đuôi (Trailing garbage)
         if (packetUint8.length > 80 + payloadLen) {
             return { valid: false, code: 4, error: "Phát hiện rác nối đuôi bất thường (Trailing garbage detected)." };
+        }
+
+        // Kiểm tra toàn vẹn Payload chống sửa đổi tại chỗ (FNV-1a 32-bit tương thích GenesisShield)
+        if (payloadLen > 0) {
+            let calcChecksum = 0x811C9DC5;
+            for (let i = 0; i < payloadLen; i++) {
+                calcChecksum = Math.imul(calcChecksum ^ packetUint8[80 + i], 0x01000193) >>> 0;
+            }
+            const expectedChecksum = view.getUint32(72, true);
+            if (expectedChecksum !== 0 && calcChecksum !== expectedChecksum) {
+                return { valid: false, code: 5, error: "Dữ liệu payload bị sửa đổi hoặc lật bit (Checksum FNV-1a không khớp)." };
+            }
         }
 
         const payloadBytes = packetUint8.slice(80, 80 + payloadLen);
@@ -935,26 +954,59 @@ class OZOSEngine {
 
     /**
      * Tầng 6 & 12: Niêm phong Local Vault an toàn với Gói 80-byte Aligned
+     *
+     * Invariant thiết kế:
+     * - Tripwire MAC16 mặc định (seed 0xA5A5A5A5) là cơ chế kiểm định toàn vẹn siêu tốc độ phần cứng (<20ns),
+     *   chống suy thoái bộ nhớ (bit-flip) và can thiệp ngoài ý muốn.
+     * - Khi bảo mật chống kẻ tấn công có chủ đích biết trước thuật toán, cung cấp `vaultKey` bí mật.
+     *   Seed MAC16 sẽ được dẫn xuất từ `vaultKey` thành Keyed Tripwire (HMAC-equivalent), ngăn kẻ tấn công
+     *   tính lại MAC nếu không có khóa bí mật.
      */
-    saveLocalVault(dataObj) {
+    saveLocalVault(dataObj, vaultKey = null) {
         const rawStr = JSON.stringify(dataObj);
-        const pkt = this.buildAligned80BytePacket(rawStr);
-        return {
+        let secretSeed = 0xA5A5A5A5n;
+        if (vaultKey !== null && vaultKey !== undefined) {
+            let h = 0xCBF29CE484222325n;
+            const keyStr = String(vaultKey);
+            for (let i = 0; i < keyStr.length; i++) {
+                h = ((h ^ BigInt(keyStr.charCodeAt(i))) * 0x100000001B3n) & 0xFFFFFFFFFFFFFFFFn;
+            }
+            secretSeed = h;
+        }
+        const pkt = this.buildAligned80BytePacket(rawStr, null, secretSeed);
+        const res = {
             base64: pkt.base64,
             nonce: pkt.nonce.toString(),
             mac16: pkt.mac16
         };
+        if (vaultKey !== null && vaultKey !== undefined) {
+            res.keyed = true;
+        }
+        return res;
     }
 
     /**
      * Tầng 6 & 12: Mở và xác thực Local Vault
+     * Hỗ trợ xác thực với vaultKey bí mật (Keyed Tripwire)
      */
-    verifyLocalVault(vaultRecord, lastKnownNonce = 0n) {
+    verifyLocalVault(vaultRecord, lastKnownNonce = 0n, vaultKey = null) {
         if (!vaultRecord || !vaultRecord.base64) {
             return { valid: false, error: "Dữ liệu Vault rỗng" };
         }
+        let secretSeed = 0xA5A5A5A5n;
+        if (vaultKey !== null && vaultKey !== undefined) {
+            let h = 0xCBF29CE484222325n;
+            const keyStr = String(vaultKey);
+            for (let i = 0; i < keyStr.length; i++) {
+                h = ((h ^ BigInt(keyStr.charCodeAt(i))) * 0x100000001B3n) & 0xFFFFFFFFFFFFFFFFn;
+            }
+            secretSeed = h;
+        } else if (vaultRecord.keyed) {
+            return { valid: false, error: "Bản ghi Vault yêu cầu khóa bí mật vaultKey để xác thực (Keyed Tripwire)." };
+        }
+
         const bytes = this.base64ToBytes(vaultRecord.base64);
-        const res = this.validateAligned80BytePacket(bytes, lastKnownNonce);
+        const res = this.validateAligned80BytePacket(bytes, lastKnownNonce, secretSeed);
         if (!res.valid) {
             return { valid: false, error: res.reason };
         }

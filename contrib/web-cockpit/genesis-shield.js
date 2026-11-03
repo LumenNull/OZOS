@@ -6,6 +6,7 @@ class GenesisShield {
     constructor() {
         this.wasm = null;
         this.isReady = false;
+        this.lastSeenNonce = 0n; // Stateful nonce tracking
     }
 
     // Khởi tạo và nạp lõi WASM
@@ -86,11 +87,15 @@ class GenesisShield {
         return uint8View; // Trả về byte nhị phân sẵn sàng để gửi WebSocket/API
     }
 
-    validatePacket(uint8View, lastSeenNonce) {
+    validatePacket(uint8View, lastSeenNonce = null) {
         this._checkReady();
         if (!uint8View || uint8View.length < 80) {
             return 2; // Gói tin nhỏ hơn 80 bytes (Kích thước tối thiểu)
         }
+
+        const effectiveLastNonce = (lastSeenNonce !== null && lastSeenNonce !== undefined && lastSeenNonce !== 0n)
+            ? BigInt(lastSeenNonce)
+            : this.lastSeenNonce;
 
         const view = new DataView(uint8View.buffer, uint8View.byteOffset, uint8View.byteLength);
 
@@ -102,7 +107,7 @@ class GenesisShield {
 
         // 2. Kiểm tra Replay Attack
         const nonce = view.getBigUint64(4, true);
-        if (nonce <= BigInt(lastSeenNonce)) {
+        if (nonce <= effectiveLastNonce) {
             return 3; // Tấn công phát lại (Nonce <= lastSeenNonce)
         }
 
@@ -140,6 +145,7 @@ class GenesisShield {
             if (status !== 0) return status;
         }
 
+        this.lastSeenNonce = nonce;
         return 0; // Hợp lệ tuyệt đối
     }
 
@@ -179,3 +185,5 @@ class GenesisShield {
         if (!this.isReady) throw new Error("🔴 [Genesis Shield] Bạn phải gọi await shield.init() trước khi dùng!");
     }
 }
+
+if (typeof module !== 'undefined') module.exports = GenesisShield;

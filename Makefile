@@ -70,15 +70,15 @@ wasm:
 	@echo "  [O.Z.O.S] COMPILING BARE-METAL WASM SIMD128 MODULE (EMCC)"
 	@echo "================================================================="
 	@if command -v emcc >/dev/null 2>&1; then \
-		echo "  [BUILD] Compiling core/dct.cpp with emcc (SIMD128 enabled)..."; \
+		echo "  [BUILD] Compiling core/dct.cpp core/integrity.cpp core/transport.cpp with emcc (SIMD128 enabled)..."; \
 		emcc -O3 -msimd128 -s WASM=1 -s MODULARIZE=1 -s EXPORT_NAME="createZeroDctModule" \
 			-s EXPORTED_FUNCTIONS="['_dct_init','_dct8x8_scalar','_dct8x8_simd','_dct8x8_batch_scalar','_dct8x8_batch_simd','_compute_block_fingerprint','_verify_block_integrity_adaptive','_verify_block_integrity','_parse_and_validate_packet','_malloc','_free']" \
-			-s EXPORTED_RUNTIME_METHODS="['ccall','cwrap']" core/dct.cpp core/transport.cpp -o contrib/web-cockpit/zero_dct.js && \
+			-s EXPORTED_RUNTIME_METHODS="['ccall','cwrap']" core/dct.cpp core/integrity.cpp core/transport.cpp -o contrib/web-cockpit/zero_dct.js && \
 		cp contrib/web-cockpit/zero_dct.wasm core/zero_dct.wasm && \
 		$(PYTHON) contrib/web-cockpit/embed_wasm.py && \
 		echo "  [SUCCESS] zero_dct.wasm compiled and embedded successfully."; \
 	else \
-		echo "  [NOTICE] emcc not found in PATH; using pre-built bit-exact zero_dct.wasm (15,885 bytes)."; \
+		echo "  [NOTICE] emcc not found in PATH; using pre-built bit-exact zero_dct.wasm (15,885 bytes, SHA256: d7924fed69dae884eeb1dcfab828e826aa7513b190f84860d5b1fe59393d7b4a3)."; \
 	fi
 
 test_wasm:

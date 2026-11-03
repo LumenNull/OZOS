@@ -662,10 +662,10 @@ static void cmd_audio_synth(const char* text_data, const char* out_wav, uint8_t 
     free(wav_samples);
 }
 
-static void cmd_audio_decode(const char* in_wav, int forced_mode) {
+static int cmd_audio_decode(const char* in_wav, int forced_mode) {
     if (!in_wav) {
         printf("Loi: ozos audio-decode <input.wav> [--stealth | --audible]\n");
-        return;
+        return 1;
     }
 
     size_t num_samples = 0;
@@ -673,14 +673,14 @@ static void cmd_audio_decode(const char* in_wav, int forced_mode) {
     short* raw_samples = read_wav_file(in_wav, &num_samples, &sample_rate);
     if (!raw_samples) {
         printf("🚨 [AUDIO DECODE] Khong the doc file WAV: %s\n", in_wav);
-        return;
+        return 1;
     }
 
     /* Kiem tra tinh hop le cua sample_rate: Phong ve chia cho 0 va tran bo nho float_block */
     if (sample_rate < 8000 || sample_rate > 48000) {
         printf("🚨 [AUDIO DECODE] Sample rate khong hop le (%u Hz). Chi chap nhan tu 8000 Hz den 48000 Hz.\n", sample_rate);
         free(raw_samples);
-        return;
+        return 1;
     }
 
     float tone_dur = 0.040f;
@@ -691,13 +691,13 @@ static void cmd_audio_decode(const char* in_wav, int forced_mode) {
     if (samples_per_tone == 0 || samples_per_tone > 2048) {
         printf("🚨 [AUDIO DECODE] Samples per tone khong hop le (%zu).\n", samples_per_tone);
         free(raw_samples);
-        return;
+        return 1;
     }
 
     if (num_samples < samples_pre * 2 + samples_per_tone) {
         printf("🚨 File qua ngan.\n");
         free(raw_samples);
-        return;
+        return 1;
     }
 
     float float_pre[4096];
@@ -743,6 +743,7 @@ static void cmd_audio_decode(const char* in_wav, int forced_mode) {
     printf("=================================================================\n");
 
     free(raw_samples);
+    return 0;
 }
 
 /* =============================================================================
@@ -877,11 +878,11 @@ static void cmd_daemon(int port) {
    COMMANDS: [MẢNH GHÉP 2] ACOUSTIC ECDH TUNNEL & HANDSHAKE
    ============================================================================= */
 
-static void cmd_handshake_syn(const char* wav_path, uint32_t session_nonce) {
+static int cmd_handshake_syn(const char* wav_path, uint32_t session_nonce) {
     uint8_t a_pub[32], a_sk[32];
     if (ozos_ecdh_keypair(a_pub, a_sk) != 0) {
         printf("🚨 Sinh cap khoa Ephemeral A that bai!\n");
-        return;
+        return 1;
     }
     if (session_nonce == 0) session_nonce = (uint32_t)time(NULL);
 
@@ -910,37 +911,38 @@ static void cmd_handshake_syn(const char* wav_path, uint32_t session_nonce) {
     printf("Huong dan tiep theo cho Node B:\n");
     printf("  ozos.exe handshake-ack %s [ack.wav]\n", syn_hex);
     printf("=================================================================\n");
+    return 0;
 }
 
-static void cmd_handshake_ack(const char* syn_hex, const char* wav_path) {
+static int cmd_handshake_ack(const char* syn_hex, const char* wav_path) {
     if (!syn_hex) {
         printf("Loi: ozos handshake-ack <syn_hex> [ack.wav]\n");
-        return;
+        return 1;
     }
     size_t hex_len = strlen(syn_hex);
-    if (hex_len != sizeof(ozos_handshake_syn_t) * 2) {
+    if (hex_len != sizeof(ozos_handshake_syn_t) * 2 || !is_valid_hex(syn_hex, hex_len)) {
         printf("🚨 SYN frame khong hop le (can %zu ky tu hex, nhan duoc %zu)\n",
                sizeof(ozos_handshake_syn_t) * 2, hex_len);
-        return;
+        return 1;
     }
     ozos_handshake_syn_t syn;
     hex_to_bytes(syn_hex, (uint8_t*)&syn, sizeof(syn));
 
     if (!ozos_handshake_syn_verify(&syn)) {
         printf("🚨 [TU CHOI] SYN Frame bi loi MAC16 hoac Magic khong khop!\n");
-        return;
+        return 1;
     }
 
     uint8_t b_pub[32], b_sk[32];
     if (ozos_ecdh_keypair(b_pub, b_sk) != 0) {
         printf("🚨 Node B sinh cap khoa that bai!\n");
-        return;
+        return 1;
     }
 
     uint8_t shared_secret[32];
     if (ozos_ecdh_shared_secret(shared_secret, syn.eph_pubkey, b_sk) != 0) {
         printf("🚨 Tinh Shared Secret ECDH that bai!\n");
-        return;
+        return 1;
     }
 
     uint8_t session_key[32];
@@ -974,25 +976,31 @@ static void cmd_handshake_ack(const char* syn_hex, const char* wav_path) {
     printf("Huong dan tiep theo cho Node A:\n");
     printf("  ozos.exe handshake-finish %s <a_sk_hex> <a_pub_hex>\n", ack_hex);
     printf("=================================================================\n");
+    return 0;
 }
 
-static void cmd_handshake_finish(const char* ack_hex, const char* a_sk_hex, const char* a_pub_hex) {
+static int cmd_handshake_finish(const char* ack_hex, const char* a_sk_hex, const char* a_pub_hex) {
     if (!ack_hex || !a_sk_hex || !a_pub_hex) {
         printf("Loi: ozos handshake-finish <ack_hex> <a_sk_hex> <a_pub_hex>\n");
-        return;
+        return 1;
     }
     size_t hex_len = strlen(ack_hex);
-    if (hex_len != sizeof(ozos_handshake_ack_t) * 2) {
+    if (hex_len != sizeof(ozos_handshake_ack_t) * 2 || !is_valid_hex(ack_hex, hex_len)) {
         printf("🚨 ACK frame khong hop le (can %zu ky tu hex, nhan duoc %zu)\n",
                sizeof(ozos_handshake_ack_t) * 2, hex_len);
-        return;
+        return 1;
+    }
+    if (strlen(a_sk_hex) != 64 || !is_valid_hex(a_sk_hex, 64) ||
+        strlen(a_pub_hex) != 64 || !is_valid_hex(a_pub_hex, 64)) {
+        printf("🚨 Khoa a_sk hoac a_pub khong hop le hoac sai do dai (can dung 64 ky tu hex).\n");
+        return 1;
     }
     ozos_handshake_ack_t ack;
     hex_to_bytes(ack_hex, (uint8_t*)&ack, sizeof(ack));
 
     if (!ozos_handshake_ack_verify(&ack)) {
         printf("🚨 [TU CHOI] ACK Frame bi loi MAC16 hoac Magic khong khop!\n");
-        return;
+        return 1;
     }
 
     uint8_t a_sk[32], a_pub[32];
@@ -1002,7 +1010,7 @@ static void cmd_handshake_finish(const char* ack_hex, const char* a_sk_hex, cons
     uint8_t shared_secret[32];
     if (ozos_ecdh_shared_secret(shared_secret, ack.eph_pubkey, a_sk) != 0) {
         printf("🚨 Tinh Shared Secret ECDH that bai!\n");
-        return;
+        return 1;
     }
 
     uint8_t session_key[32];
@@ -1010,7 +1018,7 @@ static void cmd_handshake_finish(const char* ack_hex, const char* a_sk_hex, cons
 
     if (!ozos_verify_handshake_auth_tag(ack.auth_tag, session_key, a_pub, ack.eph_pubkey)) {
         printf("🚨 [XAC THUC THAT BAI] Poly1305 Auth Tag cua Node B khong khop!\n");
-        return;
+        return 1;
     }
 
     char k_sess_hex[65];
@@ -1027,22 +1035,23 @@ static void cmd_handshake_finish(const char* ack_hex, const char* a_sk_hex, cons
     printf("De truyen du lieu bi mat qua duong ham:\n");
     printf("  ozos.exe tunnel-encrypt \"NOI DUNG BI MAT\" %s\n", k_sess_hex);
     printf("=================================================================\n");
+    return 0;
 }
 
-static void cmd_tunnel_encrypt(const char* message, const char* session_key_hex) {
+static int cmd_tunnel_encrypt(const char* message, const char* session_key_hex) {
     if (!message || !session_key_hex) {
         printf("Loi: ozos tunnel-encrypt <message> <session_key_hex>\n");
-        return;
+        return 1;
     }
     size_t msg_len = strlen(message);
     if (msg_len > OZOS_TUNNEL_MAX_PAYLOAD) {
         printf("🚨 Thong diep vuot qua %d bytes.\n", OZOS_TUNNEL_MAX_PAYLOAD);
-        return;
+        return 1;
     }
     uint8_t session_key[32];
-    if (strlen(session_key_hex) != 64) {
+    if (strlen(session_key_hex) != 64 || !is_valid_hex(session_key_hex, 64)) {
         printf("🚨 Session key hex phai dung 64 ky tu hex (32 bytes).\n");
-        return;
+        return 1;
     }
     hex_to_bytes(session_key_hex, session_key, 32);
 
@@ -1053,11 +1062,11 @@ static void cmd_tunnel_encrypt(const char* message, const char* session_key_hex)
     size_t enc_len = ozos_tunnel_encrypt(frame_buf, sizeof(frame_buf), (const uint8_t*)message, msg_len, session_key, nonce);
     if (enc_len == 0) {
         printf("🚨 Ma hoa that bai!\n");
-        return;
+        return 1;
     }
 
     char* hex_out = (char*)malloc(enc_len * 2 + 1);
-    if (!hex_out) return;
+    if (!hex_out) return 1;
     bytes_to_hex(frame_buf, enc_len, hex_out);
 
     printf("=================================================================\n");
@@ -1068,33 +1077,38 @@ static void cmd_tunnel_encrypt(const char* message, const char* session_key_hex)
     printf("• Encrypted Frame Hex:\n%s\n", hex_out);
     printf("=================================================================\n");
     free(hex_out);
+    return 0;
 }
 
-static void cmd_tunnel_decrypt(const char* frame_hex, const char* session_key_hex) {
+static int cmd_tunnel_decrypt(const char* frame_hex, const char* session_key_hex) {
     if (!frame_hex || !session_key_hex) {
         printf("Loi: ozos tunnel-decrypt <frame_hex> <session_key_hex>\n");
-        return;
+        return 1;
     }
     size_t hex_len = strlen(frame_hex);
+    if (hex_len % 2 != 0 || !is_valid_hex(frame_hex, hex_len)) {
+        printf("🚨 Frame hex khong hop le hoac do dai le.\n");
+        return 1;
+    }
     size_t byte_count = hex_len / 2;
     if (byte_count < sizeof(ozos_tunnel_data_hdr_t) + 16) {
         printf("🚨 Khung du lieu qua ngan.\n");
-        return;
+        return 1;
     }
     if (byte_count > sizeof(ozos_tunnel_data_hdr_t) + 16 + OZOS_TUNNEL_MAX_PAYLOAD) {
         printf("🚨 Khung du lieu vuot qua gioi han bo nho cho phep (> %zu bytes).\n",
                sizeof(ozos_tunnel_data_hdr_t) + 16 + (size_t)OZOS_TUNNEL_MAX_PAYLOAD);
-        return;
+        return 1;
     }
     uint8_t session_key[32];
-    if (strlen(session_key_hex) != 64) {
+    if (strlen(session_key_hex) != 64 || !is_valid_hex(session_key_hex, 64)) {
         printf("🚨 Session key hex phai dung 64 ky tu hex.\n");
-        return;
+        return 1;
     }
     hex_to_bytes(session_key_hex, session_key, 32);
 
     uint8_t* frame_buf = (uint8_t*)malloc(byte_count);
-    if (!frame_buf) return;
+    if (!frame_buf) return 1;
     hex_to_bytes(frame_hex, frame_buf, byte_count);
 
     uint8_t plaintext[OZOS_TUNNEL_MAX_PAYLOAD + 1];
@@ -1110,10 +1124,13 @@ static void cmd_tunnel_decrypt(const char* frame_hex, const char* session_key_he
         printf("Trang thai: ✅ XÁC THỰC POLY1305 & GIẢI MÃ THÀNH CÔNG 100%%\n");
         printf("• Payload Length : %zu bytes\n", plain_len);
         printf("• Noi dung nhan  : \"%s\"\n", plaintext);
+        printf("=================================================================\n");
+        return 0;
     } else {
         printf("Trang thai: 🚨 TỪ CHỐI! KHÓA PHIÊN SAI HOẶC DỮ LIỆU ĐÃ BỊ SỬA ĐỔI / NGHE LÉN!\n");
+        printf("=================================================================\n");
+        return 1;
     }
-    printf("=================================================================\n");
 }
 
 /* =============================================================================
@@ -1229,16 +1246,16 @@ static void cmd_gossip_beacon(uint32_t epoch, const char* wav_path) {
     printf("=================================================================\n");
 }
 
-static void cmd_gossip_listen(const char* beacon_hex, uint32_t my_epoch) {
+static int cmd_gossip_listen(const char* beacon_hex, uint32_t my_epoch) {
     if (!beacon_hex) {
         printf("Loi: ozos gossip-listen <beacon_hex> [my_epoch]\n");
-        return;
+        return 1;
     }
     size_t hex_len = strlen(beacon_hex);
-    if (hex_len != sizeof(ozos_gossip_beacon_t) * 2) {
+    if (hex_len != sizeof(ozos_gossip_beacon_t) * 2 || !is_valid_hex(beacon_hex, hex_len)) {
         printf("🚨 Beacon hex khong hop le (can %zu ky tu hex, nhan duoc %zu)\n",
                sizeof(ozos_gossip_beacon_t) * 2, hex_len);
-        return;
+        return 1;
     }
 
     ozos_gossip_beacon_t remote_beacon;
@@ -1246,7 +1263,7 @@ static void cmd_gossip_listen(const char* beacon_hex, uint32_t my_epoch) {
 
     if (!ozos_gossip_beacon_verify(&remote_beacon)) {
         printf("🚨 [TU CHOI] Beacon bi loi MAC16 hoac Magic khong hop le!\n");
-        return;
+        return 1;
     }
 
     if (my_epoch == 0) my_epoch = 100;
@@ -1277,6 +1294,7 @@ static void cmd_gossip_listen(const char* beacon_hex, uint32_t my_epoch) {
         printf("• Phan quyet Dong thuan: ⚠️  FORK_DETECTED - Phat hien re nhanh Merkle khac nhau o cung Epoch!\n");
     }
     printf("=================================================================\n");
+    return 0;
 }
 
 /* =============================================================================
@@ -1340,32 +1358,32 @@ int main(int argc, char* argv[]) {
     } else if (strcmp(cmd, "handshake-syn") == 0) {
         const char* wav_path = (argc >= 3) ? argv[2] : NULL;
         uint32_t session_nonce = (argc >= 4) ? (uint32_t)strtoul(argv[3], NULL, 10) : 0;
-        cmd_handshake_syn(wav_path, session_nonce);
+        return cmd_handshake_syn(wav_path, session_nonce);
     } else if (strcmp(cmd, "handshake-ack") == 0) {
         if (argc < 3) {
             printf("Loi: ozos.exe handshake-ack <syn_hex> [output_ack.wav]\n");
             return 1;
         }
         const char* wav_path = (argc >= 4) ? argv[3] : NULL;
-        cmd_handshake_ack(argv[2], wav_path);
+        return cmd_handshake_ack(argv[2], wav_path);
     } else if (strcmp(cmd, "handshake-finish") == 0) {
         if (argc < 5) {
             printf("Loi: ozos.exe handshake-finish <ack_hex> <a_sk_hex> <a_pub_hex>\n");
             return 1;
         }
-        cmd_handshake_finish(argv[2], argv[3], argv[4]);
+        return cmd_handshake_finish(argv[2], argv[3], argv[4]);
     } else if (strcmp(cmd, "tunnel-encrypt") == 0) {
         if (argc < 4) {
             printf("Loi: ozos.exe tunnel-encrypt <message> <session_key_hex>\n");
             return 1;
         }
-        cmd_tunnel_encrypt(argv[2], argv[3]);
+        return cmd_tunnel_encrypt(argv[2], argv[3]);
     } else if (strcmp(cmd, "tunnel-decrypt") == 0) {
         if (argc < 4) {
             printf("Loi: ozos.exe tunnel-decrypt <frame_hex> <session_key_hex>\n");
             return 1;
         }
-        cmd_tunnel_decrypt(argv[2], argv[3]);
+        return cmd_tunnel_decrypt(argv[2], argv[3]);
     } else if (strcmp(cmd, "brainseed-gen") == 0) {
         const char* passphrase = (argc >= 3) ? argv[2] : "";
         cmd_brainseed_gen(passphrase);
@@ -1386,7 +1404,7 @@ int main(int argc, char* argv[]) {
             return 1;
         }
         uint32_t my_epoch = (argc >= 4) ? (uint32_t)strtoul(argv[3], NULL, 10) : 100;
-        cmd_gossip_listen(argv[2], my_epoch);
+        return cmd_gossip_listen(argv[2], my_epoch);
     } else if (strcmp(cmd, "audio-synth") == 0) {
         if (argc < 4) {
             printf("Loi: ozos.exe audio-synth <text> <output.wav> [--stealth | --audible]\n");
@@ -1407,7 +1425,7 @@ int main(int argc, char* argv[]) {
             if (strcmp(argv[3], "--stealth") == 0) forced_mode = OZOS_AUDIO_MODE_STEALTH;
             else if (strcmp(argv[3], "--audible") == 0) forced_mode = OZOS_AUDIO_MODE_AUDIBLE;
         }
-        cmd_audio_decode(argv[2], forced_mode);
+        return cmd_audio_decode(argv[2], forced_mode);
     } else if (strcmp(cmd, "daemon") == 0 || strcmp(cmd, "--daemon") == 0) {
         int port = (argc >= 3) ? atoi(argv[2]) : OZOS_DEFAULT_DAEMON_PORT;
         cmd_daemon(port);

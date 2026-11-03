@@ -3,6 +3,14 @@
 O.Z.O.S - Local Sovereign HTTP Server & Native Microkernel Bridge
 Serves the O.Z.O.S Cockpit locally with proper WASM MIME-types and zero-server isolation.
 Bridges Web Cockpit directly to native ozos.exe via localhost API.
+
+SECURITY ARCHITECTURE & INVARIANTS:
+- Localhost Loopback Isolation: server.py binds exclusively to 127.0.0.1 (never 0.0.0.0).
+- Local Caller Trust Model: Callers without an Origin header (e.g. local CLI processes, curl)
+  are treated as authenticated host-local processes by design.
+- Strict Cross-Origin Protection: Any browser request carrying a non-whitelisted Origin header
+  is strictly rejected (403 Forbidden).
+- Directory listing is disabled across all endpoints.
 """
 import http.server
 import socketserver
@@ -22,6 +30,10 @@ OZOS_EXE = os.path.join(DIRECTORY, "ozos.exe")
 class OZOSRequestHandler(http.server.SimpleHTTPRequestHandler):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, directory=DIRECTORY, **kwargs)
+
+    def list_directory(self, path):
+        self.send_error(404, "Directory listing disabled by policy")
+        return None
 
     def end_headers(self):
         self.send_header('Cross-Origin-Opener-Policy', 'same-origin')
@@ -48,9 +60,11 @@ class OZOSRequestHandler(http.server.SimpleHTTPRequestHandler):
         if self.path == '/api/cmd':
             # Giả định an toàn: Chỉ chấp nhận các kết nối cục bộ nội bộ (127.0.0.1) từ trạm chỉ huy của chủ quyền
             try:
-                cl_val = self.headers.get('Content-Length', '0')
+                cl_val = self.headers.get('Content-Length')
+                if cl_val is None:
+                    raise ValueError("Missing Content-Length header")
                 content_length = int(cl_val)
-                if content_length < 0 or content_length > 10485760: # Giới hạn tối đa 10MB
+                if content_length <= 0 or content_length > 10485760: # Giới hạn tối đa 10MB
                     raise ValueError("Content-Length out of bounds")
             except (ValueError, TypeError):
                 self.send_response(400)

@@ -10,25 +10,41 @@ typedef i64 gf[16];
 #if defined(_WIN32)
 #include <windows.h>
 #include <wincrypt.h>
+#include <stdlib.h>
 #pragma comment(lib, "advapi32.lib")
 void randombytes(u8 *buf, u64 len) {
     HCRYPTPROV prov = 0;
+    BOOL ok = FALSE;
     if (CryptAcquireContextA(&prov, NULL, NULL, PROV_RSA_FULL, CRYPT_VERIFYCONTEXT | CRYPT_SILENT)) {
-        CryptGenRandom(prov, (DWORD)len, buf);
+        ok = CryptGenRandom(prov, (DWORD)len, buf);
         CryptReleaseContext(prov, 0);
-    } else {
-        for (u64 i = 0; i < len; ++i) buf[i] = (u8)(i ^ 0x5A);
+    }
+    if (!ok) {
+        /* Fail-closed: Never emit deterministic bytes on CSPRNG failure */
+        abort();
     }
 }
 #else
 #include <unistd.h>
 #include <fcntl.h>
+#include <stdlib.h>
+#include <errno.h>
 void randombytes(u8 *buf, u64 len) {
     int fd = open("/dev/urandom", O_RDONLY);
-    if (fd >= 0) {
-        (void)read(fd, buf, len);
-        close(fd);
+    if (fd < 0) {
+        abort();
     }
+    u64 total = 0;
+    while (total < len) {
+        ssize_t n = read(fd, buf + total, (size_t)(len - total));
+        if (n <= 0) {
+            if (n < 0 && errno == EINTR) continue;
+            close(fd);
+            abort();
+        }
+        total += (u64)n;
+    }
+    close(fd);
 }
 #endif
 
