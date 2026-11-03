@@ -184,14 +184,15 @@ class OZOSEngine {
         }
 
         // Kiểm tra toàn vẹn Payload chống sửa đổi tại chỗ (FNV-1a 32-bit tương thích GenesisShield)
+        // Triệt tiêu hoàn toàn lỗ hổng bypass khi kẻ tấn công set slot 15 = 0
         if (payloadLen > 0) {
             let calcChecksum = 0x811C9DC5;
             for (let i = 0; i < payloadLen; i++) {
                 calcChecksum = Math.imul(calcChecksum ^ packetUint8[80 + i], 0x01000193) >>> 0;
             }
             const expectedChecksum = view.getUint32(72, true);
-            if (expectedChecksum !== 0 && calcChecksum !== expectedChecksum) {
-                return { valid: false, code: 5, error: "Dữ liệu payload bị sửa đổi hoặc lật bit (Checksum FNV-1a không khớp)." };
+            if (calcChecksum !== expectedChecksum) {
+                return { valid: false, code: 5, error: "Dữ liệu payload bị sửa đổi hoặc thiếu chữ ký toàn vẹn (Checksum FNV-1a không khớp)." };
             }
         }
 
@@ -959,7 +960,7 @@ class OZOSEngine {
      * - Tripwire MAC16 mặc định (seed 0xA5A5A5A5) là cơ chế kiểm định toàn vẹn siêu tốc độ phần cứng (<20ns),
      *   chống suy thoái bộ nhớ (bit-flip) và can thiệp ngoài ý muốn.
      * - Khi bảo mật chống kẻ tấn công có chủ đích biết trước thuật toán, cung cấp `vaultKey` bí mật.
-     *   Seed MAC16 sẽ được dẫn xuất từ `vaultKey` thành Keyed Tripwire (HMAC-equivalent), ngăn kẻ tấn công
+     *   Seed MAC16 sẽ được dẫn xuất từ `vaultKey` thành Keyed Tripwire (Domain-separated 64-bit FNV-1a), ngăn kẻ tấn công
      *   tính lại MAC nếu không có khóa bí mật.
      */
     saveLocalVault(dataObj, vaultKey = null) {
@@ -967,7 +968,7 @@ class OZOSEngine {
         let secretSeed = 0xA5A5A5A5n;
         if (vaultKey !== null && vaultKey !== undefined) {
             let h = 0xCBF29CE484222325n;
-            const keyStr = String(vaultKey);
+            const keyStr = "OZOS_VAULT_KEYED_TRIPWIRE_V1:" + String(vaultKey);
             for (let i = 0; i < keyStr.length; i++) {
                 h = ((h ^ BigInt(keyStr.charCodeAt(i))) * 0x100000001B3n) & 0xFFFFFFFFFFFFFFFFn;
             }
@@ -996,7 +997,7 @@ class OZOSEngine {
         let secretSeed = 0xA5A5A5A5n;
         if (vaultKey !== null && vaultKey !== undefined) {
             let h = 0xCBF29CE484222325n;
-            const keyStr = String(vaultKey);
+            const keyStr = "OZOS_VAULT_KEYED_TRIPWIRE_V1:" + String(vaultKey);
             for (let i = 0; i < keyStr.length; i++) {
                 h = ((h ^ BigInt(keyStr.charCodeAt(i))) * 0x100000001B3n) & 0xFFFFFFFFFFFFFFFFn;
             }

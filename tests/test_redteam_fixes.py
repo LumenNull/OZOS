@@ -542,9 +542,113 @@ check_test("Keyed Local Vault bao ve chong ke tan cong biet thuat toan tinh lai 
            p_keyed.returncode == 0,
            "Keyed Tripwire prevents unauthenticated state forgery")
 
+# ----------------------------------------------------------------------
+# 21. TEST ROUND 6 HIGH 1: Neutralize Zero-Slot Bypass in FNV Check (Engine & Shield)
+# ----------------------------------------------------------------------
+print("\n[TEST 21/24] Kiem Tra Triet Tieu Lo Hong Bypass FNV Bang Slot 15 == 0...")
+test_zeroslot_script = """
+const OZOSEngine = require('./contrib/web-cockpit/ozos-engine.js');
+const GenesisShield = require('./contrib/web-cockpit/genesis-shield.js');
+
+const engine = new OZOSEngine();
+const shield = new GenesisShield();
+shield.isReady = true;
+
+engine.wasm = {
+    _malloc: (n) => 100,
+    _free: (p) => {},
+    HEAPU8: new Uint8Array(2048),
+    _parse_and_validate_packet: (ptr, len, last_n) => 0
+};
+shield.wasm = engine.wasm;
+
+const pkt = engine.buildPacket("SOVEREIGN_ZERO_SLOT_IMMUNITY_TEST", 1000);
+
+// Set slot 15 (offset 72..75) to 0 (bypass attempt)
+const zeroed = new Uint8Array(pkt.packetBytes);
+zeroed[72] = 0; zeroed[73] = 0; zeroed[74] = 0; zeroed[75] = 0;
+
+// Tamper payload byte 80
+zeroed[80] ^= 0x01;
+
+const res_eng = engine.validatePacket(zeroed, 500);
+const res_shield = shield.validatePacket(zeroed, 500);
+
+// Both must strictly reject with code 5 (tamper / invalid checksum)
+const ok = (!res_eng.valid && res_eng.code === 5) && (res_shield === 5);
+process.exit(ok ? 0 : 1);
+"""
+p_zero = subprocess.run(["node", "-e", test_zeroslot_script],
+                        stdout=subprocess.PIPE, stderr=subprocess.PIPE, cwd=REPO_ROOT)
+check_test("Triet tieu hoan toan bypass FNV khi set slot 15 == 0 (ca Engine lan GenesisShield deu bat code 5)",
+           p_zero.returncode == 0,
+           "Zero-slot checksum bypass completely neutralized")
+
+# ----------------------------------------------------------------------
+# 22. TEST ROUND 6 HIGH 2: Brainseed HMAC-SHA512 Long Passphrase Overflow Guard
+# ----------------------------------------------------------------------
+print("\n[TEST 22/24] Kiem Tra Chong Tran Bo Nho Stack Brainseed Voi Passphrase > 244 Ký Tự...")
+rc_gen_long, out_gen_long, _ = run_ozos("brainseed-gen", "P" * 300)
+words = "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about"
+rc_res_long, out_res_long, _ = run_ozos("brainseed-restore", words, "P" * 350)
+
+long_pass_safe = (rc_gen_long == 0) and (rc_res_long == 0) and ("Seed" in out_gen_long) and ("Ed25519" in out_res_long)
+check_test("Passphrase 300-350 ky tu chay an toan tren gen va restore, khong tran bo nho float/stack",
+           long_pass_safe,
+           f"Brainseed long passphrase safe (gen rc={rc_gen_long}, restore rc={rc_res_long})")
+
+# ----------------------------------------------------------------------
+# 23. TEST ROUND 6 MEDIUM 1: GenesisShield Stateful Default Nonce Crash Fix
+# ----------------------------------------------------------------------
+print("\n[TEST 23/24] Kiem Tra GenesisShield Stateful Default Nonce (Khong Crash TypeError)...")
+test_shield_null_script = """
+const OZOSEngine = require('./contrib/web-cockpit/ozos-engine.js');
+const GenesisShield = require('./contrib/web-cockpit/genesis-shield.js');
+
+const engine = new OZOSEngine();
+const shield = new GenesisShield();
+shield.isReady = true;
+
+shield.wasm = {
+    _malloc: (n) => 100,
+    _free: (p) => {},
+    HEAPU8: new Uint8Array(2048),
+    _parse_and_validate_packet: (ptr, len, last_n) => {
+        if (typeof last_n !== 'bigint') throw new TypeError('Expected BigInt!');
+        return 0;
+    }
+};
+
+const pkt = engine.buildPacket("SAFE_SHIELD_NULL_TEST", 1000);
+
+// Validate without passing lastSeenNonce (triggers default stateful tracking)
+const res1 = shield.validatePacket(pkt.packetBytes, null);
+const res2 = shield.validatePacket(pkt.packetBytes); // replay statefully caught
+
+const ok = (res1 === 0) && (res2 === 3);
+process.exit(ok ? 0 : 1);
+"""
+p_null_shield = subprocess.run(["node", "-e", test_shield_null_script],
+                               stdout=subprocess.PIPE, stderr=subprocess.PIPE, cwd=REPO_ROOT)
+check_test("GenesisShield validatePacket voi null/undefined nonce chay an toan va bat replay stateful",
+           p_null_shield.returncode == 0,
+           "Shield stateful null-nonce TypeError eliminated")
+
+# ----------------------------------------------------------------------
+# 24. TEST ROUND 6 LOW 1: packet-sign and packet-build Exit-Code on Oversize Payload
+# ----------------------------------------------------------------------
+print("\n[TEST 24/24] Kiem Tra Exit Code 1 Khi packet-sign / packet-build Vuot Qua 1024 Bytes...")
+rc_sign_over, _, _ = run_ozos("packet-sign", "A" * 1025)
+rc_build_over, _, _ = run_ozos("packet-build", "A" * 1025)
+
+exit_codes_sign_build = (rc_sign_over == 1) and (rc_build_over == 1)
+check_test("CLI packet-sign va packet-build tra ve Exit Code 1 khi payload > 1024 bytes",
+           exit_codes_sign_build,
+           f"Exit codes: sign_over={rc_sign_over}, build_over={rc_build_over}")
+
 print("\n======================================================================")
 if all_passed:
-    print("  🏆 KET LUAN: 20/20 BAI KIEM TRA MASTER RED TEAM DEU PASS 100%!")
+    print("  🏆 KET LUAN: 24/24 BAI KIEM TRA MASTER RED TEAM DEU PASS 100%!")
     print("  TOAN BO DIEM GAY MAT MA, AN TOAN BO NHO & GIAO THUC DA DUOC VA TRIET DE.")
     print("======================================================================")
     sys.exit(0)

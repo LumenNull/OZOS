@@ -171,19 +171,34 @@ typedef struct {
 #include <wincrypt.h>
 static void ozos_secure_random_bytes(uint8_t* out, size_t len) {
     HCRYPTPROV hProv = 0;
+    BOOL ok = FALSE;
     if (CryptAcquireContextA(&hProv, NULL, NULL, PROV_RSA_FULL, CRYPT_VERIFYCONTEXT | CRYPT_SILENT)) {
-        CryptGenRandom(hProv, (DWORD)len, out);
+        ok = CryptGenRandom(hProv, (DWORD)len, out);
         CryptReleaseContext(hProv, 0);
+    }
+    if (!ok) {
+        fprintf(stderr, "🚨 [FATAL] CSPRNG failure in ozos_secure_random_bytes. Aborting fail-closed.\n");
+        abort();
     }
 }
 #else
 static void ozos_secure_random_bytes(uint8_t* out, size_t len) {
     FILE* ur = fopen("/dev/urandom", "rb");
-    if (ur) {
-        size_t n = fread(out, 1, len, ur);
-        (void)n;
-        fclose(ur);
+    if (!ur) {
+        fprintf(stderr, "🚨 [FATAL] Failed to open /dev/urandom. Aborting fail-closed.\n");
+        abort();
     }
+    size_t total = 0;
+    while (total < len) {
+        size_t n = fread(out + total, 1, len - total, ur);
+        if (n == 0) {
+            fclose(ur);
+            fprintf(stderr, "🚨 [FATAL] Failed to read entropy from /dev/urandom. Aborting fail-closed.\n");
+            abort();
+        }
+        total += n;
+    }
+    fclose(ur);
 }
 #endif
 
@@ -340,16 +355,16 @@ static void cmd_keygen(const char* custom_seed_hex) {
     printf("=================================================================\n");
 }
 
-static void cmd_packet_sign(const char* message, uint64_t nonce, const char* custom_seed_hex) {
+static int cmd_packet_sign(const char* message, uint64_t nonce, const char* custom_seed_hex) {
     if (!message) {
         printf("Loi: ozos packet-sign <msg> [nonce] [seed_hex]\n");
-        return;
+        return 1;
     }
 
     size_t msg_len = strlen(message);
     if (msg_len > 1024) {
-        printf("Loi: Thong diep vuot qua 1024 bytes.\n");
-        return;
+        printf("🚨 Loi: Thong diep vuot qua 1024 bytes (nhan %zu bytes).\n", msg_len);
+        return 1;
     }
 
     uint8_t pk[32], sk[64];
@@ -397,18 +412,19 @@ static void cmd_packet_sign(const char* message, uint64_t nonce, const char* cus
     printf("=================================================================\n");
 
     free(hex_dump);
+    return 0;
 }
 
-static void cmd_packet_build(const char* message, uint64_t nonce) {
+static int cmd_packet_build(const char* message, uint64_t nonce) {
     if (!message) {
         printf("Loi: Vui long nhap thong diep: ozos packet-build <msg> [nonce]\n");
-        return;
+        return 1;
     }
 
     size_t msg_len = strlen(message);
     if (msg_len > 1024) {
-        printf("Loi: Thong diep vuot qua 1024 bytes.\n");
-        return;
+        printf("🚨 Loi: Thong diep vuot qua 1024 bytes (nhan %zu bytes).\n", msg_len);
+        return 1;
     }
 
     ozos_packet80_t pkt;
@@ -440,6 +456,7 @@ static void cmd_packet_build(const char* message, uint64_t nonce) {
 
     free(buffer);
     free(hex_dump);
+    return 0;
 }
 
 static int cmd_packet_verify(const char* hex_str, uint64_t last_seen_nonce, const char* trusted_author_pk_hex) {
@@ -474,7 +491,15 @@ static int cmd_packet_verify(const char* hex_str, uint64_t last_seen_nonce, cons
 
     if (st != OZOS_SUCCESS) {
         printf("Trang thai: 🚨 BI TU CHOI (TAMPERED OR REPLAY)\n");
-        if (st == OZOS_ERR_MAGIC_INVALID) printf("• Root Cause    : Sai Magic Header (Goi tin khong phai cua O.Z.O.S)\n");
+        if (st == OZOS_ERR_MAGIC_INVALID) {
+            uint32_t magic_at_0 = 0;
+            if (byte_count >= 4) memcpy(&magic_at_0, buffer, 4);
+            if (magic_at_0 == 0x47454E01) {
+                printf("• Root Cause    : Goi tin thuoc Profile B (GENS-v1 Web Cockpit, Magic tai byte 0). Lenh nay yeu cau Profile A (OZOS-80 SIMD Carrier, Magic tai byte 72).\n");
+            } else {
+                printf("• Root Cause    : Sai Magic Header (Goi tin khong phai cua O.Z.O.S)\n");
+            }
+        }
         else if (st == OZOS_ERR_MAC16_MISMATCH) printf("• Root Cause    : Sai MAC16 (Phat hien bit lat hoac du lieu bi sua doi)\n");
         else if (st == OZOS_ERR_REPLAY_DETECTED) printf("• Root Cause    : Phat hien Replay Attack (Nonce khong tang don dieu)\n");
         else if (st == OZOS_ERR_PAYLOAD_TRUNCATED) printf("• Root Cause    : Payload bi cat xen hoac khong hop le\n");
@@ -1342,11 +1367,11 @@ int main(int argc, char* argv[]) {
         const char* msg = (argc >= 3) ? argv[2] : "O.Z.O.S SOVEREIGN IDENTITY SIGNED";
         uint64_t nonce = (argc >= 4) ? strtoull(argv[3], NULL, 10) : 1001ULL;
         const char* custom_seed = (argc >= 5) ? argv[4] : NULL;
-        cmd_packet_sign(msg, nonce, custom_seed);
+        return cmd_packet_sign(msg, nonce, custom_seed);
     } else if (strcmp(cmd, "packet-build") == 0) {
         const char* msg = (argc >= 3) ? argv[2] : "O.Z.O.S SOVEREIGN IDENTITY";
         uint64_t nonce = (argc >= 4) ? strtoull(argv[3], NULL, 10) : 1001ULL;
-        cmd_packet_build(msg, nonce);
+        return cmd_packet_build(msg, nonce);
     } else if (strcmp(cmd, "packet-verify") == 0) {
         if (argc < 3) {
             printf("Loi: Vui long truyen vao chuoi Hex: ozos.exe packet-verify <hex> [last_n] [trusted_author_pk]\n");

@@ -124,23 +124,25 @@ class GenesisShield {
         }
 
         // 4. Kiểm tra toàn vẹn Payload chống sửa đổi tại chỗ
+        // Triệt tiêu hoàn toàn lỗ hổng bypass khi kẻ tấn công set slot 15 = 0
         if (payloadLen > 0) {
             let calcChecksum = 0x811C9DC5;
             for (let i = 0; i < payloadLen; i++) {
                 calcChecksum = Math.imul(calcChecksum ^ uint8View[80 + i], 0x01000193) >>> 0;
             }
             const expectedChecksum = view.getUint32(72, true);
-            if (expectedChecksum !== 0 && calcChecksum !== expectedChecksum) {
-                return 5; // Dữ liệu payload bị sửa đổi / lật bit
+            if (calcChecksum !== expectedChecksum) {
+                return 5; // Dữ liệu payload bị sửa đổi / lật bit hoặc thiếu checksum
             }
         }
 
         // 5. Xác thực qua lõi WASM C++ (nếu có)
+        // Chống crash TypeError khi caller truyền null/0n: dùng effectiveLastNonce đã chuẩn hóa BigInt
         if (this.wasm && this.wasm._parse_and_validate_packet) {
             const totalSize = uint8View.length;
             const ptr = this.wasm._malloc(totalSize);
             this.wasm.HEAPU8.set(uint8View, ptr);
-            const status = this.wasm._parse_and_validate_packet(ptr, totalSize, BigInt(lastSeenNonce));
+            const status = this.wasm._parse_and_validate_packet(ptr, totalSize, effectiveLastNonce);
             this.wasm._free(ptr);
             if (status !== 0) return status;
         }

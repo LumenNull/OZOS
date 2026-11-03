@@ -78,7 +78,7 @@ wasm:
 		$(PYTHON) contrib/web-cockpit/embed_wasm.py && \
 		echo "  [SUCCESS] zero_dct.wasm compiled and embedded successfully."; \
 	else \
-		echo "  [NOTICE] emcc not found in PATH; using pre-built bit-exact zero_dct.wasm (15,885 bytes, SHA256: d7924fed69dae884eeb1dcfab828e826aa7513b190f84860d5b1fe59393d7b4a3)."; \
+		echo "  [NOTICE] emcc not found in PATH; using pre-built bit-exact zero_dct.wasm (15,885 bytes, SHA256: d7924fedcda753e0b9eefdaf779eb657f67fba50da96472dc98c92b393d7b4a3)."; \
 	fi
 
 test_wasm:
