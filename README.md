@@ -246,15 +246,16 @@ Following exhaustive 10-round adversarial Red Team audits, the operational bound
 
 ### 2. Acoustic Physical Transport & Ephemeral Handshake Bounds
 * **Open Physical Broadcast Medium:** Acoustic near-ultrasound (18.1 - 19.8 kHz) operates across shared physical airspaces. Discovery SYN frames are unauthenticated broadcast probes that establish ephemeral session keys with Perfect Forward Secrecy (PFS) via Curve25519 ECDH.
-* **Out-of-Band Peer Authentication:** An established session key (`K_session`) guarantees channel confidentiality and tamper-resistance via Poly1305, but does NOT attest the physical identity of the remote speaker. High-security deployments must bind SYN exchanges to pinned peer public keys or authenticate session hashes out-of-band (e.g., optical QR scan or BIP-39 verbal confirmation).
+* **Out-of-Band Peer Authentication:** An established session key (`K_session`) guarantees channel confidentiality and tamper-resistance via Poly1305, but does NOT attest the physical identity of the remote speaker. High-security deployments must bind SYN exchanges to pinned peer public keys (`--pinned-peer-pubkey`) or authenticate session hashes out-of-band (e.g., optical QR scan or BIP-39 verbal confirmation).
+* **Framing Disambiguation:** CLI `audio-synth` FSK encodes arbitrary text/hex payloads with 40ms tone duration and Hann smoothing, whereas `ozos_ghost` uses structured binary frames (22B beacon, 42B SYN, 54B ACK) with dedicated dual-tone preamble detection.
 
 ### 3. State Persistence & Hardware Monotonicity
 * **Ephemeral Anti-Replay Invariants:** In-memory anti-replay state tracking in Web Cockpit (`OZOSEngine`, `GenesisShield`) and CLI executions is scoped to active process memory.
 * **VM Rollback & Snapshot Immunity:** Full defense against virtual machine snapshot rollback attacks requires persisting monotonic nonces into hardware-backed non-volatile registers (such as TPM 2.0 NVRAM or seL4 hardware counter channels).
 
 ### 4. Canonical Distribution, Upgrade Guidance & N-Day Advisory
-* **Authoritative Source:** The canonical repository for O.Z.O.S is strictly `https://github.com/LumenNull/OZOS.git`. Releases and commits are cryptographically verified via git commit provenance from `LumenNull <350623492+LumenNull@users.noreply.github.com>`.
-* **Binary Provenance & SHA-256 Pinning:** All shipped WebAssembly modules (`zero_dct.wasm`) must match the pinned SHA-256 hash `d7924fedcda753e046643ae23a78018e6e890c01eec9f6a6237076c8c4e4604d`. Verify locally via:
+* **Authoritative Source & Release Signing:** The canonical repository for O.Z.O.S is strictly `https://github.com/LumenNull/OZOS.git`. Commits on `main` carry verified author provenance from `LumenNull <350623492+LumenNull@users.noreply.github.com>`. Official production release tags and binary distributions are cryptographically pinned via git commit SHA and signed with Sovereign Ed25519 / GPG release keys.
+* **Binary Provenance & SHA-256 Pinning:** All shipped WebAssembly modules (`zero_dct.wasm`) must match the pinned SHA-256 hash `d7924fedcda753e0b9eefdaf779eb657f67fba50da96472dc98c92b393d7b4a3`. Verify locally via:
   ```bash
   sha256sum contrib/web-cockpit/zero_dct.wasm core/zero_dct.wasm
   ```

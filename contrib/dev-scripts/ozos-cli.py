@@ -76,6 +76,8 @@ def cmd_tpm():
 
 def build_aligned_packet(payload_str, nonce=1001, secret_seed=0xA5A5A5A5):
     payload_bytes = payload_str.encode('utf-8')
+    if len(payload_bytes) > 65535:
+        raise ValueError(f"Payload vượt quá giới hạn tối đa của khung dữ liệu 16-bit ({len(payload_bytes)} > 65535 bytes)")
     header_size = 80
     packet = bytearray(header_size + len(payload_bytes))
 
@@ -106,8 +108,22 @@ def build_aligned_packet(payload_str, nonce=1001, secret_seed=0xA5A5A5A5):
     return bytes(packet), mac16
 
 def validate_aligned_packet(packet_bytes, last_seen_nonce=0, secret_seed=0xA5A5A5A5):
+    if packet_bytes is None or not isinstance(packet_bytes, (bytes, bytearray, memoryview)):
+        return False, "Dữ liệu gói tin không hợp lệ (yêu cầu bytes-like object)", None
     if len(packet_bytes) < 80:
         return False, "Kích thước nhỏ hơn 80 bytes", None
+    if not isinstance(last_seen_nonce, int):
+        try:
+            last_seen_nonce = int(last_seen_nonce)
+        except Exception:
+            last_seen_nonce = 0
+
+    # Kiểm tra hệ số chấm động độc hại (NaN / Infinity)
+    import math
+    for i in range(16):
+        coeff = struct.unpack_from('<f', packet_bytes, i * 4)[0]
+        if math.isnan(coeff) or math.isinf(coeff):
+            return False, "Phát hiện hệ số chấm động độc hại (NaN hoặc Infinity trong dct_coeffs)", None
 
     magic = struct.unpack_from('<I', packet_bytes, 72)[0]
     if magic != 0x47454E01:
@@ -138,9 +154,14 @@ def validate_aligned_packet(packet_bytes, last_seen_nonce=0, secret_seed=0xA5A5A
             else:
                 crc = (crc << 1) & 0xFFFF
 
-    mac_matches = (incoming_mac == expected_mac) or (secret_seed == 0xA5A5A5A5 and incoming_mac == crc)
-    if not mac_matches:
+    is_a2 = (incoming_mac == expected_mac)
+    is_a1 = (secret_seed == 0xA5A5A5A5 and incoming_mac == crc)
+
+    if not is_a2 and not is_a1:
         return False, f"Tripwire MAC16 không khớp: Header hoặc Payload đã bị sửa đổi (0x{incoming_mac:04X} vs 0x{expected_mac:04X})", None
+
+    if is_a1 and not is_a2 and payload_len > 0:
+        return False, "Từ chối Sub-Profile A1 cho gói tin có payload: MAC16 chỉ bảo vệ 78B Header, không bảo vệ Payload", None
 
     nonce = struct.unpack_from('<Q', packet_bytes, 64)[0]
     if nonce <= last_seen_nonce:

@@ -998,9 +998,11 @@ with open(wasm_web_p, "rb") as f:
 
 with open(os.path.join(REPO_ROOT, "Makefile"), "r", encoding="utf-8") as f:
     mf_text = f.read()
+with open(os.path.join(REPO_ROOT, "README.md"), "r", encoding="utf-8") as f:
+    readme_text = f.read()
 
-wasm_pin_ok = (h_core == h_web) and (h_core in mf_text)
-check_test("Cac ban zero_dct.wasm dong nhat byte-exact va khop voi ma pin SHA-256 trong Makefile",
+wasm_pin_ok = (h_core == h_web) and (h_core in mf_text) and (h_core in readme_text)
+check_test("Cac ban zero_dct.wasm dong nhat byte-exact va khop voi ma pin SHA-256 trong Makefile & README.md",
            wasm_pin_ok,
            f"WASM SHA256 pinned: {h_core[:16]}...")
 
@@ -1081,9 +1083,189 @@ check_test("C packet-build phat A2 bao ve toan ven payload mac dinh va server.py
            a2_verified_ok and sandbox_ok,
            "A2 payload integrity invariant & server path traversal defense operational")
 
+
+
+# ----------------------------------------------------------------------
+# 36. TEST ROUND 11: JS Numeric-0 Sentinel Replay Protection
+# ----------------------------------------------------------------------
+print("\n[TEST 36/40] Kiem Tra JS Numeric-0 Sentinel Replay Protection (Engine & Shield)...")
+test_js_sentinel = """
+const OZOSEngine = require('./contrib/web-cockpit/ozos-engine.js');
+const engine = new OZOSEngine();
+const pkt = engine.buildAligned80BytePacket('TEST_SENTINEL', 1000n);
+const res1 = engine.validateAligned80BytePacket(pkt.packetBytes, 0);
+const res2 = engine.validateAligned80BytePacket(pkt.packetBytes, 0);
+if (!res1.valid || res2.valid) {
+    process.exit(1);
+}
+
+const GenesisShield = require('./contrib/web-cockpit/genesis-shield.js');
+const shield = new GenesisShield();
+shield.isReady = true;
+const shieldPkt = shield.buildPacket(0x47454E01, 2000n, 'SHIELD_SENTINEL');
+const s_res1 = shield.validatePacket(shieldPkt, 0);
+const s_res2 = shield.validatePacket(shieldPkt, 0);
+if (s_res1 !== 0 || s_res2 !== 3) {
+    process.exit(2);
+}
+process.exit(0);
+"""
+p_sentinel = subprocess.run(["node", "-e", test_js_sentinel], cwd=REPO_ROOT, capture_output=True, text=True, encoding="utf-8", errors="replace")
+sentinel_ok = (p_sentinel.returncode == 0)
+check_test("Truyen numeric-0 khong con bypass duoc co che Anti-Replay tren ca OZOSEngine lan GenesisShield",
+           sentinel_ok,
+           "Numeric-0 sentinel bypass neutralized across JS validators")
+
+# ----------------------------------------------------------------------
+# 37. TEST ROUND 11: Sub-Profile A1 with Payload Rejection across C, JS, Python
+# ----------------------------------------------------------------------
+print("\n[TEST 37/40] Kiem Tra Tu Choi Sub-Profile A1 Cho Goi Tin Co Payload (C, JS, Python)...")
+rc_a1_b, out_a1_b, _ = run_ozos("packet-build", "A1_PAYLOAD_TAMPER_TARGET", "7500")
+a1_hex_pkt = None
+for line in out_a1_b.splitlines():
+    line = line.strip()
+    if len(line) >= 80 * 2 and all(c in '0123456789abcdefABCDEF' for c in line):
+        a1_hex_pkt = line
+        break
+
+raw_a1_pkt = bytearray.fromhex(a1_hex_pkt)
+# Overwrite MAC with public A1 CRC16 (only covering 78B header)
+crc_hdr = 0xFFFF
+for b in raw_a1_pkt[:78]:
+    crc_hdr ^= (b << 8)
+    for _ in range(8):
+        crc_hdr = ((crc_hdr << 1) ^ 0x1021) & 0xFFFF if (crc_hdr & 0x8000) else (crc_hdr << 1) & 0xFFFF
+raw_a1_pkt[78] = crc_hdr & 0xFF
+raw_a1_pkt[79] = (crc_hdr >> 8) & 0xFF
+forged_a1_hex = raw_a1_pkt.hex()
+
+# 1. C validator must reject
+rc_c_a1, out_c_a1, _ = run_ozos("packet-verify", forged_a1_hex, "7499")
+c_a1_rejected = (rc_c_a1 == 1)
+
+# 2. JS validator must reject
+test_js_a1_str = f"""
+const OZOSEngine = require('./contrib/web-cockpit/ozos-engine.js');
+const engine = new OZOSEngine();
+const buf = Buffer.from('{forged_a1_hex}', 'hex');
+const res = engine.validateAligned80BytePacket(buf, 7499n);
+process.exit((!res.valid && res.code === 6) ? 0 : 1);
+"""
+p_js_a1 = subprocess.run(["node", "-e", test_js_a1_str], cwd=REPO_ROOT, capture_output=True, text=True, encoding="utf-8", errors="replace")
+js_a1_rejected = (p_js_a1.returncode == 0)
+
+# 3. Python validator must reject
+sys.path.insert(0, os.path.join(REPO_ROOT, "contrib", "dev-scripts"))
+import importlib.util
+cli_path_p = os.path.join(REPO_ROOT, "contrib", "dev-scripts", "ozos-cli.py")
+spec_cli = importlib.util.spec_from_file_location("ozos_cli_mod", cli_path_p)
+ozos_cli_mod = importlib.util.module_from_spec(spec_cli)
+spec_cli.loader.exec_module(ozos_cli_mod)
+py_a1_valid, py_a1_reason, _ = ozos_cli_mod.validate_aligned_packet(bytes(raw_a1_pkt), 7499)
+py_a1_rejected = (py_a1_valid is False and "Sub-Profile A1" in py_a1_reason)
+
+check_test("Goi tin co payload mang Sub-Profile A1 bi tu choi dong loat tren ca C, JS va Python",
+           c_a1_rejected and js_a1_rejected and py_a1_rejected,
+           "Unsigned Sub-Profile A1 with payload strictly rejected across all 3 platforms")
+
+# ----------------------------------------------------------------------
+# 38. TEST ROUND 11: GenesisShield Nonce Auto-Advance & Engine Nonce Overflow Guard
+# ----------------------------------------------------------------------
+print("\n[TEST 38/40] Kiem Tra GenesisShield Nonce Auto-Advance & Engine Nonce Overflow Guard...")
+test_js_nonce_flow = """
+const GenesisShield = require('./contrib/web-cockpit/genesis-shield.js');
+const shield = new GenesisShield();
+const p1 = shield.buildPacket(0x47454E01, null, 'AUTO_P1');
+const p2 = shield.buildPacket(0x47454E01, null, 'AUTO_P2');
+const v1 = new DataView(p1.buffer, p1.byteOffset);
+const v2 = new DataView(p2.buffer, p2.byteOffset);
+const n1 = v1.getBigUint64(4, true);
+const n2 = v2.getBigUint64(4, true);
+if (n1 !== 1n || n2 !== 2n) {
+    process.exit(1);
+}
+
+const OZOSEngine = require('./contrib/web-cockpit/ozos-engine.js');
+const engine = new OZOSEngine();
+let threw = false;
+try {
+    engine.currentNonce = 0xFFFFFFFFFFFFFFFFn;
+    engine.buildPacket('TRIGGER_OVERFLOW');
+} catch (e) {
+    threw = true;
+}
+if (!threw) {
+    process.exit(2);
+}
+process.exit(0);
+"""
+p_js_nonce = subprocess.run(["node", "-e", test_js_nonce_flow], cwd=REPO_ROOT, capture_output=True, text=True, encoding="utf-8", errors="replace")
+nonce_guards_ok = (p_js_nonce.returncode == 0)
+check_test("GenesisShield tu dong tang Nonce khong bi collision va OZOSEngine chan tran 2^64-1",
+           nonce_guards_ok,
+           "Shield outgoing nonce auto-increment & Engine 2^64-1 wrap guard operational")
+
+# ----------------------------------------------------------------------
+# 39. TEST ROUND 11: Poisoned Float (NaN/Infinity) Rejection across C, JS, Py
+# ----------------------------------------------------------------------
+print("\n[TEST 39/40] Kiem Tra Tu Choi He So Cham Dong Doc Hai (NaN / Inf) Tren C, JS, Py...")
+raw_nan_pkt = bytearray(raw_a1_pkt)
+raw_nan_pkt[0:4] = struct.pack('<f', float('nan'))
+# Recompute A2
+h_nan = 0xA5A5A5A5
+for b in raw_nan_pkt[:78]: h_nan = ((h_nan ^ b) * 0x100000001B3) & 0xFFFFFFFFFFFFFFFF
+for b in raw_nan_pkt[80:]: h_nan = ((h_nan ^ b) * 0x100000001B3) & 0xFFFFFFFFFFFFFFFF
+fnv_nan = (h_nan ^ (h_nan >> 16) ^ (h_nan >> 32)) & 0xFFFF
+raw_nan_pkt[78] = fnv_nan & 0xFF
+raw_nan_pkt[79] = (fnv_nan >> 8) & 0xFF
+
+rc_c_nan, _, _ = run_ozos("packet-verify", raw_nan_pkt.hex(), "7499")
+c_nan_ok = (rc_c_nan == 1)
+
+test_js_nan_str = f"""
+const OZOSEngine = require('./contrib/web-cockpit/ozos-engine.js');
+const engine = new OZOSEngine();
+const buf = Buffer.from('{raw_nan_pkt.hex()}', 'hex');
+const res = engine.validateAligned80BytePacket(buf, 7499n);
+process.exit((!res.valid && res.code === 7) ? 0 : 1);
+"""
+p_js_nan = subprocess.run(["node", "-e", test_js_nan_str], cwd=REPO_ROOT, capture_output=True, text=True, encoding="utf-8", errors="replace")
+js_nan_ok = (p_js_nan.returncode == 0)
+
+py_nan_valid, py_nan_reason, _ = ozos_cli_mod.validate_aligned_packet(bytes(raw_nan_pkt), 7499)
+py_nan_ok = (py_nan_valid is False and "NaN" in py_nan_reason)
+
+check_test("Goi tin chua he so float NaN / Infinity bi tu choi nghiem ngat tren C, JS va Python",
+           c_nan_ok and js_nan_ok and py_nan_ok,
+           "Poisoned float coefficients rejected fail-closed across all 3 platforms")
+
+# ----------------------------------------------------------------------
+# 40. TEST ROUND 11: Handshake-ack Pinned Peer Check & Audio-Synth Failure Exit
+# ----------------------------------------------------------------------
+print("\n[TEST 40/40] Kiem Tra Handshake-ack Pinned Peer Check & Audio-Synth Failure Exit...")
+rc_syn, out_syn, _ = run_ozos("handshake-syn")
+syn_hex_val = None
+peer_pk_val = None
+for line in out_syn.splitlines():
+    if len(line.strip()) == 84 and all(c in '0123456789abcdefABCDEF' for c in line.strip()):
+        syn_hex_val = line.strip()
+    elif "Ephemeral PubKey A" in line:
+        peer_pk_val = line.split(":")[-1].strip().replace("0x", "").split()[0]
+
+rc_ack_correct, _, _ = run_ozos("handshake-ack", syn_hex_val, "--pinned-peer-pubkey", peer_pk_val)
+rc_ack_wrong, _, _ = run_ozos("handshake-ack", syn_hex_val, "--pinned-peer-pubkey", "f" * 64)
+pinned_peer_ok = (rc_ack_correct == 0 and rc_ack_wrong == 1)
+
+rc_synth_fail, _, _ = run_ozos("audio-synth", "DATA", "/nonexistent_sandbox_dir_404/fail.wav")
+synth_exit_ok = (rc_synth_fail == 1)
+
+check_test("Handshake-ack xac thuc peer theo khoa da ghim va audio-synth thoat ma loi khac 0 khi ghi file that bai",
+           pinned_peer_ok and synth_exit_ok,
+           "Pinned peer handshake authentication & audio-synth error exit code hygiene verified")
+
 print("\n======================================================================")
 if all_passed:
-    print("  🏆 KET LUAN: 35/35 BAI KIEM TRA RED TEAM VONG 1-10 DEU PASS 100%!")
+    print("  🏆 KET LUAN: 40/40 BAI KIEM TRA RED TEAM VONG 1-11 DEU PASS 100%!")
     print("  CAC VECTO TAN CONG DUOC PHAM VI AUDIT XAC NHAN DA DUOC KIEM TRA VA XU LY AN TOAN.")
     print("======================================================================")
     sys.exit(0)
@@ -1091,4 +1273,3 @@ else:
     print("  🚨 CO BAI KIEM TRA THAT BAI! VUI LONG KIEM TRA LAI.")
     print("======================================================================")
     sys.exit(1)
-

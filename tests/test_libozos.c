@@ -49,14 +49,15 @@ int main(void) {
     float sample_coeffs[16];
     for (int i = 0; i < 16; ++i) sample_coeffs[i] = 1.0f + (float)i * 0.1f;
 
-    ozos_packet_build(&pkt, 5000ULL, sample_coeffs, 12);
-    printf("  • Nonce: %llu | Magic: 0x%08X | Payload: %u bytes | MAC16: 0x%04X\n",
-           pkt.nonce, pkt.magic, pkt.payload_len, pkt.header_mac16);
-
-    /* Validate packet chinh hang */
+    ozos_packet_build(&pkt, 5000ULL, sample_coeffs, 15);
+    /* Validate packet chinh hang duoc niem phong Sub-Profile A2 */
     uint8_t buffer[100];
     memcpy(buffer, &pkt, sizeof(pkt));
     memcpy(buffer + 80, "HELLO_SOVEREIGN", 15);
+    ozos_packet_seal_a2(buffer, 15, 0xA5A5A5A5ULL);
+    memcpy(&pkt, buffer, sizeof(pkt));
+    printf("  • Nonce: %llu | Magic: 0x%08X | Payload: %u bytes | MAC16: 0x%04X (A2)\n",
+           pkt.nonce, pkt.magic, pkt.payload_len, pkt.header_mac16);
 
     ozos_packet80_t validated;
     ozos_status_t st = ozos_packet_validate(buffer, 80 + 15, 4999ULL, &validated);

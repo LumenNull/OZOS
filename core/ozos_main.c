@@ -378,6 +378,16 @@ static int cmd_packet_sign(const char* message, uint64_t nonce, const char* cust
     float coeffs[16];
     for (int i = 0; i < 16; ++i) coeffs[i] = 1.0f + (float)i * 0.1f;
     ozos_packet_build(&pkt, nonce, coeffs, (uint16_t)msg_len);
+    if (msg_len > 0) {
+        uint64_t h = 0xA5A5A5A5ULL;
+        for (size_t i = 0; i < 78; ++i) {
+            h = ((h ^ (uint64_t)((const uint8_t*)&pkt)[i]) * 0x100000001B3ULL);
+        }
+        for (size_t i = 0; i < msg_len; ++i) {
+            h = ((h ^ (uint64_t)((const uint8_t*)message)[i]) * 0x100000001B3ULL);
+        }
+        pkt.header_mac16 = (uint16_t)((h ^ (h >> 16) ^ (h >> 32)) & 0xFFFFU);
+    }
 
     size_t unsigned_size = OZOS_PACKET_HEADER_SIZE + msg_len;
     uint8_t raw_buffer[2048];
@@ -518,6 +528,10 @@ static int cmd_packet_verify(const char* hex_str, uint64_t last_seen_nonce, cons
             }
         }
         else if (st == OZOS_ERR_MAC16_MISMATCH) printf("• Root Cause    : Sai MAC16 (Phat hien bit lat hoac du lieu bi sua doi)\n");
+        else if (st == OZOS_ERR_A1_PAYLOAD_UNPROTECTED) {
+            printf("• Root Cause    : Tu choi Sub-Profile A1 vi MAC16 chi bao ve 78B Header, khong bao ve toan ven Payload!\n");
+            printf("                  Yeu cau Sub-Profile A2 (FNV-Fold) hoac Chu ky Sovereign Ed25519.\n");
+        }
         else if (st == OZOS_ERR_REPLAY_DETECTED) printf("• Root Cause    : Phat hien Replay Attack (Nonce khong tang don dieu)\n");
         else if (st == OZOS_ERR_PAYLOAD_TRUNCATED) printf("• Root Cause    : Payload bi cat xen hoac khong hop le\n");
         else if (st == OZOS_ERR_FLOAT_POISONED) printf("• Root Cause    : He so cham dong doc hai (Phat hien NaN hoac Infinity trong dct_coeffs)\n");
@@ -567,17 +581,24 @@ static int cmd_packet_verify(const char* hex_str, uint64_t last_seen_nonce, cons
     /* Xet duyet tinh xac thuc cua chu ky */
     if (byte_count == base_len) {
         /* Goi tin hop le ve cau truc nhung KHONG co chu ky */
-        printf("Trang thai: ⚠️ GOI TIN HOP LE VE KHUNG DINH DANG (NHUNG KHONG CO CHU KY ED25519)\n");
-        printf("• Chu ky Ban the : ⚠️ KHONG CO CHU KY (Goi tin packet-build chua ky chu quyen)\n");
         if (validated.payload_len > 0) {
             uint16_t crc_header = ozos_compute_mac16(&validated);
             if (validated.header_mac16 == crc_header) {
-                printf("• Canh bao Sub-Profile A1: ⚠️ MAC16 chi bao ve 78B Header (Payload %u bytes khong duoc bao ve toan ven boi MAC16)!\n", validated.payload_len);
+                printf("Trang thai: 🚨 BI TU CHOI: SUB-PROFILE A1 KHONG BAO VE PAYLOAD\n");
+                printf("• Chu ky Ban the : ⚠️ KHONG CO CHU KY (Goi tin packet-build chua ky chu quyen)\n");
+                printf("• Canh bao Sub-Profile A1: 🚨 MAC16 chi bao ve 78B Header (Payload %u bytes khong duoc bao ve toan ven boi MAC16)! Tu choi de phong ngua tan cong sua doi payload.\n", validated.payload_len);
+                final_rc = 1;
             } else {
+                printf("Trang thai: ⚠️ GOI TIN HOP LE VE KHUNG DINH DANG (NHUNG KHONG CO CHU KY ED25519)\n");
+                printf("• Chu ky Ban the : ⚠️ KHONG CO CHU KY (Goi tin packet-build chua ky chu quyen)\n");
                 printf("• Sub-Profile A2 : ✅ MAC16 FNV-Fold bao ve toan ven Header va Payload 100%%\n");
+                final_rc = 0;
             }
+        } else {
+            printf("Trang thai: ⚠️ GOI TIN HOP LE VE KHUNG DINH DANG (NHUNG KHONG CO CHU KY ED25519)\n");
+            printf("• Chu ky Ban the : ⚠️ KHONG CO CHU KY (Goi tin packet-build chua ky chu quyen)\n");
+            final_rc = 0;
         }
-        final_rc = 0;
     } else if (byte_count == expected_signed_len) {
         /* Goi tin co dinh kem chu ky Ed25519 */
         uint8_t author_pk[32];
@@ -660,16 +681,16 @@ static size_t ozos_synth_preamble_ex(uint32_t sample_rate, float duration_sec, u
     return needed;
 }
 
-static void cmd_audio_synth(const char* text_data, const char* out_wav, uint8_t mode) {
+static int cmd_audio_synth(const char* text_data, const char* out_wav, uint8_t mode) {
     if (!text_data || !out_wav) {
         printf("Loi: ozos audio-synth <text> <output.wav> [--stealth | --audible]\n");
-        return;
+        return 1;
     }
 
     size_t text_len = strlen(text_data);
     if (text_len > 1024) {
         printf("Loi: Du lieu am thanh toi da 1024 bytes.\n");
-        return;
+        return 1;
     }
 
     uint32_t sample_rate = 44100;
@@ -680,7 +701,7 @@ static void cmd_audio_synth(const char* text_data, const char* out_wav, uint8_t 
     size_t total_samples = samples_pre * 2 + text_len * samples_per_tone;
 
     short* wav_samples = (short*)malloc(total_samples * sizeof(short));
-    if (!wav_samples) return;
+    if (!wav_samples) return 1;
 
     float float_block[2048];
     size_t offset = 0;
@@ -703,7 +724,8 @@ static void cmd_audio_synth(const char* text_data, const char* out_wav, uint8_t 
         wav_samples[offset++] = (short)(float_block[i] * 32767.0f);
     }
 
-    if (write_wav_file(out_wav, wav_samples, offset, sample_rate)) {
+    int success = write_wav_file(out_wav, wav_samples, offset, sample_rate);
+    if (success) {
         printf("✅ [AUDIO SYNTH] Da xuat file song am Air-Gap: %s\n", out_wav);
         printf("  • Che do           : %s\n", (mode == OZOS_AUDIO_MODE_STEALTH) ? "CAN SIEU AM VO THANH (18.1 - 19.8 kHz)" : "NGHE DUOC (1.6 - 3.8 kHz)");
         printf("  • Cua so lam muot  : Hann 5ms (Triet tieu click/pop am hoc 100%%)\n");
@@ -713,6 +735,7 @@ static void cmd_audio_synth(const char* text_data, const char* out_wav, uint8_t 
     }
 
     free(wav_samples);
+    return success ? 0 : 1;
 }
 
 static int cmd_audio_decode(const char* in_wav, int forced_mode) {
@@ -961,11 +984,14 @@ static int cmd_handshake_syn(const char* wav_path, uint32_t session_nonce) {
     printf("=================================================================\n");
     printf("  [MẢNH GHÉP 2] BẮT TAY HAI CHIỀU VÔ THANH: KHỞI TẠO (SYN)\n");
     printf("=================================================================\n");
-    printf("• Ephemeral Secret A : 0x%s (Luu tru tren RAM/Stack)\n", a_sk_hex);
-    printf("• Ephemeral PubKey A : 0x%s (Curve25519 32 Bytes)\n", a_pub_hex);
-    printf("• Session Nonce      : %u (Anti-replay timestamp)\n", session_nonce);
-    printf("• SYN Frame Size     : %zu bytes (Magic 0x4F5A4831 'OZH1')\n", sizeof(syn));
-    printf("• SYN Frame Hex      :\n%s\n", syn_hex);
+    printf("  [BI MAT NOI BO - TUYET DOI KHONG CHIA SE CHO PEER / PUBLIC]\n");
+    printf("  • Ephemeral Secret A : 0x%s\n", a_sk_hex);
+    printf("-----------------------------------------------------------------\n");
+    printf("  [THONG TIN PHAT SONG CONG KHAI / AIR-GAP TRANSMISSION]\n");
+    printf("  • Ephemeral PubKey A : 0x%s (Curve25519 32 Bytes)\n", a_pub_hex);
+    printf("  • Session Nonce      : %u (Anti-replay timestamp)\n", session_nonce);
+    printf("  • SYN Frame Size     : %zu bytes (Magic 0x4F5A4831 'OZH1')\n", sizeof(syn));
+    printf("  • SYN Frame Hex      :\n%s\n", syn_hex);
 
     if (wav_path) {
         cmd_audio_synth(syn_hex, wav_path, OZOS_AUDIO_MODE_STEALTH);
@@ -978,7 +1004,7 @@ static int cmd_handshake_syn(const char* wav_path, uint32_t session_nonce) {
     return 0;
 }
 
-static int cmd_handshake_ack(const char* syn_hex, const char* wav_path) {
+static int cmd_handshake_ack(const char* syn_hex, const char* wav_path, const char* pinned_peer_pk_hex) {
     if (!syn_hex) {
         printf("Loi: ozos handshake-ack <syn_hex> [ack.wav]\n");
         return 1;
@@ -995,6 +1021,23 @@ static int cmd_handshake_ack(const char* syn_hex, const char* wav_path) {
     if (!ozos_handshake_syn_verify(&syn)) {
         printf("🚨 [TU CHOI] SYN Frame bi loi MAC16 hoac Magic khong khop!\n");
         return 1;
+    }
+
+    if (pinned_peer_pk_hex != NULL) {
+        if (strlen(pinned_peer_pk_hex) != 64 || !is_valid_hex(pinned_peer_pk_hex, 64)) {
+            printf("🚨 [TU CHOI] Pinned Peer PubKey phai co do dai dung 64 ky tu hex hop le.\n");
+            return 1;
+        }
+        uint8_t pinned_pk[32];
+        hex_to_bytes(pinned_peer_pk_hex, pinned_pk, 32);
+        if (memcmp(syn.eph_pubkey, pinned_pk, 32) != 0) {
+            char syn_pk_hex[65];
+            bytes_to_hex(syn.eph_pubkey, 32, syn_pk_hex);
+            printf("🚨 [TU CHOI] Peer PubKey trong SYN (0x%s) khong khop voi khoa da ghim (0x%s)!\n",
+                   syn_pk_hex, pinned_peer_pk_hex);
+            return 1;
+        }
+        printf("• Pinned Peer Check  : ✅ Peer PubKey khop hoan toan voi khoa da ghim!\n");
     }
 
     uint8_t b_pub[32], b_sk[32];
@@ -1441,11 +1484,19 @@ int main(int argc, char* argv[]) {
         return cmd_handshake_syn(wav_path, session_nonce);
     } else if (strcmp(cmd, "handshake-ack") == 0) {
         if (argc < 3) {
-            printf("Loi: ozos.exe handshake-ack <syn_hex> [output_ack.wav]\n");
+            printf("Loi: ozos.exe handshake-ack <syn_hex> [output_ack.wav] [--pinned-peer-pubkey <pk>]\n");
             return 1;
         }
-        const char* wav_path = (argc >= 4) ? argv[3] : NULL;
-        return cmd_handshake_ack(argv[2], wav_path);
+        const char* wav_path = NULL;
+        const char* pinned_peer_pk = NULL;
+        for (int i = 3; i < argc; ++i) {
+            if (strcmp(argv[i], "--pinned-peer-pubkey") == 0 && i + 1 < argc) {
+                pinned_peer_pk = argv[++i];
+            } else if (!wav_path && argv[i][0] != '-') {
+                wav_path = argv[i];
+            }
+        }
+        return cmd_handshake_ack(argv[2], wav_path, pinned_peer_pk);
     } else if (strcmp(cmd, "handshake-finish") == 0) {
         if (argc < 5) {
             printf("Loi: ozos.exe handshake-finish <ack_hex> <a_sk_hex> <a_pub_hex>\n");
@@ -1494,7 +1545,7 @@ int main(int argc, char* argv[]) {
         if (argc >= 5 && strcmp(argv[4], "--audible") == 0) {
             mode = OZOS_AUDIO_MODE_AUDIBLE;
         }
-        cmd_audio_synth(argv[2], argv[3], mode);
+        return cmd_audio_synth(argv[2], argv[3], mode);
     } else if (strcmp(cmd, "audio-decode") == 0) {
         if (argc < 3) {
             printf("Loi: ozos.exe audio-decode <input.wav> [--stealth | --audible]\n");

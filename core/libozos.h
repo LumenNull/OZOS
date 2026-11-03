@@ -120,7 +120,8 @@ typedef enum {
     OZOS_ERR_FLOAT_POISONED     = 5,
     OZOS_ERR_DFA_FAULT_DETECTED = 6,
     OZOS_ERR_PAYLOAD_TRUNCATED  = 7,
-    OZOS_ERR_MERKLE_PROOF_FAIL  = 8
+    OZOS_ERR_MERKLE_PROOF_FAIL  = 8,
+    OZOS_ERR_A1_PAYLOAD_UNPROTECTED = 9
 } ozos_status_t;
 
 /* =============================================================================
@@ -240,6 +241,47 @@ OZOS_INLINE void ozos_packet_build(
 }
 
 /**
+ * Dong dau niem phong Sub-Profile A2 (FNV-1a-64 Fold) bao ve toan ven ca Header (0..77) lan Payload (80..80+len).
+ */
+OZOS_INLINE void ozos_packet_seal_a2(
+    uint8_t* frame_buffer,
+    uint16_t payload_len,
+    uint64_t secret_seed
+) {
+    if (!frame_buffer) return;
+    uint64_t h = secret_seed;
+    for (size_t i = 0; i < 78; ++i) {
+        h = ((h ^ (uint64_t)frame_buffer[i]) * 0x100000001B3ULL);
+    }
+    for (size_t i = 0; i < (size_t)payload_len; ++i) {
+        h = ((h ^ (uint64_t)frame_buffer[80 + i]) * 0x100000001B3ULL);
+    }
+    uint16_t fnv_mac = (uint16_t)((h ^ (h >> 16) ^ (h >> 32)) & 0xFFFFU);
+    ozos_packet80_t* pkt = (ozos_packet80_t*)frame_buffer;
+    pkt->header_mac16 = fnv_mac;
+}
+
+/**
+ * Dong goi hoan chinh khung du lieu bao gom ca Header lan Payload voi Sub-Profile A2 mac dinh.
+ */
+OZOS_INLINE void ozos_packet_build_frame(
+    uint8_t* frame_buffer,
+    uint64_t nonce,
+    const float coeffs[16],
+    const uint8_t* payload,
+    uint16_t payload_len,
+    uint64_t secret_seed
+) {
+    if (!frame_buffer) return;
+    ozos_packet80_t* pkt = (ozos_packet80_t*)frame_buffer;
+    ozos_packet_build(pkt, nonce, coeffs, payload_len);
+    if (payload && payload_len > 0) {
+        memcpy(frame_buffer + OZOS_PACKET_HEADER_SIZE, payload, payload_len);
+        ozos_packet_seal_a2(frame_buffer, payload_len, secret_seed);
+    }
+}
+
+/**
  * Thẩm định gói tin nhị phân với cổng gác đa tầng (Zero Dynamic Allocation).
  */
 OZOS_INLINE ozos_status_t ozos_packet_validate(
@@ -274,8 +316,9 @@ OZOS_INLINE ozos_status_t ozos_packet_validate(
 
     /* 2. Kiểm tra Cổng gác Tripwire MAC16 (< 20ns): Hỗ trợ cả Sub-profile A1 (CRC16) và Sub-profile A2 (FNV Fold) */
     uint16_t expected_mac = ozos_compute_mac16(pkt);
-    bool mac_ok = (pkt->header_mac16 == expected_mac);
-    if (!mac_ok && buffer_size >= OZOS_PACKET_HEADER_SIZE + (size_t)pkt->payload_len) {
+    bool mac_ok = false;
+
+    if (buffer_size >= OZOS_PACKET_HEADER_SIZE + (size_t)pkt->payload_len) {
         uint64_t h = 0xA5A5A5A5ULL;
         for (size_t i = 0; i < 78; ++i) {
             h = ((h ^ (uint64_t)buffer[i]) * 0x100000001B3ULL);
@@ -286,6 +329,18 @@ OZOS_INLINE ozos_status_t ozos_packet_validate(
         uint16_t fnv_mac = (uint16_t)((h ^ (h >> 16) ^ (h >> 32)) & 0xFFFFU);
         if (pkt->header_mac16 == fnv_mac) {
             mac_ok = true;
+        }
+    }
+    if (!mac_ok && (pkt->header_mac16 == expected_mac)) {
+        /* Sub-Profile A1 (CRC16-CCITT chi bao ve 78B header) */
+        if (pkt->payload_len == 0) {
+            mac_ok = true; /* An toan tuyet doi khi khong co payload */
+        } else if (buffer_size >= OZOS_PACKET_HEADER_SIZE + (size_t)pkt->payload_len + 96) {
+            /* 96 bytes la do dai chu ky Ed25519 (64B sig + 32B pubkey) */
+            mac_ok = true; /* Chu ky Ed25519 bao ve toan ven payload */
+        } else {
+            /* Goi tin khong ky nhung co payload: Sub-Profile A1 khong bao ve payload! */
+            return OZOS_ERR_A1_PAYLOAD_UNPROTECTED;
         }
     }
     if (!mac_ok) {

@@ -137,7 +137,9 @@ class OZOSRequestHandler(http.server.SimpleHTTPRequestHandler):
 
 if __name__ == '__main__':
     os.chdir(DIRECTORY)
-    with ThreadedTCPServer(("127.0.0.1", PORT), OZOSRequestHandler) as httpd:
+    HOST = "127.0.0.1"
+    assert HOST in ("127.0.0.1", "localhost", "::1"), "BẢO VỆ CHỦ QUYỀN: Server bridge chỉ được phép bind vào loopback cục bộ (127.0.0.1)!"
+    with ThreadedTCPServer((HOST, PORT), OZOSRequestHandler) as httpd:
         print("=================================================================")
         print("  [OK] O.Z.O.S SOVEREIGN COMMAND STATION & NATIVE BRIDGE ACTIVE")
         print(f"  [URL] http://localhost:{PORT}")

@@ -98,7 +98,14 @@ class OZOSEngine {
     // =========================================================================
     
     buildPacket(payloadStr, customNonce = null, magic = 0x47454E01) {
-        this.currentNonce = (customNonce !== null) ? BigInt(customNonce) : (this.currentNonce + 1n);
+        if (customNonce !== null && customNonce !== undefined) {
+            this.currentNonce = BigInt(customNonce);
+        } else {
+            if (this.currentNonce >= 0xFFFFFFFFFFFFFFFFn) {
+                throw new Error("Tràn bộ đếm Nonce (Nonce đạt cực đại 2^64-1). Yêu cầu thiết lập lại Nonce chủ quyền.");
+            }
+            this.currentNonce = this.currentNonce + 1n;
+        }
         const payloadBytes = new TextEncoder().encode(payloadStr);
         const headerSize = 80; // 4 (magic) + 8 (nonce) + 64 (fingerprint 16 float32) + 4 (payload_len)
         const totalSize = headerSize + payloadBytes.length;
@@ -148,8 +155,16 @@ class OZOSEngine {
             return { valid: false, code: -1, error: "Lõi WASM chưa được khởi tạo. Từ chối thẩm định bảo vệ chủ quyền." };
         }
 
-        const effectiveLastNonce = (lastSeenNonce !== null && lastSeenNonce !== undefined && lastSeenNonce !== 0n)
-            ? BigInt(lastSeenNonce)
+        let parsedNonce = null;
+        if (lastSeenNonce !== null && lastSeenNonce !== undefined) {
+            try {
+                parsedNonce = BigInt(lastSeenNonce);
+            } catch (_) {
+                parsedNonce = null;
+            }
+        }
+        const effectiveLastNonce = (parsedNonce !== null && parsedNonce !== 0n)
+            ? parsedNonce
             : this.lastSeenPeerNonce;
 
         const ptr = this.wasm._malloc(packetUint8.length);
@@ -856,6 +871,14 @@ class OZOSEngine {
         }
         const view = new DataView(packetUint8.buffer, packetUint8.byteOffset, packetUint8.byteLength);
 
+        // 0. Kiểm tra hệ số chấm động độc hại (NaN / Infinity)
+        for (let i = 0; i < 16; i++) {
+            const val = view.getFloat32(i * 4, true);
+            if (!Number.isFinite(val)) {
+                return { valid: false, code: 7, reason: "Phát hiện hệ số chấm động độc hại (NaN hoặc Infinity trong dct_coeffs)" };
+            }
+        }
+
         // 1. Kiểm tra Magic (Offset 72)
         const magic = view.getUint32(72, true);
         if (magic !== 0x47454E01) {
@@ -894,14 +917,28 @@ class OZOSEngine {
             }
         }
 
-        const macMatched = (incomingMac === expectedMac) || (secretSeed === 0xA5A5A5A5n && incomingMac === crc);
-        if (!macMatched) {
+        const isA2 = (incomingMac === expectedMac);
+        const isA1 = (secretSeed === 0xA5A5A5A5n && incomingMac === crc);
+
+        if (!isA2 && !isA1) {
             return { valid: false, code: 3, reason: `Tripwire MAC16 thất bại: Header hoặc Payload đã bị sửa đổi (Nhận 0x${incomingMac.toString(16)} vs Kỳ vọng 0x${expectedMac.toString(16)})` };
         }
 
+        if (isA1 && !isA2 && payloadLen > 0) {
+            return { valid: false, code: 6, reason: "Từ chối Sub-Profile A1 cho gói tin có payload (MAC16 CRC16 không bảo vệ toàn vẹn payload)" };
+        }
+
         // 3. Stateful Nonce Anti-Replay
-        const effectiveLastNonce = (lastSeenNonce !== null && lastSeenNonce !== undefined && lastSeenNonce !== 0n)
-            ? BigInt(lastSeenNonce)
+        let parsedNonce = null;
+        if (lastSeenNonce !== null && lastSeenNonce !== undefined) {
+            try {
+                parsedNonce = BigInt(lastSeenNonce);
+            } catch (_) {
+                parsedNonce = null;
+            }
+        }
+        const effectiveLastNonce = (parsedNonce !== null && parsedNonce !== 0n)
+            ? parsedNonce
             : this.lastSeenAlignedNonce;
 
         const incomingNonce = view.getBigUint64(64, true);
@@ -996,6 +1033,12 @@ class OZOSEngine {
         const testLen = new TextEncoder().encode(rawStr).length;
         if (testLen > 65535) {
             return { success: false, error: `Dữ liệu Vault JSON vượt quá giới hạn kích thước tối đa (${testLen} > 65535 bytes).` };
+        }
+        if (vaultKey !== null && vaultKey !== undefined && typeof vaultKey === 'string' && vaultKey.length < 8) {
+            return { success: false, error: "Mật khẩu két sắt (vaultKey) phải có độ dài tối thiểu 8 ký tự để bảo đảm entropy phòng thủ duyệt vét cạn." };
+        }
+        if (vaultKey !== null && vaultKey !== undefined && typeof vaultKey === 'string' && vaultKey.length < 8) {
+            return { valid: false, error: "Mật khẩu két sắt (vaultKey) phải có độ dài tối thiểu 8 ký tự." };
         }
         let secretSeed = 0xA5A5A5A5n;
         if (vaultKey !== null && vaultKey !== undefined) {

@@ -6,7 +6,8 @@ class GenesisShield {
     constructor() {
         this.wasm = null;
         this.isReady = false;
-        this.lastSeenNonce = 0n; // Stateful nonce tracking
+        this.currentNonce = 0n;  // Outgoing auto-increment counter
+        this.lastSeenNonce = 0n; // Inbound anti-replay tracking
     }
 
     // Khởi tạo và nạp lõi WASM
@@ -64,7 +65,13 @@ class GenesisShield {
 
         let offset = 0;
         dataView.setUint32(offset, magicHeader, true); offset += 4;
-        const effectiveNonce = (nonce !== null && nonce !== undefined) ? BigInt(nonce) : (this.lastSeenNonce + 1n);
+        let effectiveNonce;
+        if (nonce !== null && nonce !== undefined) {
+            effectiveNonce = BigInt(nonce);
+        } else {
+            this.currentNonce = this.currentNonce + 1n;
+            effectiveNonce = this.currentNonce;
+        }
         if (effectiveNonce >= 0xFFFFFFFFFFFFFFFFn) {
             throw new Error("Tràn bộ đếm Nonce (Nonce đạt cực đại 2^64-1). Yêu cầu thiết lập lại Nonce chủ quyền.");
         }
@@ -97,8 +104,16 @@ class GenesisShield {
             return 2; // Gói tin không hợp lệ hoặc nhỏ hơn 80 bytes (Kích thước tối thiểu)
         }
 
-        const effectiveLastNonce = (lastSeenNonce !== null && lastSeenNonce !== undefined && lastSeenNonce !== 0n)
-            ? BigInt(lastSeenNonce)
+        let parsedNonce = null;
+        if (lastSeenNonce !== null && lastSeenNonce !== undefined) {
+            try {
+                parsedNonce = BigInt(lastSeenNonce);
+            } catch (_) {
+                parsedNonce = null;
+            }
+        }
+        const effectiveLastNonce = (parsedNonce !== null && parsedNonce !== 0n)
+            ? parsedNonce
             : this.lastSeenNonce;
 
         const view = new DataView(uint8View.buffer, uint8View.byteOffset, uint8View.byteLength);
