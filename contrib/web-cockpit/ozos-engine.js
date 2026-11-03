@@ -139,8 +139,8 @@ class OZOSEngine {
     }
 
     validatePacket(packetUint8, lastSeenNonce = null) {
-        if (!packetUint8 || packetUint8.length < 80) {
-            return { valid: false, error: "Gói tin nhỏ hơn 80 bytes (Kích thước tối thiểu)." };
+        if (!packetUint8 || !(packetUint8 instanceof Uint8Array) || packetUint8.length < 80) {
+            return { valid: false, code: -1, error: "Gói tin không hợp lệ hoặc nhỏ hơn 80 bytes (Kích thước tối thiểu)." };
         }
 
         // BẮT BUỘC: Lõi WASM phải được khởi tạo thành công trước khi thẩm định
@@ -851,8 +851,8 @@ class OZOSEngine {
      * Bảo vệ toàn vẹn Header lẫn Payload chống sửa đổi tại chỗ trong Vault
      */
     validateAligned80BytePacket(packetUint8, lastSeenNonce = null, secretSeed = 0xA5A5A5A5n) {
-        if (!packetUint8 || packetUint8.length < 80) {
-            return { valid: false, code: -1, reason: "Gói tin nhỏ hơn 80 bytes" };
+        if (!packetUint8 || !(packetUint8 instanceof Uint8Array) || packetUint8.length < 80) {
+            return { valid: false, code: -1, reason: "Gói tin không hợp lệ hoặc nhỏ hơn 80 bytes" };
         }
         const view = new DataView(packetUint8.buffer, packetUint8.byteOffset, packetUint8.byteLength);
 
@@ -1008,6 +1008,7 @@ class OZOSEngine {
         }
         const pkt = this.buildAligned80BytePacket(rawStr, null, secretSeed);
         const res = {
+            success: true,
             base64: pkt.base64,
             nonce: pkt.nonce.toString(),
             mac16: pkt.mac16

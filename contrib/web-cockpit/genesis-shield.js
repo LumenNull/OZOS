@@ -93,8 +93,8 @@ class GenesisShield {
 
     validatePacket(uint8View, lastSeenNonce = null) {
         this._checkReady();
-        if (!uint8View || uint8View.length < 80) {
-            return 2; // Gói tin nhỏ hơn 80 bytes (Kích thước tối thiểu)
+        if (!uint8View || !(uint8View instanceof Uint8Array) || uint8View.length < 80) {
+            return 2; // Gói tin không hợp lệ hoặc nhỏ hơn 80 bytes (Kích thước tối thiểu)
         }
 
         const effectiveLastNonce = (lastSeenNonce !== null && lastSeenNonce !== undefined && lastSeenNonce !== 0n)

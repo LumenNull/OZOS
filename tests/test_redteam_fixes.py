@@ -923,9 +923,106 @@ check_test("Vault payload 64KB cap, Nonce 2^64-1 overflow guard va Engine replay
            p_r8.returncode == 0,
            "Round 8 medium/low findings fully verified")
 
+# ----------------------------------------------------------------------
+# 31. TEST ROUND 9: Brainseed Passphrase No-Echo & Positional Seed Guidance
+# ----------------------------------------------------------------------
+print("\n[TEST 31/34] Kiem Tra Brainseed Passphrase No-Echo & Positional Seed Guidance...")
+secret_pass = "top_secret_passphrase_test_r9"
+rc_gen, out_gen, _ = run_ozos("brainseed-gen", secret_pass)
+no_echo_ok = (rc_gen == 0) and (secret_pass not in out_gen) and ("[DA BAO VE" in out_gen)
+
+with open(os.path.join(REPO_ROOT, "core", "ozos_main.c"), "r", encoding="utf-8") as f:
+    main_c_src = f.read()
+no_seed_flag_ok = ("--seed <64_HEX_SEED>" not in main_c_src) and ("ozos packet-sign <msg> [nonce] <64_hex_seed>" in main_c_src)
+
+check_test("Passphrase khong bao gio bi echo ra terminal va huong dan ky dung cu phap positional",
+           no_echo_ok and no_seed_flag_ok,
+           "Credential echo neutralized & CLI guidance accurate")
+
+# ----------------------------------------------------------------------
+# 32. TEST ROUND 9: saveLocalVault Return-Shape & Validator Type Check Robustness
+# ----------------------------------------------------------------------
+print("\n[TEST 32/34] Kiem Tra saveLocalVault Return-Shape & Type Check Robustness...")
+test_js_types = """
+const OZOSEngine = require('./contrib/web-cockpit/ozos-engine.js');
+const GenesisShield = require('./contrib/web-cockpit/genesis-shield.js');
+
+const engine = new OZOSEngine();
+const shield = new GenesisShield();
+shield.isReady = true;
+
+// 1. saveLocalVault success returns success: true
+const resSaveOk = engine.saveLocalVault({ test: 1 });
+const saveOk = (resSaveOk.success === true && typeof resSaveOk.base64 === 'string');
+
+// 2. saveLocalVault fail returns success: false
+const resSaveFail = engine.saveLocalVault({ test: 'x'.repeat(70000) });
+const failOk = (resSaveFail.success === false && typeof resSaveFail.error === 'string');
+
+// 3. engine.validatePacket(123) returns valid: false without crash
+const resEngineBadType = engine.validatePacket(123);
+const engineTypeOk = (resEngineBadType.valid === false && resEngineBadType.code === -1);
+
+// 4. engine.validateAligned80BytePacket(123) returns valid: false
+const resAlignBadType = engine.validateAligned80BytePacket(123);
+const alignTypeOk = (resAlignBadType.valid === false && resAlignBadType.code === -1);
+
+// 5. shield.validatePacket(123) returns 2 without TypeError throw
+let shieldTypeOk = false;
+try {
+    const sRes = shield.validatePacket(123);
+    shieldTypeOk = (sRes === 2);
+} catch (e) {
+    shieldTypeOk = false;
+}
+
+const allOk = saveOk && failOk && engineTypeOk && alignTypeOk && shieldTypeOk;
+process.exit(allOk ? 0 : 1);
+"""
+p_js_types = subprocess.run(["node", "-e", test_js_types], stdout=subprocess.PIPE, stderr=subprocess.PIPE, cwd=REPO_ROOT)
+check_test("saveLocalVault tra ve shape nhat quan (success: true/false) va type-check chan moi input phi-Uint8Array",
+           p_js_types.returncode == 0,
+           "API return-shape consistency & caller SDK robustness verified")
+
+# ----------------------------------------------------------------------
+# 33. TEST ROUND 9: WASM Shipped Hash Pinning Verification
+# ----------------------------------------------------------------------
+print("\n[TEST 33/34] Kiem Tra Hash Pinning Cua Binary zero_dct.wasm Shipped...")
+import hashlib
+wasm_core_p = os.path.join(REPO_ROOT, "core", "zero_dct.wasm")
+wasm_web_p = os.path.join(REPO_ROOT, "contrib", "web-cockpit", "zero_dct.wasm")
+with open(wasm_core_p, "rb") as f:
+    h_core = hashlib.sha256(f.read()).hexdigest()
+with open(wasm_web_p, "rb") as f:
+    h_web = hashlib.sha256(f.read()).hexdigest()
+
+with open(os.path.join(REPO_ROOT, "Makefile"), "r", encoding="utf-8") as f:
+    mf_text = f.read()
+
+wasm_pin_ok = (h_core == h_web) and (h_core in mf_text)
+check_test("Cac ban zero_dct.wasm dong nhat byte-exact va khop voi ma pin SHA-256 trong Makefile",
+           wasm_pin_ok,
+           f"WASM SHA256 pinned: {h_core[:16]}...")
+
+# ----------------------------------------------------------------------
+# 34. TEST ROUND 9: Daemon Port Range & Fail-Closed CSPRNG Keygen
+# ----------------------------------------------------------------------
+print("\n[TEST 34/34] Kiem Tra Daemon Port Range & Keygen Khong Ro Ri Machine-ID...")
+rc_dp1, _, _ = run_ozos("daemon", "70000")
+rc_dp2, _, _ = run_ozos("daemon", "0")
+rc_dp3, _, _ = run_ozos("daemon", "-10")
+daemon_ports_ok = (rc_dp1 == 1 and rc_dp2 == 1 and rc_dp3 == 1)
+
+rc_kg, out_kg, _ = run_ozos("keygen")
+keygen_safe_ok = (rc_kg == 0) and ("Master Silicon Seed : 0x" in out_kg) and ("/etc/machine-id" not in out_kg)
+
+check_test("Daemon chan port ngoai bien (1-65535) va keygen fail-closed sinh CSPRNG seed doc lap",
+           daemon_ports_ok and keygen_safe_ok,
+           "Daemon port range & keygen fail-closed verified")
+
 print("\n======================================================================")
 if all_passed:
-    print("  🏆 KET LUAN: 30/30 BAI KIEM TRA RED TEAM VONG 1-8 DEU PASS 100%!")
+    print("  🏆 KET LUAN: 34/34 BAI KIEM TRA RED TEAM VONG 1-9 DEU PASS 100%!")
     print("  CAC VECTO TAN CONG DUOC PHAM VI AUDIT XAC NHAN DA DUOC KIEM TRA VA XU LY AN TOAN.")
     print("======================================================================")
     sys.exit(0)

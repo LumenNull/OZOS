@@ -297,7 +297,7 @@ static int get_sovereign_keys(uint8_t pk[32], uint8_t sk[64], const char* custom
         if (!tpm.tpm_available) {
             fprintf(stderr, "🚨 [TU CHOI CHU QUYEN] Khong tim thay TPM 2.0 phan cung tren may nay!\n");
             fprintf(stderr, "   He thong TU CHOI ky im lang bang machine-id cong khai de chong gia mao identity.\n");
-            fprintf(stderr, "   💡 Huong dan: Vui long truyen --seed <64_HEX_SEED> tuong minh.\n");
+            fprintf(stderr, "   💡 Huong dan: Vui long truyen seed hex theo cu phap: ozos packet-sign <msg> [nonce] <64_hex_seed>\n");
             fprintf(stderr, "   💡 Hoac sinh seed chu quyen: ./ozos brainseed-gen\n");
             return -2;
         }
@@ -868,6 +868,16 @@ static void cmd_daemon(int port) {
         SOCKET client = accept(server_sock, NULL, NULL);
         if (client == INVALID_SOCKET) break;
 
+#if defined(_WIN32)
+        DWORD timeout_ms = 5000;
+        setsockopt(client, SOL_SOCKET, SO_RCVTIMEO, (const char*)&timeout_ms, sizeof(timeout_ms));
+#else
+        struct timeval tv;
+        tv.tv_sec = 5;
+        tv.tv_usec = 0;
+        setsockopt(client, SOL_SOCKET, SO_RCVTIMEO, (const char*)&tv, sizeof(tv));
+#endif
+
         char req_buf[2048];
         int bytes = recv(client, req_buf, sizeof(req_buf) - 1, 0);
         if (bytes > 0) {
@@ -1196,7 +1206,11 @@ static int cmd_brainseed_gen(const char* passphrase) {
     printf("  >>>  %s  <<<\n\n", mnemonic);
     printf("• Master Seed 32-Byte : 0x%s\n", seed_hex);
     printf("• Sovereign Public Key: 0x%s (Ed25519)\n", pk_hex);
-    printf("• Passphrase bao ve   : \"%s\"\n", passphrase ? passphrase : "(Khong)");
+    if (passphrase && strlen(passphrase) > 0) {
+        printf("• Passphrase bao ve   : [DA BAO VE - %zu KY TU]\n", strlen(passphrase));
+    } else {
+        printf("• Passphrase bao ve   : (Khong co)\n");
+    }
     printf("-----------------------------------------------------------------\n");
     printf("⚠️  LƯU Ý QUAN TRỌNG VỀ CHỦ QUYỀN:\n");
     printf("   12 từ này chính là hạt giống sinh mệnh danh tính của bạn.\n");
@@ -1468,6 +1482,10 @@ int main(int argc, char* argv[]) {
         return cmd_audio_decode(argv[2], forced_mode);
     } else if (strcmp(cmd, "daemon") == 0 || strcmp(cmd, "--daemon") == 0) {
         int port = (argc >= 3) ? atoi(argv[2]) : OZOS_DEFAULT_DAEMON_PORT;
+        if (port <= 0 || port > 65535) {
+            fprintf(stderr, "🚨 [LOI CU PHAP] Port daemon khong hop le (1 - 65535).\n");
+            return 1;
+        }
         cmd_daemon(port);
     } else if (strcmp(cmd, "benchmark") == 0) {
         cmd_benchmark();

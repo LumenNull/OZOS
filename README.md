@@ -72,6 +72,10 @@ TOTAL WIRE HEADER SIZE: EXACTLY 80 BYTES (640 Bits, Zero Padding)
 * **Sub-Profile A2 (FNV-1a-64 Keyed/Tripwire Gate):** Domain-separated 64-bit FNV-1a folded into 16 bits covering Header (`0..77`) AND Payload (`80..80+len`). Used in Cockpit Local Vault and CLI automation.
 * **Universal Cross-Verification:** All Profile A validators (`ozos.exe packet-verify`, `OZOSEngine.validateAligned80BytePacket`, `ozos-cli.py`) automatically detect and cross-validate both Sub-profiles A1 and A2.
 
+#### Inter-Party Trust Boundaries (Local Vault vs Cross-Party Ledger):
+* **Local Vault Tripwire (Unkeyed):** Unkeyed Local Vault records (`secretSeed = 0xA5A5A5A5`) provide fast tamper-evidence and casual edit protection exclusively within the user's local browser storage. They carry **ZERO inter-party trust**; because unkeyed MAC algorithms are public, any third party can recompute them.
+* **Cross-Party Accounting & Multi-Shop Aggregation:** Multi-party settlement, invoice reconciliation, and cross-shop ledger verification MUST use **Sovereign Ed25519 Signatures** (RFC 8032 via `packet-sign` / `get_sovereign_keys`) or strong domain-separated secrets per party (`vaultKey`), never unkeyed FNV-1a checksums.
+
 ### Profile B: Web Cockpit Wire Frame (`GENS-v1`)
 Optimized for zero-copy JavaScript `DataView` parsing, WebAssembly module bounds verification, and GenesisShield transport (`zero_dct.wasm`, `genesis-shield.js`, `ozos-engine.js`).
 
