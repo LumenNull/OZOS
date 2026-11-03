@@ -958,7 +958,12 @@ int main(int argc, char* argv[]) {
         }
 
         size_t num_tones = (num_samples - samples_pre * 2) / samples_per_tone;
-        uint8_t rx_buffer[512];
+        if (num_tones > 512) {
+            printf("[!] Packet exceeds maximum acoustic frame size (512 bytes).\n");
+            free(raw_samples);
+            return 1;
+        }
+        uint8_t rx_buffer[512] = {0};
         size_t rx_len = 0;
 
         for (size_t t = 0; t < num_tones && rx_len < sizeof(rx_buffer); ++t) {
@@ -984,17 +989,36 @@ int main(int argc, char* argv[]) {
         uint32_t magic;
         memcpy(&magic, rx_buffer, 4);
         if (magic == OZOS_MAGIC_GOSSIP_BEACON) {
+            if (rx_len < sizeof(ozos_gossip_beacon_t)) {
+                printf("[!] Packet truncated (< %zu bytes for GOSSIP BEACON).\n", sizeof(ozos_gossip_beacon_t));
+                return 1;
+            }
             ozos_gossip_beacon_t* b = (ozos_gossip_beacon_t*)rx_buffer;
             printf("[Σ] Type     : GOSSIP BEACON (22 Bytes)\n");
             printf("[#] Peer ID  : 0x%08X\n", b->peer_id);
             printf("•   Epoch    : %u\n", b->epoch_nonce);
             printf("[Σ] Merkle   : 0x%016llX\n", (unsigned long long)b->merkle_root);
         } else if (magic == OZOS_MAGIC_HANDSHAKE_SYN) {
+            if (rx_len < sizeof(ozos_handshake_syn_t)) {
+                printf("[!] Packet truncated (< %zu bytes for HANDSHAKE SYN).\n", sizeof(ozos_handshake_syn_t));
+                return 1;
+            }
             printf("[🔒] Type    : HANDSHAKE SYN (42 Bytes, Ephemeral Curve25519 Offer)\n");
         } else if (magic == OZOS_MAGIC_HANDSHAKE_ACK) {
+            if (rx_len < sizeof(ozos_handshake_ack_t)) {
+                printf("[!] Packet truncated (< %zu bytes for HANDSHAKE ACK).\n", sizeof(ozos_handshake_ack_t));
+                return 1;
+            }
             printf("[🔒] Type    : HANDSHAKE ACK (54 Bytes, Poly1305 Mutual Auth)\n");
         } else if (magic == OZOS_MAGIC_HEADER) {
+            if (rx_len < 80) {
+                printf("[!] Packet truncated (< 80 bytes for GENESIS PACKET).\n");
+                return 1;
+            }
             printf("[Σ] Type     : GENESIS PACKET (Aligned 80-Byte Frame)\n");
+        } else {
+            printf("[!] Unrecognized magic header: 0x%08X\n", magic);
+            return 1;
         }
         printf("-----------------------------------------------------------------\n");
         printf("[#] Decoded via 32 physical Goertzel filter banks.\n");

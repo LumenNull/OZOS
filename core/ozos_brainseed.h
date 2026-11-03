@@ -132,10 +132,10 @@ static inline void ozos_hmac_sha512(
         opad[i] = k0[i] ^ 0x5c;
     }
 
-    /* Inner hash buffer on stack - Sized safely for up to 1024 bytes (Salt + Long Passphrase + Counter) */
-    uint8_t inner_buf[128 + 1024];
+    /* Inner hash buffer on stack - Sized safely for up to 2048 bytes (Salt + Long Passphrase + Counter) */
+    uint8_t inner_buf[128 + 2048 + 4];
     size_t copy_len = msg_len;
-    if (copy_len > 1024) copy_len = 1024;
+    if (copy_len > (2048 + 4)) copy_len = (2048 + 4);
     memcpy(inner_buf, ipad, 128);
     memcpy(inner_buf + 128, msg, copy_len);
 
@@ -157,8 +157,8 @@ static inline void ozos_pbkdf2_sha512_bip39(
 ) {
     size_t pwd_len = strlen(mnemonic);
 
-    /* Salt = "mnemonic" + passphrase (Hỗ trợ passphrase dài tới 500 ký tự, không bị cắt ngầm hay tràn stack) */
-    char salt[1024] = "mnemonic";
+    /* Salt = "mnemonic" + passphrase (Hỗ trợ passphrase dài tới 2000+ ký tự, không bị cắt ngầm hay tràn stack) */
+    char salt[2048] = "mnemonic";
     if (passphrase && strlen(passphrase) > 0) {
         size_t rem = sizeof(salt) - strlen(salt) - 1;
         strncat(salt, passphrase, rem);
@@ -166,7 +166,7 @@ static inline void ozos_pbkdf2_sha512_bip39(
     size_t salt_len = strlen(salt);
 
     /* Initial salt + 0x00000001 (Block 1) */
-    uint8_t salt_block[1024 + 4];
+    uint8_t salt_block[2048 + 4];
     memcpy(salt_block, salt, salt_len);
     salt_block[salt_len + 0] = 0x00;
     salt_block[salt_len + 1] = 0x00;

@@ -923,7 +923,7 @@ class OZOSEngine {
         let aluDistApprox = aluSum / 4096.0;
         let divergence = Math.abs(fpuDist - aluDistApprox);
 
-        if (divergence > 0.15 * (fpuDist + 1.0)) {
+        if (Number.isNaN(fpuDist) || Number.isNaN(divergence) || divergence > 0.15 * (fpuDist + 1.0)) {
             return { pass: false, dfaDetected: true, divergence, fpuDist, aluDistApprox };
         }
 
@@ -1006,7 +1006,12 @@ class OZOSEngine {
             return { valid: false, error: "Bản ghi Vault yêu cầu khóa bí mật vaultKey để xác thực (Keyed Tripwire)." };
         }
 
-        const bytes = this.base64ToBytes(vaultRecord.base64);
+        let bytes;
+        try {
+            bytes = this.base64ToBytes(vaultRecord.base64);
+        } catch (e) {
+            return { valid: false, error: "Dữ liệu Vault Base64 bị hỏng hoặc sai định dạng." };
+        }
         const res = this.validateAligned80BytePacket(bytes, lastKnownNonce, secretSeed);
         if (!res.valid) {
             return { valid: false, error: res.reason };

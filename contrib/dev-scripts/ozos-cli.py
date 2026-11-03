@@ -15,6 +15,11 @@ import wave
 from PIL import Image
 import numpy as np
 
+DIR = os.path.dirname(os.path.abspath(__file__))
+REPO_ROOT = os.path.abspath(os.path.join(DIR, "..", ".."))
+if REPO_ROOT not in sys.path:
+    sys.path.insert(0, REPO_ROOT)
+
 from core.ozos_tpm_anchor import OZOSHardwareTPM
 
 if hasattr(sys.stdout, 'reconfigure'):
@@ -146,7 +151,11 @@ def cmd_packet_verify(args):
     try:
         raw_bytes = base64.b64decode(args.data)
     except Exception:
-        raw_bytes = bytes.fromhex(args.data)
+        try:
+            raw_bytes = bytes.fromhex(args.data)
+        except Exception:
+            print(f"\n{C_RED}{C_BOLD}[XÁC THỰC THẤT BÀI]: Dữ liệu không phải Base64 hoặc Hex hợp lệ{C_RESET}")
+            sys.exit(1)
 
     valid, reason, info = validate_aligned_packet(raw_bytes, args.last_nonce)
     if valid:

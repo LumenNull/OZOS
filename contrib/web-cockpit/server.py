@@ -28,6 +28,8 @@ DIRECTORY = os.path.dirname(os.path.abspath(__file__))
 OZOS_EXE = os.path.join(DIRECTORY, "ozos.exe")
 
 class OZOSRequestHandler(http.server.SimpleHTTPRequestHandler):
+    timeout = 15
+
     def __init__(self, *args, **kwargs):
         super().__init__(*args, directory=DIRECTORY, **kwargs)
 
@@ -76,7 +78,11 @@ class OZOSRequestHandler(http.server.SimpleHTTPRequestHandler):
             body = self.rfile.read(content_length).decode('utf-8', errors='replace')
             try:
                 data = json.loads(body)
+                if not isinstance(data, dict):
+                    raise ValueError("JSON payload must be an object with 'args' array")
                 args = data.get('args', [])
+                if not isinstance(args, list):
+                    raise ValueError("'args' must be a list of strings")
                 cmd = [OZOS_EXE] + [str(a) for a in args]
                 res = subprocess.run(cmd, capture_output=True, encoding='utf-8', errors='replace', cwd=DIRECTORY, timeout=15)
                 resp_data = {

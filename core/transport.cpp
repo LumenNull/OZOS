@@ -74,7 +74,7 @@ int parse_and_validate_packet(const uint8_t* buffer, size_t buffer_size, uint64_
         }
         union { float f; uint32_t u; } pun;
         pun.f = header.fingerprint[15];
-        if (pun.u != 0 && pun.u != calc_sum) {
+        if (pun.u != calc_sum) {
             return 5; // Dữ liệu payload bị sửa đổi
         }
     }

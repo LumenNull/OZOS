@@ -257,7 +257,17 @@ OZOS_INLINE ozos_status_t ozos_packet_validate(
         memcpy(out_header, pkt, sizeof(ozos_packet80_t));
     }
 
-    /* 1. Kiểm tra Magic Header */
+    /* 1. Kiểm tra hệ số chấm động độc hại (Poisoned Float / NaN / Inf) */
+    for (int i = 0; i < 16; ++i) {
+        union { float f; uint32_t u; } p;
+        p.f = pkt->dct_coeffs[i];
+        uint32_t exp = (p.u >> 23) & 0xFFU;
+        if (exp == 0xFFU) {
+            return OZOS_ERR_FLOAT_POISONED;
+        }
+    }
+
+    /* 2. Kiểm tra Magic Header */
     if (pkt->magic != OZOS_MAGIC_HEADER) {
         return OZOS_ERR_MAGIC_INVALID;
     }
