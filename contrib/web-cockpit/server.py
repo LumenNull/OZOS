@@ -87,7 +87,15 @@ class OZOSRequestHandler(http.server.SimpleHTTPRequestHandler):
                 args = data.get('args', [])
                 if not isinstance(args, list):
                     raise ValueError("'args' must be a list of strings")
-                cmd = [OZOS_EXE] + [str(a) for a in args]
+                # Path sanitization: Prevent arbitrary filesystem write/overwrite outside server directory
+                safe_args = []
+                for a in args:
+                    a_str = str(a)
+                    if a_str.endswith(".wav") or "/" in a_str or "\\" in a_str:
+                        safe_args.append(os.path.basename(a_str))
+                    else:
+                        safe_args.append(a_str)
+                cmd = [OZOS_EXE] + safe_args
                 res = subprocess.run(cmd, capture_output=True, encoding='utf-8', errors='replace', cwd=DIRECTORY, timeout=15)
                 resp_data = {
                     "success": res.returncode == 0,

@@ -68,13 +68,15 @@ TOTAL WIRE HEADER SIZE: EXACTLY 80 BYTES (640 Bits, Zero Padding)
 ```
 
 #### Profile A Dual MAC Gatekeeper Sub-Profiles:
-* **Sub-Profile A1 (CRC16-CCITT Hardware Fast Gate):** Wire CRC16-CCITT polynomial calculated over the 78-byte header (`0..77`). Default in bare-metal `libozos.h` for $<20\text{ns}$ DDoS filtering.
-* **Sub-Profile A2 (FNV-1a-64 Keyed/Tripwire Gate):** Domain-separated 64-bit FNV-1a folded into 16 bits covering Header (`0..77`) AND Payload (`80..80+len`). Used in Cockpit Local Vault and CLI automation.
-* **Universal Cross-Verification:** All Profile A validators (`ozos.exe packet-verify`, `OZOSEngine.validateAligned80BytePacket`, `ozos-cli.py`) automatically detect and cross-validate both Sub-profiles A1 and A2.
+* **Sub-Profile A1 (CRC16-CCITT Hardware Fast Gate):** Wire CRC16-CCITT polynomial calculated over the 78-byte header (`0..77`). Designed exclusively for line-rate stateless DDoS gatekeeping ($<20\text{ns}$) on network ingress before parsing. On unsigned frames with non-empty payload, Sub-Profile A1 does NOT verify payload integrity.
+* **Sub-Profile A2 (FNV-1a-64 Default Carrier Gate):** Domain-separated 64-bit FNV-1a folded into 16 bits covering Header (`0..77`) AND Payload (`80..80+len`). Emitted by default by `ozos packet-build` whenever `payload_len > 0` to prevent A1 downgrade tampering.
+* **Universal Cross-Verification:** All Profile A validators (`ozos.exe packet-verify`, `OZOSEngine.validateAligned80BytePacket`, `ozos-cli.py`) cross-validate both Sub-profiles A1 and A2. When verifying unsigned packets carrying payload under Sub-Profile A1, validators issue an explicit warning regarding unverified payload integrity.
 
-#### Inter-Party Trust Boundaries (Local Vault vs Cross-Party Ledger):
-* **Local Vault Tripwire (Unkeyed):** Unkeyed Local Vault records (`secretSeed = 0xA5A5A5A5`) provide fast tamper-evidence and casual edit protection exclusively within the user's local browser storage. They carry **ZERO inter-party trust**; because unkeyed MAC algorithms are public, any third party can recompute them.
-* **Cross-Party Accounting & Multi-Shop Aggregation:** Multi-party settlement, invoice reconciliation, and cross-shop ledger verification MUST use **Sovereign Ed25519 Signatures** (RFC 8032 via `packet-sign` / `get_sovereign_keys`) or strong domain-separated secrets per party (`vaultKey`), never unkeyed FNV-1a checksums.
+#### Inter-Party Trust & Physical Threat Boundaries:
+* **Local Vault Tripwire (Unkeyed):** Unkeyed Local Vault records (`secretSeed = 0xA5A5A5A5`) provide fast tamper-evidence and casual edit protection exclusively within local browser storage. They carry **ZERO inter-party trust**; unkeyed MAC algorithms are public and easily recomputed.
+* **Cross-Party Accounting & Multi-Shop Aggregation:** Multi-party settlement and cross-shop ledger verification MUST use **Sovereign Ed25519 Signatures** (RFC 8032 via `packet-sign` / `get_sovereign_keys`) or strong domain-separated secrets per party (`vaultKey`).
+* **Physical Acoustic Reception (Near-Ultrasound 18-20 kHz):** Acoustic transmission is an open physical broadcast medium. Initial SYN frames achieve Perfect Forward Secrecy (PFS) via ephemeral Curve25519 ECDH, but do not authenticate peer identity by default. High-security deployments must bind SYN frames to pinned peer public keys or authenticate session keys out-of-band (e.g. optical QR code or BIP-39 verbal confirmation).
+* **Anti-Replay Persistence & Monotonic Counters:** In-memory anti-replay state in Node.js and CLI tools is scoped to the active execution process. Complete immunity against VM snapshot rollback requires persistence bound to hardware monotonic counters (e.g. TPM 2.0 NVRAM).
 
 ### Profile B: Web Cockpit Wire Frame (`GENS-v1`)
 Optimized for zero-copy JavaScript `DataView` parsing, WebAssembly module bounds verification, and GenesisShield transport (`zero_dct.wasm`, `genesis-shield.js`, `ozos-engine.js`).

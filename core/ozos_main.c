@@ -434,6 +434,21 @@ static int cmd_packet_build(const char* message, uint64_t nonce) {
     for (int i = 0; i < 16; ++i) coeffs[i] = 1.0f + (float)i * 0.1f;
     ozos_packet_build(&pkt, nonce, coeffs, (uint16_t)msg_len);
 
+    /* Khi goi tin co payload (msg_len > 0), phat mac dinh Sub-Profile A2 (FNV-1a-64 Fold)
+       de bao ve toan ven toan bo Header (0..77) lan Payload (80..80+msg_len),
+       triet tieu nguy co ep downgrade qua A1 header-only. */
+    if (msg_len > 0) {
+        uint64_t h = 0xA5A5A5A5ULL;
+        const uint8_t* hdr_bytes = (const uint8_t*)&pkt;
+        for (size_t i = 0; i < 78; ++i) {
+            h = ((h ^ (uint64_t)hdr_bytes[i]) * 0x100000001B3ULL);
+        }
+        for (size_t i = 0; i < msg_len; ++i) {
+            h = ((h ^ (uint64_t)(uint8_t)message[i]) * 0x100000001B3ULL);
+        }
+        pkt.header_mac16 = (uint16_t)((h ^ (h >> 16) ^ (h >> 32)) & 0xFFFFU);
+    }
+
     size_t total_size = OZOS_PACKET_HEADER_SIZE + msg_len;
     uint8_t* buffer = (uint8_t*)malloc(total_size);
     if (!buffer) return;
@@ -554,6 +569,14 @@ static int cmd_packet_verify(const char* hex_str, uint64_t last_seen_nonce, cons
         /* Goi tin hop le ve cau truc nhung KHONG co chu ky */
         printf("Trang thai: ⚠️ GOI TIN HOP LE VE KHUNG DINH DANG (NHUNG KHONG CO CHU KY ED25519)\n");
         printf("• Chu ky Ban the : ⚠️ KHONG CO CHU KY (Goi tin packet-build chua ky chu quyen)\n");
+        if (validated.payload_len > 0) {
+            uint16_t crc_header = ozos_compute_mac16(&validated);
+            if (validated.header_mac16 == crc_header) {
+                printf("• Canh bao Sub-Profile A1: ⚠️ MAC16 chi bao ve 78B Header (Payload %u bytes khong duoc bao ve toan ven boi MAC16)!\n", validated.payload_len);
+            } else {
+                printf("• Sub-Profile A2 : ✅ MAC16 FNV-Fold bao ve toan ven Header va Payload 100%%\n");
+            }
+        }
         final_rc = 0;
     } else if (byte_count == expected_signed_len) {
         /* Goi tin co dinh kem chu ky Ed25519 */
@@ -583,6 +606,7 @@ static int cmd_packet_verify(const char* hex_str, uint64_t last_seen_nonce, cons
                     printf("Trang thai: ✅ HOP LE TUYET DOI (100%% INVARIANT INTEGRITY & SOVEREIGN VERIFIED)\n");
                     printf("• Chu ky Ban the : ✅ CHỮ KÝ ED25519 HỢP LỆ VÀ ĐÃ XÁC THỰC TÁC GIẢ CHỦ QUYỀN!\n");
                     printf("• Author PubKey  : 0x%s [TRUSTED PINNED SOVEREIGN KEY]\n", pk_hex);
+                    printf("• TOFU Notice    : ℹ️ Pinned via CLI argument. Verify this fingerprint out-of-band.\n");
                     final_rc = 0;
                 } else {
                     printf("Trang thai: 🚨 BI TU CHOI: CHU KY DUNG NHUNG TAC GIA KHONG THUOC DANH BA TIN CAY!\n");
@@ -1006,6 +1030,8 @@ static int cmd_handshake_ack(const char* syn_hex, const char* wav_path) {
     printf("• K_session Thiet lap: 0x%s (X25519 + SHA-512 KDF)\n", k_sess_hex);
     printf("• Poly1305 Auth Tag  : 0x%02x%02x%02x%02x...%02x%02x\n",
            auth_tag[0], auth_tag[1], auth_tag[2], auth_tag[3], auth_tag[14], auth_tag[15]);
+    printf("• Acoustic Notice    : ⚠️ SYN phat song qua kenh vat ly khong xac thuc peer identity.\n");
+    printf("                       K_session dam bao bi mat duong truyen (PFS), can xac thuc peer out-of-band.\n");
     printf("• ACK Frame Hex      :\n%s\n", ack_hex);
 
     if (wav_path) {

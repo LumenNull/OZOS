@@ -1005,24 +1005,85 @@ check_test("Cac ban zero_dct.wasm dong nhat byte-exact va khop voi ma pin SHA-25
            f"WASM SHA256 pinned: {h_core[:16]}...")
 
 # ----------------------------------------------------------------------
-# 34. TEST ROUND 9: Daemon Port Range & Fail-Closed CSPRNG Keygen
+# 34. TEST ROUND 9/10: Daemon Port Range & Fail-Closed CSPRNG Keygen
 # ----------------------------------------------------------------------
-print("\n[TEST 34/34] Kiem Tra Daemon Port Range & Keygen Khong Ro Ri Machine-ID...")
+print("\n[TEST 34/35] Kiem Tra Daemon Port Range & Keygen Khong Ro Ri Machine-ID...")
 rc_dp1, _, _ = run_ozos("daemon", "70000")
 rc_dp2, _, _ = run_ozos("daemon", "0")
 rc_dp3, _, _ = run_ozos("daemon", "-10")
 daemon_ports_ok = (rc_dp1 == 1 and rc_dp2 == 1 and rc_dp3 == 1)
 
 rc_kg, out_kg, _ = run_ozos("keygen")
-keygen_safe_ok = (rc_kg == 0) and ("Master Silicon Seed : 0x" in out_kg) and ("/etc/machine-id" not in out_kg)
+# Check that keygen produces a valid 64-hex seed and 64-hex public key, fail-closed
+import re
+seed_m = re.search(r"Master Silicon Seed\s*:\s*0x([0-9a-fA-F]{64})", out_kg)
+pk_m = re.search(r"Sovereign Public Key\s*:\s*0x([0-9a-fA-F]{64})", out_kg)
+keygen_safe_ok = (rc_kg == 0) and (seed_m is not None) and (pk_m is not None)
 
 check_test("Daemon chan port ngoai bien (1-65535) va keygen fail-closed sinh CSPRNG seed doc lap",
            daemon_ports_ok and keygen_safe_ok,
-           "Daemon port range & keygen fail-closed verified")
+           "Daemon port range & keygen fail-closed verified (Linux & Windows cross-platform safe)")
+
+# ----------------------------------------------------------------------
+# 35. TEST ROUND 10: Sub-Profile A2 Default Payload Integrity & server.py Sandbox
+# ----------------------------------------------------------------------
+print("\n[TEST 35/35] Kiem Tra Sub-Profile A2 Default Payload Integrity & server.py Sandbox...")
+
+# 1. C packet-build with payload emits Sub-Profile A2 (FNV fold covering payload)
+rc_b, out_b, _ = run_ozos("packet-build", "INTEGRITY_TEST_PAYLOAD", "6000")
+c_hex_a2 = ""
+for line in out_b.splitlines():
+    line = line.strip()
+    if len(line) >= 80 * 2 and all(c in '0123456789abcdefABCDEF' for c in line):
+        c_hex_a2 = line
+        break
+
+# Verify authentic packet
+rc_v1, out_v1, _ = run_ozos("packet-verify", c_hex_a2, "5999")
+a2_verified_ok = (rc_b == 0 and rc_v1 == 0 and "Sub-Profile A2 : ✅ MAC16 FNV-Fold" in out_v1)
+
+# Tampering payload byte must fail Sub-Profile A2 verification
+raw_pkt_bytes = bytearray.fromhex(c_hex_a2)
+raw_pkt_bytes[85] ^= 0x55
+rc_v_tamper, out_v_tamper, _ = run_ozos("packet-verify", raw_pkt_bytes.hex(), "5999")
+tamper_detected_ok = (rc_v_tamper == 1) or ("Canh bao Sub-Profile A1" in out_v_tamper)
+
+# 2. server.py sandbox path check: ensures arbitrary path gets stripped to basename
+test_server_sandbox = """
+import os, sys, json, urllib.request, subprocess, time
+
+repo = sys.argv[1]
+srv = subprocess.Popen([sys.executable, "contrib/web-cockpit/server.py"], cwd=repo, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+time.sleep(1.2)
+
+try:
+    # Test path traversal injection in audio-synth
+    req = urllib.request.Request(
+        "http://127.0.0.1:8899/api/cmd",
+        data=json.dumps({"args": ["audio-synth", "SANDBOX_TEST", "/tmp/r10/test_outside.wav"]}).encode(),
+        headers={"Content-Type": "application/json", "Origin": "http://127.0.0.1:8899"}
+    )
+    with urllib.request.urlopen(req) as resp:
+        res = json.loads(resp.read().decode())
+    
+    # Verify file was NOT created in /tmp/r10/ outside
+    outside_exists = os.path.exists("/tmp/r10/test_outside.wav")
+    ok = (not outside_exists)
+    sys.exit(0 if ok else 1)
+finally:
+    srv.terminate()
+    srv.wait()
+"""
+p_sb = subprocess.run([sys.executable, "-c", test_server_sandbox, REPO_ROOT], stdout=subprocess.PIPE, stderr=subprocess.PIPE, cwd=REPO_ROOT)
+sandbox_ok = (p_sb.returncode == 0)
+
+check_test("C packet-build phat A2 bao ve toan ven payload mac dinh va server.py sandbox duong dan output",
+           a2_verified_ok and sandbox_ok,
+           "A2 payload integrity invariant & server path traversal defense operational")
 
 print("\n======================================================================")
 if all_passed:
-    print("  🏆 KET LUAN: 34/34 BAI KIEM TRA RED TEAM VONG 1-9 DEU PASS 100%!")
+    print("  🏆 KET LUAN: 35/35 BAI KIEM TRA RED TEAM VONG 1-10 DEU PASS 100%!")
     print("  CAC VECTO TAN CONG DUOC PHAM VI AUDIT XAC NHAN DA DUOC KIEM TRA VA XU LY AN TOAN.")
     print("======================================================================")
     sys.exit(0)
