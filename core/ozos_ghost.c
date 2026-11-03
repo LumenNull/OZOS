@@ -40,6 +40,14 @@ static bool parse_hex_to_bytes(const char* hex, uint8_t* out, size_t max_len, si
     return true;
 }
 
+#ifndef OZOS_GIT_COMMIT_HASH
+#define OZOS_GIT_COMMIT_HASH "b517dc5"
+#endif
+
+static bool g_ghost_allow_unpinned = false;
+static bool g_ghost_pinned_peer_set = false;
+static uint8_t g_ghost_pinned_peer_pk[32];
+
 /**
  * Dispatch and handle complete received packets after acoustic wake-up
  */
@@ -58,6 +66,22 @@ static void ozos_ghost_dispatch_packet(const uint8_t* rx_buffer, size_t rx_len, 
         if (!ozos_handshake_syn_verify(syn)) {
             printf("[!] TRIPWIRE :: MAC16 verification failed. Packet dropped.\n");
             return;
+        }
+
+        if (g_ghost_pinned_peer_set) {
+            if (memcmp(syn->eph_pubkey, g_ghost_pinned_peer_pk, 32) != 0) {
+                char syn_pk_hex[65];
+                for (int p = 0; p < 32; p++) sprintf(&syn_pk_hex[p * 2], "%02x", syn->eph_pubkey[p]);
+                printf("[!] [REJECTED] Inbound SYN Peer PubKey (0x%s) does NOT match pinned peer pubkey. Dropping packet.\n", syn_pk_hex);
+                return;
+            }
+            printf("[#] Pinned Peer PubKey verified on inbound air-gap SYN.\n");
+        } else if (!g_ghost_allow_unpinned) {
+            printf("[!] [DEFAULT-DENY] Inbound SYN auto-ACK blocked: Daemon running in default-deny mode without pinned peer.\n");
+            printf("    Pass --pinned-peer-pubkey <pk> or explicit --allow-unpinned to authorize auto-ACK response.\n");
+            return;
+        } else {
+            printf("[!] [TOFU WARNING] Emitting unpinned auto-ACK per --allow-unpinned authorization.\n");
         }
 
         printf("[#] TRIPWIRE :: MAC16 verified (< 20ns). Synthesizing ACK response...\n");
@@ -103,6 +127,8 @@ static void ozos_ghost_dispatch_packet(const uint8_t* rx_buffer, size_t rx_len, 
             printf("[Σ] CONSENSUS :: PEER_AHEAD detected. Emitting 10-byte pull request...\n");
         } else if (act == OZOS_GOSSIP_IN_SYNC) {
             printf("[Σ] CONSENSUS :: IN_SYNC verified (Air-gap Merkle State Aligned)\n");
+        } else if (act == OZOS_GOSSIP_FORK_DETECTED) {
+            printf("[🚨] CONSENSUS :: FORK_DETECTED! Conflicting Merkle roots in same epoch %u. State fork alert!\n", beacon->epoch_nonce);
         }
     }
     /* 3. ALIGNED 80-BYTE GENESIS PACKET */
@@ -561,8 +587,35 @@ int main(int argc, char* argv[]) {
     if (strcmp(cmd, "--version") == 0 || strcmp(cmd, "-v") == 0 || strcmp(cmd, "-V") == 0 || strcmp(cmd, "version") == 0) {
         printf("O.Z.O.S Ghost Daemon v1.2.0 (Headless Sovereign Micro-Daemon)\n");
         printf("• Target         : C99 Bare-Metal Ephemeral Enclave\n");
+        printf("• Git Commit     : %s\n", OZOS_GIT_COMMIT_HASH);
         printf("• Pinned WASM SHA: d7924fedcda753e0b9eefdaf779eb657f67fba50da96472dc98c92b393d7b4a3\n");
         printf("• Canonical Repo : https://github.com/LumenNull/OZOS.git\n");
+        return 0;
+    }
+
+    /* HELP: Output commands banner */
+    if (strcmp(cmd, "--help") == 0 || strcmp(cmd, "-h") == 0 || strcmp(cmd, "help") == 0) {
+        printf("=================================================================\n");
+        printf("  O.Z.O.S GHOST MICRO-DAEMON // HEADLESS SOVEREIGN ENGINE (C99)\n");
+        printf("  [ INVISIBLE • INAUDIBLE • FORMLESS ]\n");
+        printf("=================================================================\n");
+        printf("Commands:\n");
+        printf("  genesis                 - Inspect & verify Genesis Block #000000 Inscription\n");
+        printf("  torture                 - Run all 4 Hardware & Silicon Torture Tests\n");
+        printf("  cosmic                  - Run all 4 Cosmic & Existential Paradox Tests\n");
+        printf("  daemon [sec] [opts]     - Start dark-field mic listener (--allow-unpinned / --pinned-peer-pubkey)\n");
+        printf("  test-loopback           - Automated in-RAM acoustic wake-on-sound audit\n");
+        printf("  test-ephemeral-lock     - Physical locked RAM enclave & NIST SP 800-88 audit\n");
+        printf("  ephemeral \"<12 words>\"  - Ephemeral sovereign signing in locked RAM (0B disk)\n");
+        printf("  panic-wipe              - Emergency memory scrub & working set purge\n");
+        printf("  beacon [epoch] [root]   - Emit stealth beacon (22B) via speaker\n");
+        printf("  syn                     - Emit stealth handshake offer (42B) via speaker\n");
+        printf("  ack <syn_hex> [--pinned-peer-pubkey <pk>] - Emit stealth handshake ack (54B, optional pin)\n");
+        printf("  version                 - Show version, commit, and pinned WASM SHA-256\n");
+        printf("  sign \"<12 words>\" ...   - Sign payload from mind-bound mnemonic\n");
+        printf("  listen <wav_file>       - Decode acoustic carrier from WAV stream\n");
+        printf("  test-audio              - Emit 18.5 kHz carrier pulse (0.5s)\n");
+        printf("=================================================================\n");
         return 0;
     }
 
@@ -618,7 +671,31 @@ int main(int argc, char* argv[]) {
 
     /* 0. DAEMON: Start background acoustic listener via native physical mic */
     if (strcmp(cmd, "daemon") == 0) {
-        uint32_t timeout_sec = (argc >= 3) ? (uint32_t)strtoul(argv[2], NULL, 10) : 0;
+        uint32_t timeout_sec = 0;
+        for (int i = 2; i < argc; ++i) {
+            if (strcmp(argv[i], "--allow-unpinned") == 0) {
+                g_ghost_allow_unpinned = true;
+            } else if (strcmp(argv[i], "--pinned-peer-pubkey") == 0) {
+                if (i + 1 < argc) {
+                    const char* pk_hex = argv[++i];
+                    size_t pk_len = 0;
+                    if (parse_hex_to_bytes(pk_hex, g_ghost_pinned_peer_pk, 32, &pk_len) && pk_len == 32) {
+                        g_ghost_pinned_peer_set = true;
+                    } else {
+                        printf("[!] Pinned peer pubkey must be 64 valid hex chars.\n");
+                        return 1;
+                    }
+                } else {
+                    printf("[!] Missing argument for --pinned-peer-pubkey\n");
+                    return 1;
+                }
+            } else if (argv[i][0] != '-') {
+                timeout_sec = (uint32_t)strtoul(argv[i], NULL, 10);
+            } else {
+                printf("[!] Unknown argument or flag: %s\n", argv[i]);
+                return 1;
+            }
+        }
         run_acoustic_wake_daemon(timeout_sec);
         return 0;
     }
@@ -1043,7 +1120,8 @@ int main(int argc, char* argv[]) {
                 return 1;
             }
             ozos_gossip_beacon_t* b = (ozos_gossip_beacon_t*)rx_buffer;
-            printf("[Σ] Type     : GOSSIP BEACON (22 Bytes)\n");
+            bool mac_ok = ozos_gossip_beacon_verify(b);
+            printf("[Σ] Type     : GOSSIP BEACON (22 Bytes) [%s]\n", mac_ok ? "MAC16 VERIFIED" : "MAC16 UNVERIFIED");
             printf("[#] Peer ID  : 0x%08X\n", b->peer_id);
             printf("•   Epoch    : %u\n", b->epoch_nonce);
             printf("[Σ] Merkle   : 0x%016llX\n", (unsigned long long)b->merkle_root);
@@ -1052,17 +1130,9 @@ int main(int argc, char* argv[]) {
                 printf("[!] Packet truncated (< %zu bytes for HANDSHAKE SYN).\n", sizeof(ozos_handshake_syn_t));
                 return 1;
             }
-            printf("[🔒] Type    : HANDSHAKE SYN (42 Bytes, Ephemeral Curve25519 Offer)\n");
-            printf("•   Acoustic : ⚠️ SYN received over unauthenticated physical broadcast.\n");
-            printf("               PFS provides secrecy; peer identity must be verified out-of-band.\n");
-            printf("•   Acoustic : ⚠️ SYN received over unauthenticated physical broadcast.\n");
-            printf("               PFS provides secrecy; peer identity must be verified out-of-band.\n");
-            printf("•   Acoustic : ⚠️ SYN received over unauthenticated physical broadcast.\n");
-            printf("               PFS provides secrecy; peer identity must be verified out-of-band.\n");
-            printf("•   Acoustic : ⚠️ SYN received over unauthenticated physical broadcast.\n");
-            printf("               PFS provides secrecy; peer identity must be verified out-of-band.\n");
-            printf("•   Acoustic : ⚠️ SYN received over unauthenticated physical broadcast.\n");
-            printf("               PFS provides secrecy; peer identity must be verified out-of-band.\n");
+            ozos_handshake_syn_t* s = (ozos_handshake_syn_t*)rx_buffer;
+            bool mac_ok = ozos_handshake_syn_verify(s);
+            printf("[🔒] Type    : HANDSHAKE SYN (42 Bytes, Ephemeral Curve25519 Offer) [%s]\n", mac_ok ? "MAC16 VERIFIED" : "MAC16 UNVERIFIED");
             printf("•   Acoustic : ⚠️ SYN received over unauthenticated physical broadcast.\n");
             printf("               PFS provides secrecy; peer identity must be verified out-of-band.\n");
         } else if (magic == OZOS_MAGIC_HANDSHAKE_ACK) {
@@ -1070,13 +1140,18 @@ int main(int argc, char* argv[]) {
                 printf("[!] Packet truncated (< %zu bytes for HANDSHAKE ACK).\n", sizeof(ozos_handshake_ack_t));
                 return 1;
             }
-            printf("[🔒] Type    : HANDSHAKE ACK (54 Bytes, Poly1305 Mutual Auth)\n");
+            ozos_handshake_ack_t* a = (ozos_handshake_ack_t*)rx_buffer;
+            bool mac_ok = ozos_handshake_ack_verify(a);
+            printf("[🔒] Type    : HANDSHAKE ACK (54 Bytes, Poly1305 Mutual Auth) [%s]\n", mac_ok ? "MAC16 VERIFIED" : "MAC16 UNVERIFIED");
         } else if (magic == OZOS_MAGIC_HEADER) {
             if (rx_len < 80) {
-                printf("[!] Packet truncated (< 80 bytes for GENESIS PACKET).\n");
+                printf("[!] Packet truncated (< %zu bytes for GENESIS PACKET).\n", sizeof(ozos_packet80_t));
                 return 1;
             }
-            printf("[Σ] Type     : GENESIS PACKET (Aligned 80-Byte Frame)\n");
+            ozos_packet80_t* p = (ozos_packet80_t*)rx_buffer;
+            uint16_t expected_mac = ozos_compute_mac16(p);
+            bool mac_ok = (p->header_mac16 == expected_mac);
+            printf("[Σ] Type     : GENESIS PACKET (Aligned 80-Byte Frame) [%s]\n", mac_ok ? "MAC16 VERIFIED" : "MAC16 UNVERIFIED");
         } else {
             printf("[!] Unrecognized magic header: 0x%08X\n", magic);
             return 1;

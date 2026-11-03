@@ -42,31 +42,29 @@ class OZOSRequestHandler(http.server.SimpleHTTPRequestHandler):
         return None
 
     def do_GET(self):
-        clean = self.path.split("?")[0].split("#")[0]
-        if clean in ("/server.py", "/server.py/", "/.git", "/.git/"):
+        fs_path = os.path.realpath(self.translate_path(self.path))
+        real_dir = os.path.realpath(DIRECTORY)
+        
+        # 1. Directory containment
+        if not fs_path.startswith(real_dir):
             self.send_error(404, "File not found")
             return
-        super().do_GET()
-
-    def do_GET(self):
-        clean = self.path.split("?")[0].split("#")[0]
-        if clean in ("/server.py", "/server.py/", "/.git", "/.git/"):
+            
+        rel = os.path.relpath(fs_path, real_dir).replace('\\', '/')
+        # 2. Block server.py, .git, python files (.py), hidden files/directories (starting with .)
+        parts = rel.split('/')
+        for part in parts:
+            if part.startswith('.') or part.endswith('.py') or part == 'server.py':
+                self.send_error(404, "File not found")
+                return
+        
+        # 3. Allow only safe web cockpit static extensions
+        ALLOWED_EXTS = {'.html', '.js', '.wasm', '.css', '.wav', '.png', '.jpg', '.svg', '.json', '.ico', ''}
+        ext = os.path.splitext(fs_path)[1].lower()
+        if os.path.isfile(fs_path) and ext not in ALLOWED_EXTS:
             self.send_error(404, "File not found")
             return
-        super().do_GET()
-
-    def do_GET(self):
-        clean = self.path.split("?")[0].split("#")[0]
-        if clean in ("/server.py", "/server.py/", "/.git", "/.git/"):
-            self.send_error(404, "File not found")
-            return
-        super().do_GET()
-
-    def do_GET(self):
-        clean = self.path.split("?")[0].split("#")[0]
-        if clean in ("/server.py", "/server.py/", "/.git", "/.git/"):
-            self.send_error(404, "File not found")
-            return
+            
         super().do_GET()
 
     def end_headers(self):
@@ -138,15 +136,27 @@ class OZOSRequestHandler(http.server.SimpleHTTPRequestHandler):
                         raise ValueError(f"Invalid path traversal or symlink detected: {a}")
                     safe_args.append(a_base)
                 
+                wav_targets = []
+                for a in safe_args:
+                    if a.endswith(".wav"):
+                        target_wav = os.path.realpath(os.path.join(DIRECTORY, a))
+                        wav_targets.append(target_wav)
+                        if os.path.exists(target_wav):
+                            try:
+                                os.remove(target_wav)
+                            except OSError:
+                                pass
+
+                start_time = time.time()
                 cmd = [OZOS_EXE] + safe_args
                 res = subprocess.run(cmd, capture_output=True, encoding='utf-8', errors='replace', cwd=DIRECTORY, timeout=15)
                 
                 is_success = (res.returncode == 0)
-                for a in safe_args:
-                    if a.endswith(".wav"):
-                        target_wav = os.path.realpath(os.path.join(DIRECTORY, a))
-                        if not os.path.exists(target_wav) or os.path.getsize(target_wav) == 0:
-                            is_success = False
+                for target_wav in wav_targets:
+                    if not os.path.exists(target_wav) or os.path.getsize(target_wav) == 0:
+                        is_success = False
+                    elif os.path.getmtime(target_wav) < start_time - 0.5:
+                        is_success = False
                 
                 resp_data = {
                     "success": is_success,

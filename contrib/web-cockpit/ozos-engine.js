@@ -97,17 +97,38 @@ class OZOSEngine {
     // 1. TẦNG BẢO MẬT & ĐÓNG GÓI NHỊ PHÂN 80-BYTE (GENESIS PACKET PROTOCOL)
     // =========================================================================
     
+    static _parseStrictNonce(val, paramName = "Nonce") {
+        if (val === null || val === undefined) return null;
+        if (typeof val === 'boolean' || Array.isArray(val) || typeof val === 'symbol' || (typeof val === 'object' && val !== null)) {
+            throw new TypeError(`${paramName} không hợp lệ: Không chấp nhận kiểu dữ liệu không chuẩn (${typeof val}).`);
+        }
+        if (typeof val === 'string') {
+            if (!/^\d+$/.test(val)) {
+                throw new TypeError(`${paramName} dạng chuỗi phải chứa toàn bộ chữ số nguyên dương thập phân (không chứa dấu cách, chữ cái hoặc số âm).`);
+            }
+        } else if (typeof val === 'number') {
+            if (!Number.isSafeInteger(val) || val < 0 || Object.is(val, -0)) {
+                throw new RangeError(`${paramName} dạng số phải là số nguyên an toàn không âm (không phải float, NaN, Infinity hoặc số âm).`);
+            }
+        } else if (typeof val !== 'bigint') {
+            throw new TypeError(`${paramName} không hợp lệ: Kiểu dữ liệu không được hỗ trợ.`);
+        }
+
+        let parsed;
+        try {
+            parsed = BigInt(val);
+        } catch (e) {
+            throw new TypeError(`${paramName} không thể chuyển đổi thành BigInt: ` + e.message);
+        }
+        if (parsed < 0n || parsed > 0xFFFFFFFFFFFFFFFFn) {
+            throw new RangeError(`${paramName} nằm ngoài phạm vi 64-bit không dấu [0, 2^64-1]: ${parsed}`);
+        }
+        return parsed;
+    }
+
     buildPacket(payloadStr, customNonce = null, magic = 0x47454E01) {
         if (customNonce !== null && customNonce !== undefined) {
-            let parsed;
-            try {
-                parsed = BigInt(customNonce);
-            } catch (e) {
-                throw new Error("Nonce tùy chỉnh không hợp lệ: " + e.message);
-            }
-            if (parsed < 0n || parsed > 0xFFFFFFFFFFFFFFFFn) {
-                throw new Error(`Nonce tùy chỉnh nằm ngoài phạm vi 64-bit không dấu [0, 2^64-1]: ${parsed}`);
-            }
+            const parsed = OZOSEngine._parseStrictNonce(customNonce, "Nonce tùy chỉnh");
             this.currentNonce = parsed;
         } else {
             if (this.currentNonce >= 0xFFFFFFFFFFFFFFFFn) {
@@ -167,13 +188,10 @@ class OZOSEngine {
         let parsedNonce = null;
         if (lastSeenNonce !== null && lastSeenNonce !== undefined) {
             try {
-                parsedNonce = BigInt(lastSeenNonce);
-            } catch (_) {
-                parsedNonce = null;
+                parsedNonce = OZOSEngine._parseStrictNonce(lastSeenNonce, "lastSeenNonce");
+            } catch (e) {
+                return { valid: false, code: 3, error: e.message };
             }
-        }
-        if (parsedNonce !== null && (parsedNonce < 0n || parsedNonce > 0xFFFFFFFFFFFFFFFFn)) {
-            return { valid: false, code: 3, error: `Giá trị Nonce không hợp lệ (nằm ngoài phạm vi 64-bit không dấu [0, 2^64-1]): ${parsedNonce}` };
         }
         const effectiveLastNonce = (parsedNonce !== null && parsedNonce !== 0n)
             ? parsedNonce
@@ -832,13 +850,28 @@ class OZOSEngine {
      * MAC16 bao phủ toàn vẹn cả Header (0..77) VÀ Payload (80..80+len)
      */
     buildAligned80BytePacket(payloadStr, customNonce = null, secretSeed = 0xA5A5A5A5n) {
-        if (customNonce !== null) {
-            this.currentNonce = BigInt(customNonce);
+        if (customNonce !== null && customNonce !== undefined) {
+            const parsed = OZOSEngine._parseStrictNonce(customNonce, "Nonce tùy chỉnh");
+            this.currentNonce = parsed;
         } else {
             if (this.currentNonce >= 0xFFFFFFFFFFFFFFFFn) {
                 throw new Error("Tràn bộ đếm Nonce (Nonce đạt cực đại 2^64-1). Yêu cầu thiết lập lại Nonce chủ quyền.");
             }
             this.currentNonce = this.currentNonce + 1n;
+        }
+        let safeSeed = 0xA5A5A5A5n;
+        if (secretSeed !== null && secretSeed !== undefined) {
+            if (typeof secretSeed === 'bigint') {
+                safeSeed = secretSeed;
+            } else if (typeof secretSeed === 'number' || typeof secretSeed === 'string') {
+                try {
+                    safeSeed = BigInt(secretSeed);
+                } catch (e) {
+                    throw new Error("Khóa secretSeed không hợp lệ: " + e.message);
+                }
+            } else {
+                throw new Error("Khóa secretSeed không hợp lệ (yêu cầu BigInt, số hoặc chuỗi hex/số).");
+            }
         }
         const payloadBytes = new TextEncoder().encode(payloadStr);
         if (payloadBytes.length > 65535) {
@@ -866,7 +899,7 @@ class OZOSEngine {
         packet.set(payloadBytes, 80);
 
         // 6. Tính toán Tripwire MAC 16-bit cho Header (0..77) VÀ Payload (80..80+len)
-        let macHash = secretSeed;
+        let macHash = safeSeed;
         for (let i = 0; i < 78; i++) {
             macHash = ((macHash ^ BigInt(packet[i])) * 0x100000001B3n) & 0xFFFFFFFFFFFFFFFFn;
         }
@@ -918,8 +951,22 @@ class OZOSEngine {
         }
 
         // 2. Kiểm tra Tripwire MAC 16-bit (Offset 78) bao phủ Header (0..77) VÀ Payload (80..80+len)
+        let safeSeed = 0xA5A5A5A5n;
+        if (secretSeed !== null && secretSeed !== undefined) {
+            if (typeof secretSeed === 'bigint') {
+                safeSeed = secretSeed;
+            } else if (typeof secretSeed === 'number' || typeof secretSeed === 'string') {
+                try {
+                    safeSeed = BigInt(secretSeed);
+                } catch (e) {
+                    return { valid: false, code: -1, reason: "Khóa secretSeed không hợp lệ: " + e.message };
+                }
+            } else {
+                return { valid: false, code: -1, reason: "Khóa secretSeed không hợp lệ (yêu cầu BigInt, số hoặc chuỗi hex/số)." };
+            }
+        }
         const incomingMac = view.getUint16(78, true);
-        let expectedHash = secretSeed;
+        let expectedHash = safeSeed;
         for (let i = 0; i < 78; i++) {
             expectedHash = ((expectedHash ^ BigInt(packetUint8[i])) * 0x100000001B3n) & 0xFFFFFFFFFFFFFFFFn;
         }
@@ -942,7 +989,7 @@ class OZOSEngine {
         }
 
         const isA2 = (incomingMac === expectedMac);
-        const isA1 = (secretSeed === 0xA5A5A5A5n && incomingMac === crc);
+        const isA1 = (safeSeed === 0xA5A5A5A5n && incomingMac === crc);
 
         if (!isA2 && !isA1) {
             return { valid: false, code: 3, reason: `Tripwire MAC16 thất bại: Header hoặc Payload đã bị sửa đổi (Nhận 0x${incomingMac.toString(16)} vs Kỳ vọng 0x${expectedMac.toString(16)})` };
@@ -956,13 +1003,10 @@ class OZOSEngine {
         let parsedNonce = null;
         if (lastSeenNonce !== null && lastSeenNonce !== undefined) {
             try {
-                parsedNonce = BigInt(lastSeenNonce);
-            } catch (_) {
-                parsedNonce = null;
+                parsedNonce = OZOSEngine._parseStrictNonce(lastSeenNonce, "lastSeenNonce");
+            } catch (e) {
+                return { valid: false, code: 2, reason: e.message };
             }
-        }
-        if (parsedNonce !== null && (parsedNonce < 0n || parsedNonce > 0xFFFFFFFFFFFFFFFFn)) {
-            return { valid: false, code: 2, reason: `Nonce không hợp lệ (phải nằm trong [0, 2^64-1]): ${parsedNonce}` };
         }
         const effectiveLastNonce = (parsedNonce !== null && parsedNonce !== 0n)
             ? parsedNonce
@@ -1059,8 +1103,8 @@ class OZOSEngine {
      *   tính lại MAC nếu không có khóa bí mật.
      */
     saveLocalVault(dataObj, vaultKey = null) {
-        if (dataObj === undefined) {
-            return { success: false, error: "Dữ liệu Vault không được để trống (undefined)." };
+        if (dataObj === undefined || dataObj === null) {
+            return { success: false, error: "Dữ liệu Vault không được để trống (undefined hoặc null)." };
         }
         let rawStr;
         try {
@@ -1068,20 +1112,25 @@ class OZOSEngine {
         } catch (e) {
             return { success: false, error: "Dữ liệu Vault chứa tham chiếu vòng hoặc không thể tuần tự hóa JSON: " + e.message };
         }
+        if (rawStr === undefined) {
+            return { success: false, error: "Dữ liệu Vault không thể tuần tự hóa JSON (hàm hoặc Symbol)." };
+        }
         const testLen = new TextEncoder().encode(rawStr).length;
         if (testLen > 65535) {
             return { success: false, error: `Dữ liệu Vault JSON vượt quá giới hạn kích thước tối đa (${testLen} > 65535 bytes).` };
         }
         if (vaultKey !== null && vaultKey !== undefined) {
-            const keyStr = String(vaultKey);
-            if (keyStr.length < 8) {
+            if (typeof vaultKey !== 'string') {
+                return { success: false, error: "Khóa két sắt (vaultKey) phải là chuỗi ký tự (string)." };
+            }
+            if (vaultKey.length < 8) {
                 return { success: false, error: "Mật khẩu két sắt (vaultKey) phải có độ dài tối thiểu 8 ký tự để bảo đảm entropy phòng thủ duyệt vét cạn." };
             }
         }
         let secretSeed = 0xA5A5A5A5n;
         if (vaultKey !== null && vaultKey !== undefined) {
             let h = 0xCBF29CE484222325n;
-            const keyStr = "OZOS_VAULT_KEYED_TRIPWIRE_V1:" + String(vaultKey);
+            const keyStr = "OZOS_VAULT_KEYED_TRIPWIRE_V1:" + vaultKey;
             for (let i = 0; i < keyStr.length; i++) {
                 h = ((h ^ BigInt(keyStr.charCodeAt(i))) * 0x100000001B3n) & 0xFFFFFFFFFFFFFFFFn;
             }
@@ -1108,10 +1157,13 @@ class OZOSEngine {
         if (!vaultRecord || !vaultRecord.base64) {
             return { valid: false, error: "Dữ liệu Vault rỗng" };
         }
+        if (vaultKey !== null && vaultKey !== undefined && typeof vaultKey !== 'string') {
+            return { valid: false, error: "Khóa két sắt (vaultKey) phải là chuỗi ký tự (string)." };
+        }
         let secretSeed = 0xA5A5A5A5n;
         if (vaultKey !== null && vaultKey !== undefined) {
             let h = 0xCBF29CE484222325n;
-            const keyStr = "OZOS_VAULT_KEYED_TRIPWIRE_V1:" + String(vaultKey);
+            const keyStr = "OZOS_VAULT_KEYED_TRIPWIRE_V1:" + vaultKey;
             for (let i = 0; i < keyStr.length; i++) {
                 h = ((h ^ BigInt(keyStr.charCodeAt(i))) * 0x100000001B3n) & 0xFFFFFFFFFFFFFFFFn;
             }

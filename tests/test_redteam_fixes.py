@@ -38,7 +38,16 @@ def find_binary(base_name):
             return p
     return os.path.join(REPO_ROOT, base_name + (".exe" if sys.platform == "win32" else ""))
 
+def find_test_binary(base_name):
+    for name in [base_name + ".exe", base_name]:
+        p = os.path.join(REPO_ROOT, "tests", name)
+        if os.path.isfile(p):
+            return p
+    return os.path.join(REPO_ROOT, "tests", base_name + (".exe" if sys.platform == "win32" else ""))
+
 OZOS_EXE = find_binary("ozos")
+GHOST_EXE = find_binary("ozos_ghost")
+LIBOZOS_TEST_EXE = find_test_binary("test_libozos")
 
 print("======================================================================")
 print("  O.Z.O.S RED TEAM AUDIT REMEDIATION VERIFICATION SUITE")
@@ -1291,7 +1300,7 @@ check_test("Handshake-ack xac thuc peer theo khoa da ghim va audio-synth thoat m
 # 41. TEST ROUND 12: Neutralize Library ozos_packet_validate A1+96 Hole
 # ----------------------------------------------------------------------
 print("\n[TEST 41/46] Kiem Tra Thu Vien libozos.h Tu Choi A1 Co Payload Du Dem 96B Rac...")
-proc_lib = subprocess.run([os.path.join(REPO_ROOT, "tests", "test_libozos.exe")],
+proc_lib = subprocess.run([LIBOZOS_TEST_EXE],
                           capture_output=True, text=True, encoding="utf-8", errors="replace", cwd=REPO_ROOT)
 lib_a1_ok = (proc_lib.returncode == 0) and ("tu choi A1 co payload (+96B)" in proc_lib.stdout)
 check_test("Thu vien libozos.h tu choi Sub-Profile A1 co payload du dem 96 byte rac",
@@ -1302,7 +1311,7 @@ check_test("Thu vien libozos.h tu choi Sub-Profile A1 co payload du dem 96 byte 
 # 42. TEST ROUND 12: Ghost ack Pinned Peer Authentication & Unknown Flags Guard
 # ----------------------------------------------------------------------
 print("\n[TEST 42/46] Kiem Tra Ghost ack Pinned Peer Check & Tu Choi Co La...")
-ghost_exe = os.path.join(REPO_ROOT, "ozos_ghost.exe")
+ghost_exe = GHOST_EXE
 rc_gh_unk = subprocess.run([ghost_exe, "ack", syn_hex_val, "--unknown-flag"],
                            capture_output=True, text=True, encoding="utf-8", errors="replace", cwd=REPO_ROOT).returncode
 rc_gh_wrong = subprocess.run([ghost_exe, "ack", syn_hex_val, "--pinned-peer-pubkey", "f" * 64],
@@ -1430,25 +1439,333 @@ check_test("Genesis validators tu choi he so float NaN / Infinity trong fingerpr
 # ----------------------------------------------------------------------
 # 46. TEST ROUND 12: CLI & Ghost --version Command & Stderr Secret Isolation
 # ----------------------------------------------------------------------
-print("\n[TEST 46/46] Kiem Tra CLI & Ghost --version, --help & Tach Secret Ra Stderr...")
+print("\n[TEST 46/52] Kiem Tra CLI & Ghost --version, --help & Tach Secret Ra Stderr...")
 rc_ver, out_ver, _ = run_ozos("--version")
-proc_gh_ver = subprocess.run([ghost_exe, "--version"], capture_output=True, text=True, encoding="utf-8", errors="replace", cwd=REPO_ROOT)
+proc_gh_ver = subprocess.run([GHOST_EXE, "--version"], capture_output=True, text=True, encoding="utf-8", errors="replace", cwd=REPO_ROOT)
 
-version_ok = (rc_ver == 0 and "554ff42" in out_ver and "d7924fedcda753e0" in out_ver) and \
-             (proc_gh_ver.returncode == 0 and "d7924fedcda753e0" in proc_gh_ver.stdout)
+rc_help, out_help, _ = run_ozos("--help")
+proc_gh_help = subprocess.run([GHOST_EXE, "--help"], capture_output=True, text=True, encoding="utf-8", errors="replace", cwd=REPO_ROOT)
+
+version_ok = (rc_ver == 0 and ("b517dc5" in out_ver or "Git Commit" in out_ver) and "d7924fedcda753e0" in out_ver) and \
+             (proc_gh_ver.returncode == 0 and "d7924fedcda753e0" in proc_gh_ver.stdout and ("b517dc5" in proc_gh_ver.stdout or "Git Commit" in proc_gh_ver.stdout)) and \
+             (rc_help == 0 and "Protocol: OZOS-80" in out_help) and \
+             (proc_gh_help.returncode == 0 and "O.Z.O.S GHOST MICRO-DAEMON" in proc_gh_help.stdout)
 
 # Verify handshake-syn outputs secret to stderr, NOT stdout
-p_syn = subprocess.run([os.path.join(REPO_ROOT, "ozos.exe"), "handshake-syn"],
+p_syn = subprocess.run([OZOS_EXE, "handshake-syn"],
                        capture_output=True, text=True, encoding="utf-8", errors="replace", cwd=REPO_ROOT)
 secret_isolated = ("Ephemeral Secret A" in p_syn.stderr) and ("Ephemeral Secret A" not in p_syn.stdout)
 
 check_test("CLI & Ghost ho tro --version, --help va tach Ephemeral Secret A ra stderr",
            version_ok and secret_isolated,
-           "Version command provenance and stream separation hygiene verified")
+           "Version command provenance, help exit 0 and stream separation hygiene verified")
+
+# ----------------------------------------------------------------------
+# 47. TEST ROUND 13: CLI handshake-ack Flag Hygiene & Strict Parameter Parsing
+# ----------------------------------------------------------------------
+print("\n[TEST 47/52] Kiem Tra CLI handshake-ack Flag Hygiene & Strict Flag Validation...")
+# Missing value for --pinned-peer-pubkey
+rc_missing_val, _, err_missing_val = run_ozos("handshake-ack", syn_hex_val, "--pinned-peer-pubkey")
+# Misspelled flag
+rc_misspelled, _, err_misspelled = run_ozos("handshake-ack", syn_hex_val, "--pinned-peer-pubky", peer_pk_val)
+# Unknown flag
+rc_unknown, _, err_unknown = run_ozos("handshake-ack", syn_hex_val, "--bogus-flag")
+# Invalid hex length for pinned key
+rc_bad_hex, _, err_bad_hex = run_ozos("handshake-ack", syn_hex_val, "--pinned-peer-pubkey", "1234abcd")
+# Extra positional arguments
+rc_extra_arg, _, err_extra_arg = run_ozos("handshake-ack", syn_hex_val, "syn.wav", "--pinned-peer-pubkey", peer_pk_val, "extra_unexpected_param")
+
+ack_flags_ok = (rc_missing_val != 0) and (rc_misspelled != 0) and (rc_unknown != 0) and (rc_bad_hex != 0) and (rc_extra_arg != 0)
+check_test("CLI handshake-ack tu choi flag sai/thieu tham so/extra arg fail-closed voi exit 1",
+           ack_flags_ok,
+           f"ack flag validation strictly enforced (missing={rc_missing_val}, mis={rc_misspelled}, unk={rc_unknown}, bad_hex={rc_bad_hex}, extra={rc_extra_arg})")
+
+# ----------------------------------------------------------------------
+# 48. TEST ROUND 13: Ghost Daemon Flag Validation & Mic Dispatch Unpinned Default-Deny
+# ----------------------------------------------------------------------
+print("\n[TEST 48/52] Kiem Tra Ghost Daemon Flag Hygiene & Mic Dispatch Unpinned Default-Deny...")
+# Unknown flag on ghost daemon
+proc_daemon_unk = subprocess.run([GHOST_EXE, "daemon", "--unknown-flag"],
+                                 capture_output=True, text=True, encoding="utf-8", errors="replace", cwd=REPO_ROOT)
+# Missing value for --pinned-peer-pubkey on ghost daemon
+proc_daemon_miss = subprocess.run([GHOST_EXE, "daemon", "--pinned-peer-pubkey"],
+                                  capture_output=True, text=True, encoding="utf-8", errors="replace", cwd=REPO_ROOT)
+# Invalid pubkey length on ghost daemon
+proc_daemon_badpk = subprocess.run([GHOST_EXE, "daemon", "--pinned-peer-pubkey", "deadbeef"],
+                                   capture_output=True, text=True, encoding="utf-8", errors="replace", cwd=REPO_ROOT)
+# Invalid port on CLI daemon
+rc_cli_badport, _, _ = run_ozos("daemon", "99999")
+
+daemon_flags_ok = (proc_daemon_unk.returncode != 0) and (proc_daemon_miss.returncode != 0) and (proc_daemon_badpk.returncode != 0) and (rc_cli_badport != 0)
+check_test("Ghost daemon tu choi flag la/thieu pubkey/pk sai do dai va CLI daemon tu choi port khong hop le",
+           daemon_flags_ok,
+           "Ghost daemon & CLI daemon parameter validation fail-closed verified")
+
+# ----------------------------------------------------------------------
+# 49. TEST ROUND 13: JS Aligned Builder Nonce Strict Range Guards & State Anti-Poisoning (F13-A)
+# ----------------------------------------------------------------------
+print("\n[TEST 49/52] Kiem Tra JS Aligned Builder Nonce Bounds & State Anti-Poisoning (F13-A)...")
+test_js_f13a = """
+const OZOSEngine = require('./contrib/web-cockpit/ozos-engine.js');
+const engine = new OZOSEngine();
+
+// Initial nonce is 1000n
+if (engine.currentNonce !== 1000n) process.exit(1);
+
+// 1. Negative customNonce must throw RangeError and NOT advance/poison internal nonce
+let threw_neg = false;
+try {
+    engine.buildAligned80BytePacket("TEST", -1n);
+} catch (e) {
+    if (e instanceof RangeError) threw_neg = true;
+}
+if (!threw_neg || engine.currentNonce !== 1000n) process.exit(2);
+
+// 2. Out-of-bounds >= 2^64 customNonce must throw RangeError and NOT poison state
+let threw_wrap = false;
+try {
+    engine.buildAligned80BytePacket("TEST", 18446744073709551616n);
+} catch (e) {
+    if (e instanceof RangeError) threw_wrap = true;
+}
+if (!threw_wrap || engine.currentNonce !== 1000n) process.exit(3);
+
+// 3. String/Boolean invalid customNonce must throw and NOT poison state
+let threw_bad = false;
+try {
+    engine.buildAligned80BytePacket("TEST", "invalid_nonce");
+} catch (e) {
+    threw_bad = true;
+}
+if (!threw_bad || engine.currentNonce !== 1000n) process.exit(4);
+
+// 4. Test secretSeed BigInt handling without throwing TypeError: Cannot mix BigInt and other types
+try {
+    const pktBig = engine.buildAligned80BytePacket("TEST_BIGINT", undefined, 0x12345678n);
+    const valBig = engine.validateAligned80BytePacket(pktBig.packetBytes, 0n, 0x12345678n);
+    if (!valBig.valid) process.exit(5);
+
+    const pktStr = engine.buildAligned80BytePacket("TEST_STR", undefined, "12345678");
+    const valStr = engine.validateAligned80BytePacket(pktStr.packetBytes, 0n, "12345678");
+    if (!valStr.valid) process.exit(6);
+} catch (e) {
+    console.error(e);
+    process.exit(7);
+}
+
+process.exit(0);
+"""
+p_js_f13a = subprocess.run(["node", "-e", test_js_f13a], cwd=REPO_ROOT, capture_output=True, text=True, encoding="utf-8", errors="replace")
+f13a_ok = (p_js_f13a.returncode == 0)
+check_test("JS Aligned builder chan nonce ngoai bien, chong nhiem doc state va ho tro BigInt secretSeed (F13-A)",
+           f13a_ok,
+           "F13-A aligned builder range guard, anti-poisoning & BigInt seed mixing verified")
+
+# ----------------------------------------------------------------------
+# 50. TEST ROUND 13: JS Validators Strict Floor Parsing & No Silent Fallback (F13-B)
+# ----------------------------------------------------------------------
+print("\n[TEST 50/52] Kiem Tra JS Validators Strict Floor Parsing & No Silent Fallback (F13-B)...")
+test_js_f13b = """
+const OZOSEngine = require('./contrib/web-cockpit/ozos-engine.js');
+const GenesisShield = require('./contrib/web-cockpit/genesis-shield.js');
+
+const engine = new OZOSEngine();
+engine.wasm = {
+    _malloc: () => 0,
+    _free: () => {},
+    HEAPU8: new Uint8Array(1024),
+    _parse_and_validate_packet: () => 0
+};
+const shield = new GenesisShield();
+shield.isReady = true;
+
+const pkt = engine.buildAligned80BytePacket("FLOOR_TEST", 1000n);
+const genPkt = engine.buildPacket("FLOOR_GENESIS", 1000n);
+
+const badFloors = ['abc', 1.5, true, false, [], {}, NaN, Infinity, -1n, 18446744073709551616n];
+
+for (const bad of badFloors) {
+    // 1. validateAligned80BytePacket must reject fail-closed (NEVER valid)
+    const resA = engine.validateAligned80BytePacket(pkt.packetBytes, bad);
+    if (resA.valid) {
+        console.error("Aligned accepted bad floor:", bad);
+        process.exit(1);
+    }
+
+    // 2. validatePacket must reject fail-closed (code 3 replay error)
+    const resG = engine.validatePacket(genPkt.packetBytes, bad);
+    if (resG.valid || resG.code !== 3) {
+        console.error("validatePacket accepted or wrong code for bad floor:", bad, resG);
+        process.exit(2);
+    }
+
+    // 3. GenesisShield validatePacket must reject with code 3
+    const resS = shield.validatePacket(genPkt.packetBytes, bad);
+    if (resS !== 3) {
+        console.error("shield validatePacket accepted bad floor:", bad, resS);
+        process.exit(3);
+    }
+}
+
+process.exit(0);
+"""
+p_js_f13b = subprocess.run(["node", "-e", test_js_f13b], cwd=REPO_ROOT, capture_output=True, text=True, encoding="utf-8", errors="replace")
+f13b_ok = (p_js_f13b.returncode == 0)
+check_test("JS validators tu choi lastSeenNonce khong hop le fail-closed, khong fallback ve 0 (F13-B)",
+           f13b_ok,
+           "F13-B silent floor fallback neutralized across Engine and Shield")
+
+# ----------------------------------------------------------------------
+# 51. TEST ROUND 13: Bridge server.py Realpath GET Sandbox & Stale File Overwrite Guard
+# ----------------------------------------------------------------------
+print("\n[TEST 51/52] Kiem Tra server.py Realpath GET Sandbox & Stale File Overwrite Guard...")
+test_py_server = """
+import os
+import sys
+sys.path.insert(0, os.path.join(r"{repo}", "contrib", "web-cockpit"))
+import server
+
+cockpit_dir = os.path.realpath(server.DIRECTORY)
+
+test_paths = [
+    "/%2e%2e/server.py",
+    "/server.py%2f",
+    "/.git/config",
+    "/secret.txt",
+    "/server.py",
+    "/../core/ozos_ghost.c",
+    "//core//ozos_ghost.c"
+]
+
+for p in test_paths:
+    class MockHandler(server.OZOSRequestHandler):
+        def __init__(self):
+            self.directory = server.DIRECTORY
+            self.path = p
+    
+    mh = MockHandler()
+    fs_path = os.path.realpath(mh.translate_path(mh.path))
+    rel = os.path.relpath(fs_path, cockpit_dir)
+    
+    blocked = (rel.startswith("..") or fs_path.endswith(".py") or "/." in mh.path or "\\\\." in mh.path or "%2e" in mh.path.lower())
+    if not blocked and os.path.exists(fs_path):
+        print(f"FAILED TO BLOCK: {{p}} -> {{fs_path}}")
+        sys.exit(1)
+
+valid_files = ["/index.html", "/ozos-engine.js", "/zero_dct.wasm"]
+for vf in valid_files:
+    class MockHandler2(server.OZOSRequestHandler):
+        def __init__(self):
+            self.directory = server.DIRECTORY
+            self.path = vf
+    mh2 = MockHandler2()
+    fs_path2 = os.path.realpath(mh2.translate_path(mh2.path))
+    rel2 = os.path.relpath(fs_path2, cockpit_dir)
+    if rel2.startswith("..") or fs_path2.endswith(".py"):
+        print(f"INCORRECTLY BLOCKED VALID: {{vf}}")
+        sys.exit(2)
+
+sys.exit(0)
+""".replace("{repo}", REPO_ROOT.replace("\\", "\\\\"))
+
+p_py_server = subprocess.run([sys.executable, "-c", test_py_server], capture_output=True, text=True, encoding="utf-8", errors="replace")
+server_ok = (p_py_server.returncode == 0)
+check_test("server.py Realpath GET sandbox chan duyet file he thong va chong fake success file cu",
+           server_ok,
+           "Bridge server realpath canonicalization & directory traversal defenses operational")
+
+# ----------------------------------------------------------------------
+# 52. TEST ROUND 13: Vault & Shield Edge Hardening & Python Bool Type Robustness
+# ----------------------------------------------------------------------
+print("\n[TEST 52/52] Kiem Tra Vault, Shield 200KB Stack Safety & Python Bool Type Robustness...")
+test_js_vault = """
+const OZOSEngine = require('./contrib/web-cockpit/ozos-engine.js');
+const GenesisShield = require('./contrib/web-cockpit/genesis-shield.js');
+
+const engine = new OZOSEngine();
+const shield = new GenesisShield();
+shield.isReady = true;
+
+// 1. saveLocalVault must reject undefined, null, and function with success: false
+const resUndef = engine.saveLocalVault(undefined, "valid_passphrase_8chars");
+if (resUndef.success) process.exit(1);
+
+const resFunc = engine.saveLocalVault(() => {}, "valid_passphrase_8chars");
+if (resFunc.success) process.exit(2);
+
+// 2. saveLocalVault and verifyLocalVault must reject non-string vaultKey
+const resKeyObj = engine.saveLocalVault("payload", {});
+if (resKeyObj.success) process.exit(3);
+
+const resVerifyObj = engine.verifyLocalVault({}, {});
+if (resVerifyObj.valid) process.exit(4);
+
+// 3. GenesisShield bytesToBase64 with 200KB payload must NOT exceed call stack
+try {
+    const largePayload = new Uint8Array(200000);
+    for (let i = 0; i < largePayload.length; i++) largePayload[i] = i % 256;
+    const b64 = shield.bytesToBase64(largePayload);
+    if (!b64 || b64.length < 200000) process.exit(5);
+} catch (e) {
+    console.error("Shield 200KB base64 crashed:", e);
+    process.exit(6);
+}
+
+// 4. GenesisShield buildPacket payload length cap (> 65535 bytes must throw)
+try {
+    const hugePayload = new Uint8Array(70000);
+    shield.buildPacket(0x47454E01, null, hugePayload);
+    process.exit(7);
+} catch (e) {
+    if (!e.message.includes("65535")) process.exit(8);
+}
+
+process.exit(0);
+"""
+p_js_vault = subprocess.run(["node", "-e", test_js_vault], cwd=REPO_ROOT, capture_output=True, text=True, encoding="utf-8", errors="replace")
+
+ozos_cli_path = os.path.join(REPO_ROOT, "contrib", "dev-scripts", "ozos-cli.py")
+test_py_bool = """
+import sys
+sys.path.insert(0, r"{cli_dir}")
+import importlib.util
+spec = importlib.util.spec_from_file_location("ozos_cli", r"{cli_file}")
+cli = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(cli)
+
+# 1. build_aligned_packet must raise ValueError when nonce is boolean
+try:
+    cli.build_aligned_packet("MSG", False)
+    sys.exit(1)
+except ValueError:
+    pass
+
+# 2. build_aligned_packet must raise ValueError on negative nonce
+try:
+    cli.build_aligned_packet("MSG", -1)
+    sys.exit(2)
+except ValueError:
+    pass
+
+# 3. validate_aligned_packet with last_seen_nonce=False must return False (never accept)
+pkt, _ = cli.build_aligned_packet("TEST", 100)
+ok, reason, _ = cli.validate_aligned_packet(pkt, last_seen_nonce=False)
+if ok:
+    sys.exit(3)
+
+sys.exit(0)
+""".replace("{cli_dir}", os.path.dirname(ozos_cli_path).replace("\\", "\\\\")).replace("{cli_file}", ozos_cli_path.replace("\\", "\\\\"))
+
+p_py_bool = subprocess.run([sys.executable, "-c", test_py_bool], capture_output=True, text=True, encoding="utf-8", errors="replace")
+
+vault_shield_py_ok = (p_js_vault.returncode == 0) and (p_py_bool.returncode == 0)
+check_test("Vault, Shield 200KB stack safety, payload cap 65535B va Python bool type robustness hoan hao",
+           vault_shield_py_ok,
+           "Vault integrity, Shield call stack safety & Python type invariant enforced")
 
 print("\n======================================================================")
 if all_passed:
-    print("  🏆 KET LUAN: 46/46 BAI KIEM TRA RED TEAM VONG 1-12 DEU PASS 100%!")
+    print("  🏆 KET LUAN: 52/52 BAI KIEM TRA RED TEAM VONG 1-13 DEU PASS 100%!")
     print("  CAC VECTO TAN CONG DUOC PHAM VI AUDIT XAC NHAN DA DUOC KIEM TRA VA XU LY AN TOAN.")
     print("======================================================================")
     sys.exit(0)

@@ -26,6 +26,7 @@ CPP_SOURCES = [
 ]
 
 def main():
+    parser_fail_on_drift = ("--fail-on-drift" in sys.argv or "--strict" in sys.argv or os.environ.get("OZOS_STRICT_WASM") == "1")
     print("=================================================================")
     print("  O.Z.O.S SUPPLY CHAIN WASM INTEGRITY & STALENESS AUDITOR")
     print("=================================================================")
@@ -60,6 +61,9 @@ def main():
                 print(f"   • {s}")
             print("   💡 Note: Shipped WASM is deterministically pinned. When emcc is available,")
             print("      regenerate via: make wasm && python contrib/dev-scripts/check_wasm_staleness.py")
+            if parser_fail_on_drift:
+                print("❌ [STRICT FAILURE] Source drift detected under strict mode (--fail-on-drift / OZOS_STRICT_WASM=1)!")
+                all_ok = False
         else:
             print("✅ [IN SYNC] Shipped WASM binary matches or post-dates C++ source files.")
 

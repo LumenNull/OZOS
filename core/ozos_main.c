@@ -39,6 +39,9 @@ extern void randombytes(unsigned char *buf, unsigned long long len);
 #include "ozos_gossip.h"
 
 #define OZOS_VERSION_STR "2026.1-SOVEREIGN"
+#ifndef OZOS_GIT_COMMIT_HASH
+#define OZOS_GIT_COMMIT_HASH "b517dc5"
+#endif
 #define OZOS_DEFAULT_DAEMON_PORT 7788
 
 /* =============================================================================
@@ -356,8 +359,10 @@ static void cmd_keygen(const char* custom_seed_hex) {
     printf("=================================================================\n");
     printf("💡 LƯU Ý BẢO MẬT & QUẢN TRỊ DANH BẠ:\n");
     printf("• Cặp khóa chỉ hiển thị trên terminal phiên hiện tại, KHÔNG lưu xuống đĩa.\n");
-    printf("• Fingerprint tác giả : 0x%.16s...\n", pk_hex);
-    printf("• Hãy lưu trữ seed 64-hex ở nơi an toàn; mất seed đồng nghĩa mất vĩnh viễn định danh!\n");
+    printf("• Full Fingerprint (64-Hex): 0x%s\n", pk_hex);
+    printf("• Short Fingerprint        : 0x%.16s...\n", pk_hex);
+    printf("• Hướng dẫn lưu trữ        : Tuyệt đối không commit seed vào Git hay lưu file không mã hóa. Hãy cất giữ ngoại tuyến (Cold Storage / Hardware Enclave).\n");
+    printf("• Mất seed đồng nghĩa mất vĩnh viễn quyền sở hữu danh tính chủ quyền!\n");
     printf("=================================================================\n");
     return 0;
 }
@@ -466,13 +471,13 @@ static int cmd_packet_build(const char* message, uint64_t nonce) {
 
     size_t total_size = OZOS_PACKET_HEADER_SIZE + msg_len;
     uint8_t* buffer = (uint8_t*)malloc(total_size);
-    if (!buffer) return;
+    if (!buffer) return 1;
 
     memcpy(buffer, &pkt, OZOS_PACKET_HEADER_SIZE);
     memcpy(buffer + OZOS_PACKET_HEADER_SIZE, message, msg_len);
 
     char* hex_dump = (char*)malloc(total_size * 2 + 1);
-    if (!hex_dump) { free(buffer); return; }
+    if (!hex_dump) { free(buffer); return 1; }
     bytes_to_hex(buffer, total_size, hex_dump);
 
     printf("=================================================================\n");
@@ -629,10 +634,12 @@ static int cmd_packet_verify(const char* hex_str, uint64_t last_seen_nonce, cons
                 uint8_t trusted_pk[32];
                 hex_to_bytes(trusted_author_pk_hex, trusted_pk, 32);
                 if (memcmp(author_pk, trusted_pk, 32) == 0) {
+                    printf("• Pinned Peer Check  : ℹ️ Xac thuc theo khoa ghim CLI argument (TOFU). Kiem tra van tay out-of-band.\n");
+                    printf("• Full Fingerprint   : 0x%s\n", pk_hex);
+                    printf("• TOFU Notice        : ℹ️ Pinned via CLI argument. Verify this fingerprint out-of-band.\n");
                     printf("Trang thai: ✅ HOP LE TUYET DOI (100%% INVARIANT INTEGRITY & SOVEREIGN VERIFIED)\n");
                     printf("• Chu ky Ban the : ✅ CHỮ KÝ ED25519 HỢP LỆ VÀ ĐÃ XÁC THỰC TÁC GIẢ CHỦ QUYỀN!\n");
                     printf("• Author PubKey  : 0x%s [TRUSTED PINNED SOVEREIGN KEY]\n", pk_hex);
-                    printf("• TOFU Notice    : ℹ️ Pinned via CLI argument. Verify this fingerprint out-of-band.\n");
                     final_rc = 0;
                 } else {
                     printf("Trang thai: 🚨 BI TU CHOI: CHU KY DUNG NHUNG TAC GIA KHONG THUOC DANH BA TIN CAY!\n");
@@ -1504,10 +1511,18 @@ int main(int argc, char* argv[]) {
         const char* wav_path = NULL;
         const char* pinned_peer_pk = NULL;
         for (int i = 3; i < argc; ++i) {
-            if (strcmp(argv[i], "--pinned-peer-pubkey") == 0 && i + 1 < argc) {
-                pinned_peer_pk = argv[++i];
+            if (strcmp(argv[i], "--pinned-peer-pubkey") == 0) {
+                if (i + 1 < argc) {
+                    pinned_peer_pk = argv[++i];
+                } else {
+                    fprintf(stderr, "🚨 [LOI] Thieu tham so khoa cong khai cho co --pinned-peer-pubkey <64_hex_pk>!\n");
+                    return 1;
+                }
             } else if (!wav_path && argv[i][0] != '-') {
                 wav_path = argv[i];
+            } else {
+                fprintf(stderr, "🚨 [LOI] Tham so khong xac dinh hoac co khong hop le: %s\n", argv[i]);
+                return 1;
             }
         }
         return cmd_handshake_ack(argv[2], wav_path, pinned_peer_pk);
@@ -1584,7 +1599,7 @@ int main(int argc, char* argv[]) {
         printf("=================================================================\n");
         printf("  O.Z.O.S Sovereign Microkernel v1.2.0 (Self-Sovereign Invariant Engine)\n");
         printf("=================================================================\n");
-        printf("• Git Commit     : 554ff42\n");
+        printf("• Git Commit     : %s\n", OZOS_GIT_COMMIT_HASH);
         printf("• Target Arch    : x86_64 / MSVC C99 Bare-Metal\n");
         printf("• Pinned WASM SHA: d7924fedcda753e0b9eefdaf779eb657f67fba50da96472dc98c92b393d7b4a3\n");
         printf("• Canonical Repo : https://github.com/LumenNull/OZOS.git\n");

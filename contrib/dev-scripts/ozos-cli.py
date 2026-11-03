@@ -75,6 +75,12 @@ def cmd_tpm():
     tpm.close()
 
 def build_aligned_packet(payload_str, nonce=1001, secret_seed=0xA5A5A5A5):
+    if not isinstance(payload_str, str):
+        raise ValueError(f"payload_str phải là chuỗi ký tự (str), nhận được {type(payload_str).__name__}")
+    if isinstance(nonce, bool) or not isinstance(nonce, int) or nonce < 0 or nonce > 0xFFFFFFFFFFFFFFFF:
+        raise ValueError(f"nonce phải là số nguyên 64-bit không dấu [0, 2^64-1], nhận được {nonce!r}")
+    if isinstance(secret_seed, bool) or not isinstance(secret_seed, int):
+        raise ValueError(f"secret_seed phải là số nguyên (int), nhận được {type(secret_seed).__name__}")
     payload_bytes = payload_str.encode('utf-8')
     if len(payload_bytes) > 65535:
         raise ValueError(f"Payload vượt quá giới hạn tối đa của khung dữ liệu 16-bit ({len(payload_bytes)} > 65535 bytes)")
@@ -113,13 +119,17 @@ def validate_aligned_packet(packet_bytes, last_seen_nonce=0, secret_seed=0xA5A5A
     packet_bytes = bytes(packet_bytes)
     if len(packet_bytes) < 80:
         return False, "Kích thước nhỏ hơn 80 bytes", None
+    if isinstance(last_seen_nonce, bool):
+        return False, "last_seen_nonce không được là kiểu boolean (bool)", None
+    if isinstance(secret_seed, bool) or not isinstance(secret_seed, int):
+        return False, f"secret_seed phải là số nguyên (int), nhận được {type(secret_seed).__name__}", None
     if isinstance(last_seen_nonce, float):
         return False, "last_seen_nonce không được là số thực (float)", None
     if last_seen_nonce is None:
         return False, "last_seen_nonce không được là None", None
     if not isinstance(last_seen_nonce, int):
-        if isinstance(last_seen_nonce, str) and last_seen_nonce.strip().isdigit():
-            last_seen_nonce = int(last_seen_nonce.strip())
+        if isinstance(last_seen_nonce, str) and last_seen_nonce.isdigit():
+            last_seen_nonce = int(last_seen_nonce)
         else:
             return False, f"last_seen_nonce không hợp lệ: {last_seen_nonce!r}", None
     if last_seen_nonce < 0 or last_seen_nonce > 0xFFFFFFFFFFFFFFFF:

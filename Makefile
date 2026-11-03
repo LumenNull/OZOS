@@ -50,21 +50,25 @@ $(TEST_TARGET): tests/test_libozos.c core/tweetnacl.c
 
 test: $(TARGET) $(CLI_TARGET) $(TEST_TARGET)
 	@echo "================================================================="
-	@echo "  [TEST 1/4] HARDWARE TORTURE VERIFICATION"
+	@echo "  [TEST 1/5] HARDWARE TORTURE VERIFICATION"
 	@echo "================================================================="
 	./$(TARGET) torture
 	@echo "================================================================="
-	@echo "  [TEST 2/4] COSMIC & EXISTENTIAL PARADOXES"
+	@echo "  [TEST 2/5] COSMIC & EXISTENTIAL PARADOXES"
 	@echo "================================================================="
 	./$(TARGET) cosmic
 	@echo "================================================================="
-	@echo "  [TEST 3/4] GENESIS BLOCK #000000 SEAL"
+	@echo "  [TEST 3/5] GENESIS BLOCK #000000 SEAL"
 	@echo "================================================================="
 	./$(TARGET) genesis
 	@echo "================================================================="
-	@echo "  [TEST 4/4] 15-TIER NATIVE LIBOZOS SUITE (12/12 PILLARS)"
+	@echo "  [TEST 4/5] 15-TIER NATIVE LIBOZOS SUITE (12/12 PILLARS)"
 	@echo "================================================================="
 	./$(TEST_TARGET)
+	@echo "================================================================="
+	@echo "  [TEST 5/5] SUPPLY CHAIN WASM INTEGRITY & PIN AUDIT"
+	@echo "================================================================="
+	@$(PYTHON) contrib/dev-scripts/check_wasm_staleness.py
 
 wasm:
 	@echo "================================================================="

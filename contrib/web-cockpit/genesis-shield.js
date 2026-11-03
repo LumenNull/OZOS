@@ -56,7 +56,19 @@ class GenesisShield {
     // TẦNG 2: TRANSPORT NETWORK DEFENSE
     // --------------------------------------------------
     buildPacket(magicHeader, nonce, payloadStr) {
-        const payloadBytes = new TextEncoder().encode(payloadStr);
+        let payloadBytes;
+        if (payloadStr instanceof Uint8Array) {
+            payloadBytes = payloadStr;
+        } else if (typeof payloadStr === 'string') {
+            payloadBytes = new TextEncoder().encode(payloadStr);
+        } else if (payloadStr === undefined || payloadStr === null) {
+            payloadBytes = new Uint8Array(0);
+        } else {
+            payloadBytes = new TextEncoder().encode(String(payloadStr));
+        }
+        if (payloadBytes.length > 65535) {
+            throw new Error(`Payload vượt quá giới hạn tối đa của khung dữ liệu 16-bit (${payloadBytes.length} > 65535 bytes).`);
+        }
         const totalSize = 80 + payloadBytes.length; // Cấu trúc GENS v1: 4 + 8 + 64 + 4 = 80
         
         const buffer = new ArrayBuffer(totalSize);
@@ -67,6 +79,14 @@ class GenesisShield {
         dataView.setUint32(offset, magicHeader, true); offset += 4;
         let effectiveNonce;
         if (nonce !== null && nonce !== undefined) {
+            if (typeof nonce === 'boolean' || Array.isArray(nonce) || typeof nonce === 'symbol' || (typeof nonce === 'object' && nonce !== null)) {
+                throw new Error("Nonce tùy chỉnh không hợp lệ: Không chấp nhận kiểu dữ liệu không chuẩn.");
+            }
+            if (typeof nonce === 'string' && !/^\d+$/.test(nonce)) {
+                throw new Error("Nonce tùy chỉnh dạng chuỗi phải chứa toàn bộ chữ số nguyên dương thập phân.");
+            } else if (typeof nonce === 'number' && (!Number.isSafeInteger(nonce) || nonce < 0 || Object.is(nonce, -0))) {
+                throw new Error("Nonce tùy chỉnh dạng số phải là số nguyên an toàn không âm.");
+            }
             let parsed;
             try {
                 parsed = BigInt(nonce);
@@ -115,14 +135,23 @@ class GenesisShield {
 
         let parsedNonce = null;
         if (lastSeenNonce !== null && lastSeenNonce !== undefined) {
+            if (typeof lastSeenNonce === 'boolean' || Array.isArray(lastSeenNonce) || typeof lastSeenNonce === 'symbol' || (typeof lastSeenNonce === 'object' && lastSeenNonce !== null)) {
+                return 3;
+            }
+            if (typeof lastSeenNonce === 'string' && !/^\d+$/.test(lastSeenNonce)) {
+                return 3;
+            }
+            if (typeof lastSeenNonce === 'number' && (!Number.isSafeInteger(lastSeenNonce) || lastSeenNonce < 0 || Object.is(lastSeenNonce, -0))) {
+                return 3;
+            }
             try {
                 parsedNonce = BigInt(lastSeenNonce);
             } catch (_) {
-                parsedNonce = null;
+                return 3;
             }
-        }
-        if (parsedNonce !== null && (parsedNonce < 0n || parsedNonce > 0xFFFFFFFFFFFFFFFFn)) {
-            return 3; // Nonce ngoài phạm vi [0, 2^64-1]
+            if (parsedNonce < 0n || parsedNonce > 0xFFFFFFFFFFFFFFFFn) {
+                return 3; // Nonce ngoài phạm vi [0, 2^64-1]
+            }
         }
         const effectiveLastNonce = (parsedNonce !== null && parsedNonce !== 0n)
             ? parsedNonce
@@ -196,10 +225,25 @@ class GenesisShield {
     // --------------------------------------------------
     // TẦNG 3: LOCAL SECURE VAULT (Két Sắt Cục Bộ)
     // --------------------------------------------------
+    bytesToBase64(uint8) {
+        let binary = '';
+        const len = uint8.length;
+        const chunkSize = 8192;
+        for (let i = 0; i < len; i += chunkSize) {
+            const end = Math.min(i + chunkSize, len);
+            const sub = uint8.subarray(i, end);
+            binary += String.fromCharCode.apply(null, sub);
+        }
+        return btoa(binary);
+    }
+
     saveToVault(key, nonce, payloadStr, magicHeader = 0x47454E01) {
+        const payloadBytes = new TextEncoder().encode(payloadStr);
+        if (payloadBytes.length > 65535) {
+            throw new Error(`Dữ liệu Vault vượt quá giới hạn kích thước tối đa (${payloadBytes.length} > 65535 bytes).`);
+        }
         const packetBytes = this.buildPacket(magicHeader, nonce, payloadStr);
-        // Mã hóa Base64 để nhét vừa LocalStorage
-        const b64 = btoa(String.fromCharCode.apply(null, packetBytes));
+        const b64 = this.bytesToBase64(packetBytes);
         localStorage.setItem(key, b64);
         return true;
     }
