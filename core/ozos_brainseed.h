@@ -159,7 +159,7 @@ static inline void ozos_pbkdf2_sha512_bip39(
 ) {
     size_t pwd_len = strlen(mnemonic);
 
-    /* Salt = "mnemonic" + passphrase (Hỗ trợ passphrase dài tới 2000+ ký tự, không bị cắt ngầm hay tràn stack) */
+    /* Salt = "mnemonic" + passphrase (Hỗ trợ passphrase an toàn tuyệt đối tới 500 ký tự, kẹp biên chống identity fork) */
     char salt[2048] = "mnemonic";
     if (passphrase && strlen(passphrase) > 0) {
         size_t rem = sizeof(salt) - strlen(salt) - 1;

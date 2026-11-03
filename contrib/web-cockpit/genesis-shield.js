@@ -64,7 +64,11 @@ class GenesisShield {
 
         let offset = 0;
         dataView.setUint32(offset, magicHeader, true); offset += 4;
-        dataView.setBigUint64(offset, BigInt(nonce), true); offset += 8;
+        const effectiveNonce = (nonce !== null && nonce !== undefined) ? BigInt(nonce) : (this.lastSeenNonce + 1n);
+        if (effectiveNonce >= 0xFFFFFFFFFFFFFFFFn) {
+            throw new Error("Tràn bộ đếm Nonce (Nonce đạt cực đại 2^64-1). Yêu cầu thiết lập lại Nonce chủ quyền.");
+        }
+        dataView.setBigUint64(offset, effectiveNonce, true); offset += 8;
         
         // Tính mã kiểm tra toàn vẹn Payload (FNV-1a 32-bit checksum)
         let payloadChecksum = 0x811C9DC5;

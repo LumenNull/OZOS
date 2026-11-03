@@ -148,7 +148,9 @@ class OZOSEngine {
             return { valid: false, code: -1, error: "Lõi WASM chưa được khởi tạo. Từ chối thẩm định bảo vệ chủ quyền." };
         }
 
-        const effectiveLastNonce = (lastSeenNonce !== null) ? BigInt(lastSeenNonce) : this.lastSeenPeerNonce;
+        const effectiveLastNonce = (lastSeenNonce !== null && lastSeenNonce !== undefined && lastSeenNonce !== 0n)
+            ? BigInt(lastSeenNonce)
+            : this.lastSeenPeerNonce;
 
         const ptr = this.wasm._malloc(packetUint8.length);
         this.wasm.HEAPU8.set(packetUint8, ptr);
@@ -199,8 +201,10 @@ class OZOSEngine {
         const payloadBytes = packetUint8.slice(80, 80 + payloadLen);
         const payloadText = new TextDecoder().decode(payloadBytes);
 
-        // Chỉ cập nhật nonce sau khi vượt qua toàn bộ kiểm duyệt
-        this.lastSeenPeerNonce = incomingNonce;
+        // Chỉ cập nhật nonce sau khi vượt qua toàn bộ kiểm duyệt; TUYỆT ĐỐI không bao giờ lùi state đã lưu
+        if (incomingNonce > this.lastSeenPeerNonce) {
+            this.lastSeenPeerNonce = incomingNonce;
+        }
 
         return {
             valid: true,
@@ -789,8 +793,18 @@ class OZOSEngine {
      * MAC16 bao phủ toàn vẹn cả Header (0..77) VÀ Payload (80..80+len)
      */
     buildAligned80BytePacket(payloadStr, customNonce = null, secretSeed = 0xA5A5A5A5n) {
-        this.currentNonce = (customNonce !== null) ? BigInt(customNonce) : (this.currentNonce + 1n);
+        if (customNonce !== null) {
+            this.currentNonce = BigInt(customNonce);
+        } else {
+            if (this.currentNonce >= 0xFFFFFFFFFFFFFFFFn) {
+                throw new Error("Tràn bộ đếm Nonce (Nonce đạt cực đại 2^64-1). Yêu cầu thiết lập lại Nonce chủ quyền.");
+            }
+            this.currentNonce = this.currentNonce + 1n;
+        }
         const payloadBytes = new TextEncoder().encode(payloadStr);
+        if (payloadBytes.length > 65535) {
+            throw new Error(`Payload vượt quá giới hạn tối đa của khung dữ liệu 16-bit (${payloadBytes.length} > 65535 bytes).`);
+        }
         const totalSize = 80 + payloadBytes.length;
         const packet = new Uint8Array(totalSize);
         const view = new DataView(packet.buffer);
@@ -866,8 +880,22 @@ class OZOSEngine {
             expectedHash = ((expectedHash ^ BigInt(packetUint8[80 + i])) * 0x100000001B3n) & 0xFFFFFFFFFFFFFFFFn;
         }
         const expectedMac = Number((expectedHash ^ (expectedHash >> 16n) ^ (expectedHash >> 32n)) & 0xFFFFn);
-        // Triệt tiêu hoàn toàn backdoor MAC = 0 và xác thực toàn vẹn Header + Payload
-        if (incomingMac !== expectedMac) {
+
+        // Hỗ trợ tương thích chuẩn tắc đa nền tảng với Sub-profile A1 (CRC16-CCITT Bare-Metal C99)
+        let crc = 0xFFFF;
+        for (let i = 0; i < 78; i++) {
+            crc ^= (packetUint8[i] << 8);
+            for (let b = 0; b < 8; b++) {
+                if (crc & 0x8000) {
+                    crc = ((crc << 1) ^ 0x1021) & 0xFFFF;
+                } else {
+                    crc = (crc << 1) & 0xFFFF;
+                }
+            }
+        }
+
+        const macMatched = (incomingMac === expectedMac) || (secretSeed === 0xA5A5A5A5n && incomingMac === crc);
+        if (!macMatched) {
             return { valid: false, code: 3, reason: `Tripwire MAC16 thất bại: Header hoặc Payload đã bị sửa đổi (Nhận 0x${incomingMac.toString(16)} vs Kỳ vọng 0x${expectedMac.toString(16)})` };
         }
 
@@ -965,6 +993,10 @@ class OZOSEngine {
      */
     saveLocalVault(dataObj, vaultKey = null) {
         const rawStr = JSON.stringify(dataObj);
+        const testLen = new TextEncoder().encode(rawStr).length;
+        if (testLen > 65535) {
+            return { success: false, error: `Dữ liệu Vault JSON vượt quá giới hạn kích thước tối đa (${testLen} > 65535 bytes).` };
+        }
         let secretSeed = 0xA5A5A5A5n;
         if (vaultKey !== null && vaultKey !== undefined) {
             let h = 0xCBF29CE484222325n;

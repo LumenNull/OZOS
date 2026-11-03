@@ -272,9 +272,23 @@ OZOS_INLINE ozos_status_t ozos_packet_validate(
         return OZOS_ERR_MAGIC_INVALID;
     }
 
-    /* 2. Kiểm tra Cổng gác Tripwire MAC16 (< 20ns) */
+    /* 2. Kiểm tra Cổng gác Tripwire MAC16 (< 20ns): Hỗ trợ cả Sub-profile A1 (CRC16) và Sub-profile A2 (FNV Fold) */
     uint16_t expected_mac = ozos_compute_mac16(pkt);
-    if (pkt->header_mac16 != expected_mac) {
+    bool mac_ok = (pkt->header_mac16 == expected_mac);
+    if (!mac_ok && buffer_size >= OZOS_PACKET_HEADER_SIZE + (size_t)pkt->payload_len) {
+        uint64_t h = 0xA5A5A5A5ULL;
+        for (size_t i = 0; i < 78; ++i) {
+            h = ((h ^ (uint64_t)buffer[i]) * 0x100000001B3ULL);
+        }
+        for (size_t i = 0; i < (size_t)pkt->payload_len; ++i) {
+            h = ((h ^ (uint64_t)buffer[80 + i]) * 0x100000001B3ULL);
+        }
+        uint16_t fnv_mac = (uint16_t)((h ^ (h >> 16) ^ (h >> 32)) & 0xFFFFU);
+        if (pkt->header_mac16 == fnv_mac) {
+            mac_ok = true;
+        }
+    }
+    if (!mac_ok) {
         return OZOS_ERR_MAC16_MISMATCH;
     }
 

@@ -4,7 +4,8 @@
 # ==============================================================================
 
 CC ?= gcc
-CFLAGS ?= -O3 -Wall -Wextra -std=c99 -D_POSIX_C_SOURCE=200809L -Icore -I.
+CFLAGS ?= -O3 -Wall -Wextra -std=c99 -D_POSIX_C_SOURCE=200809L -Icore -I. -fstack-protector-strong -D_FORTIFY_SOURCE=2 -fPIE
+HARDENING_LDFLAGS ?= -pie -Wl,-z,relro,-z,now
 SRC = core/ozos_ghost.c core/tweetnacl.c
 TARGET = ozos_ghost
 CLI_TARGET = ozos
@@ -30,21 +31,21 @@ $(TARGET): $(SRC)
 	@echo "================================================================="
 	@echo "  [O.Z.O.S] COMPILING BARE-METAL C99 SOVEREIGN MICRO-KERNEL"
 	@echo "================================================================="
-	$(CC) $(CFLAGS) -o $(TARGET) $(SRC) $(LDFLAGS)
+	$(CC) $(CFLAGS) -o $(TARGET) $(SRC) $(LDFLAGS) $(HARDENING_LDFLAGS)
 	@echo "  [SUCCESS] BUILT: $(TARGET)"
 
 $(CLI_TARGET): core/ozos_main.c core/tweetnacl.c
 	@echo "================================================================="
 	@echo "  [O.Z.O.S] COMPILING SOVEREIGN CLI UTILITY (OZOS)"
 	@echo "================================================================="
-	$(CC) $(CFLAGS) -o $(CLI_TARGET) core/ozos_main.c core/tweetnacl.c $(LDFLAGS)
+	$(CC) $(CFLAGS) -o $(CLI_TARGET) core/ozos_main.c core/tweetnacl.c $(LDFLAGS) $(HARDENING_LDFLAGS)
 	@echo "  [SUCCESS] BUILT: $(CLI_TARGET)"
 
 $(TEST_TARGET): tests/test_libozos.c core/tweetnacl.c
 	@echo "================================================================="
 	@echo "  [O.Z.O.S] COMPILING NATIVE LIBOZOS VERIFICATION TEST SUITE"
 	@echo "================================================================="
-	$(CC) $(CFLAGS) -o $(TEST_TARGET) tests/test_libozos.c core/tweetnacl.c $(LDFLAGS)
+	$(CC) $(CFLAGS) -o $(TEST_TARGET) tests/test_libozos.c core/tweetnacl.c $(LDFLAGS) $(HARDENING_LDFLAGS)
 	@echo "  [SUCCESS] BUILT: $(TEST_TARGET)"
 
 test: $(TARGET) $(CLI_TARGET) $(TEST_TARGET)

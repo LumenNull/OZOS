@@ -119,7 +119,7 @@ def validate_aligned_packet(packet_bytes, last_seen_nonce=0, secret_seed=0xA5A5A
     if len(packet_bytes) > 80 + payload_len:
         return False, "Phát hiện rác nối đuôi (Trailing garbage detected)", None
 
-    # Tripwire MAC16 bao phủ Header (0..77) VÀ Payload (80..80+len) - Triệt tiêu backdoor MAC=0
+    # Tripwire MAC16 hỗ trợ cả Sub-profile A1 (CRC16) và Sub-profile A2 (FNV Fold)
     incoming_mac = struct.unpack_from('<H', packet_bytes, 78)[0]
     h = secret_seed
     for b in packet_bytes[:78]:
@@ -127,7 +127,19 @@ def validate_aligned_packet(packet_bytes, last_seen_nonce=0, secret_seed=0xA5A5A
     for b in packet_bytes[80:80+payload_len]:
         h = ((h ^ b) * 0x100000001B3) & 0xFFFFFFFFFFFFFFFF
     expected_mac = (h ^ (h >> 16) ^ (h >> 32)) & 0xFFFF
-    if incoming_mac != expected_mac:
+
+    # CRC16-CCITT cho Sub-profile A1
+    crc = 0xFFFF
+    for b in packet_bytes[:78]:
+        crc ^= (b << 8)
+        for _ in range(8):
+            if crc & 0x8000:
+                crc = ((crc << 1) ^ 0x1021) & 0xFFFF
+            else:
+                crc = (crc << 1) & 0xFFFF
+
+    mac_matches = (incoming_mac == expected_mac) or (secret_seed == 0xA5A5A5A5 and incoming_mac == crc)
+    if not mac_matches:
         return False, f"Tripwire MAC16 không khớp: Header hoặc Payload đã bị sửa đổi (0x{incoming_mac:04X} vs 0x{expected_mac:04X})", None
 
     nonce = struct.unpack_from('<Q', packet_bytes, 64)[0]
@@ -148,14 +160,37 @@ def cmd_packet_build(args):
     hex_dump_terminal(packet)
 
 def cmd_packet_verify(args):
-    try:
-        raw_bytes = base64.b64decode(args.data)
-    except Exception:
+    data_str = args.data.strip()
+    raw_bytes = None
+
+    # Check if valid hex
+    is_hex = (len(data_str) % 2 == 0) and all(c in '0123456789abcdefABCDEF' for c in data_str)
+    hex_candidate = None
+    if is_hex:
         try:
-            raw_bytes = bytes.fromhex(args.data)
+            hex_candidate = bytes.fromhex(data_str)
         except Exception:
-            print(f"\n{C_RED}{C_BOLD}[XÁC THỰC THẤT BÀI]: Dữ liệu không phải Base64 hoặc Hex hợp lệ{C_RESET}")
-            sys.exit(1)
+            pass
+
+    # Check if valid base64
+    b64_candidate = None
+    try:
+        b64_candidate = base64.b64decode(data_str)
+    except Exception:
+        pass
+
+    # Disambiguate when both succeed
+    if hex_candidate and len(hex_candidate) >= 80 and struct.unpack_from('<I', hex_candidate, 72)[0] == 0x47454E01:
+        raw_bytes = hex_candidate
+    elif b64_candidate and len(b64_candidate) >= 80 and struct.unpack_from('<I', b64_candidate, 72)[0] == 0x47454E01:
+        raw_bytes = b64_candidate
+    elif hex_candidate:
+        raw_bytes = hex_candidate
+    elif b64_candidate:
+        raw_bytes = b64_candidate
+    else:
+        print(f"\n{C_RED}{C_BOLD}[XÁC THỰC THẤT BÀI]: Dữ liệu không phải Base64 hoặc Hex hợp lệ{C_RESET}")
+        sys.exit(1)
 
     valid, reason, info = validate_aligned_packet(raw_bytes, args.last_nonce)
     if valid:

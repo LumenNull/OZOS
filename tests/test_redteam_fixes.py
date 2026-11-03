@@ -807,10 +807,126 @@ check_test("Fuzz mutation voi valid/invalid FNV va parser deep handling deu an t
            p_fuzz.returncode == 0 and cli_handled,
            "Deep parser fuzz mutation defenses verified 100%")
 
+# ----------------------------------------------------------------------
+# 29. TEST ROUND 8: Profile A Dual-MAC Cross-Verification (C vs JS vs CLI)
+# ----------------------------------------------------------------------
+print("\n[TEST 29/30] Kiem Tra Profile A Dual-MAC Cross-Verification (C vs JS vs CLI)...")
+
+# 1. C generates Sub-profile A1 (CRC16)
+rc_c_build, out_c_build, _ = run_ozos("packet-build", "SAFE_CROSS_C_TO_JS", "3000")
+c_hex = ""
+for line in out_c_build.splitlines():
+    line = line.strip()
+    if len(line) >= 80 * 2 and all(c in '0123456789abcdefABCDEF' for c in line):
+        c_hex = line
+        break
+
+rc_c_ver, _, _ = run_ozos("packet-verify", c_hex, "2999")
+
+test_js_c_pkt = f"""
+const OZOSEngine = require('./contrib/web-cockpit/ozos-engine.js');
+const engine = new OZOSEngine();
+const buf = Buffer.from('{c_hex}', 'hex');
+const res = engine.validateAligned80BytePacket(buf, 2999n);
+process.exit(res.valid ? 0 : 1);
+"""
+p_js_c = subprocess.run(["node", "-e", test_js_c_pkt], stdout=subprocess.PIPE, stderr=subprocess.PIPE, cwd=REPO_ROOT)
+
+p_cli_c = subprocess.run([sys.executable, cli_script_path, "packet-verify", "--data", c_hex, "--last-nonce", "2999"],
+                         stdout=subprocess.PIPE, stderr=subprocess.PIPE, cwd=REPO_ROOT)
+
+cross_c_ok = (rc_c_build == 0 and rc_c_ver == 0 and p_js_c.returncode == 0 and p_cli_c.returncode == 0)
+
+# 2. JS generates Sub-profile A2 (FNV fold)
+test_js_gen = """
+const OZOSEngine = require('./contrib/web-cockpit/ozos-engine.js');
+const engine = new OZOSEngine();
+const res = engine.buildAligned80BytePacket('SAFE_CROSS_JS_TO_C', 4000n);
+console.log(Buffer.from(res.packetBytes).toString('hex'));
+"""
+p_js_gen = subprocess.run(["node", "-e", test_js_gen], stdout=subprocess.PIPE, stderr=subprocess.PIPE, cwd=REPO_ROOT, text=True)
+js_hex = p_js_gen.stdout.strip()
+
+rc_c_js_ver, _, _ = run_ozos("packet-verify", js_hex, "3999")
+
+test_js_js_ver = f"""
+const OZOSEngine = require('./contrib/web-cockpit/ozos-engine.js');
+const engine = new OZOSEngine();
+const buf = Buffer.from('{js_hex}', 'hex');
+const res = engine.validateAligned80BytePacket(buf, 3999n);
+process.exit(res.valid ? 0 : 1);
+"""
+p_js_js = subprocess.run(["node", "-e", test_js_js_ver], stdout=subprocess.PIPE, stderr=subprocess.PIPE, cwd=REPO_ROOT)
+
+p_cli_js = subprocess.run([sys.executable, cli_script_path, "packet-verify", "--data", js_hex, "--last-nonce", "3999"],
+                          stdout=subprocess.PIPE, stderr=subprocess.PIPE, cwd=REPO_ROOT)
+
+cross_js_ok = (p_js_gen.returncode == 0 and rc_c_js_ver == 0 and p_js_js.returncode == 0 and p_cli_js.returncode == 0)
+
+check_test("Profile A ho tro ca Sub-profile A1 (CRC16) va A2 (FNV fold) xac thuc cheo 100% C vs JS vs CLI",
+           cross_c_ok and cross_js_ok,
+           "Cross-platform dual-MAC verification operational")
+
+# ----------------------------------------------------------------------
+# 30. TEST ROUND 8: Vault 64KB Payload Limit, Nonce Overflow Guard & Engine Replay Monotonicity
+# ----------------------------------------------------------------------
+print("\n[TEST 30/30] Kiem Tra Vault 64KB Payload Limit, Nonce Overflow & Replay Monotonicity...")
+test_r8_suite = """
+const OZOSEngine = require('./contrib/web-cockpit/ozos-engine.js');
+const engine = new OZOSEngine();
+
+// 1. saveLocalVault rejects payloads > 65535 bytes gracefully
+const largeData = { blob: "X".repeat(70000) };
+const resVault = engine.saveLocalVault(largeData);
+const vaultOk = (resVault.success === false && typeof resVault.error === 'string');
+
+// 2. buildAligned80BytePacket rejects payload > 65535 bytes
+let alignPayloadOk = false;
+try {
+    engine.buildAligned80BytePacket("Y".repeat(70000));
+} catch (e) {
+    alignPayloadOk = true;
+}
+
+// 3. buildAligned80BytePacket protects against nonce wrap at 2^64-1
+let nonceWrapOk = false;
+engine.currentNonce = 0xFFFFFFFFFFFFFFFFn;
+try {
+    engine.buildAligned80BytePacket("test_wrap");
+} catch (e) {
+    nonceWrapOk = true;
+}
+
+// 4. validatePacket enforces strictly monotonic state advancement when passing 0n
+const pkt1 = engine.buildPacket('TEST_1', 1500n);
+const pkt2 = engine.buildPacket('TEST_2', 1200n);
+const heap = new Uint8Array(1024);
+engine.wasm = {
+    _malloc: () => 0,
+    _free: () => {},
+    HEAPU8: heap,
+    _parse_and_validate_packet: (ptr, len, lastN) => {
+        const n = new DataView(heap.buffer).getBigUint64(4, true);
+        return n <= lastN ? 3 : 0;
+    }
+};
+const r1 = engine.validatePacket(pkt1.packetBytes, 0n);
+const r2 = engine.validatePacket(pkt2.packetBytes, 0n);
+const replayMonotonicOk = (r1.valid === true && r2.valid === false && r2.code === 3 && engine.lastSeenPeerNonce === 1500n);
+
+const allOk = vaultOk && alignPayloadOk && nonceWrapOk && replayMonotonicOk;
+process.exit(allOk ? 0 : 1);
+"""
+p_r8 = subprocess.run(["node", "-e", test_r8_suite], stdout=subprocess.PIPE, stderr=subprocess.PIPE, cwd=REPO_ROOT)
+
+check_test("Vault payload 64KB cap, Nonce 2^64-1 overflow guard va Engine replay monotonicity duoc bao ve 100%",
+           p_r8.returncode == 0,
+           "Round 8 medium/low findings fully verified")
+
 print("\n======================================================================")
 if all_passed:
-    print("  🏆 KET LUAN: 28/28 BAI KIEM TRA MASTER RED TEAM DEU PASS 100%!")
-    print("  TOAN BO DIEM GAY MAT MA, AN TOAN BO NHO & GIAO THUC DA DUOC VA TRIET DE.")
+    print("  🏆 KET LUAN: 30/30 BAI KIEM TRA RED TEAM VONG 1-8 DEU PASS 100%!")
+    print("  CAC VECTO TAN CONG DUOC PHAM VI AUDIT XAC NHAN DA DUOC KIEM TRA VA XU LY AN TOAN.")
     print("======================================================================")
     sys.exit(0)
 else:

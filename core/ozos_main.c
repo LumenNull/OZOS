@@ -505,6 +505,8 @@ static int cmd_packet_verify(const char* hex_str, uint64_t last_seen_nonce, cons
         else if (st == OZOS_ERR_MAC16_MISMATCH) printf("• Root Cause    : Sai MAC16 (Phat hien bit lat hoac du lieu bi sua doi)\n");
         else if (st == OZOS_ERR_REPLAY_DETECTED) printf("• Root Cause    : Phat hien Replay Attack (Nonce khong tang don dieu)\n");
         else if (st == OZOS_ERR_PAYLOAD_TRUNCATED) printf("• Root Cause    : Payload bi cat xen hoac khong hop le\n");
+        else if (st == OZOS_ERR_FLOAT_POISONED) printf("• Root Cause    : He so cham dong doc hai (Phat hien NaN hoac Infinity trong dct_coeffs)\n");
+        else if (st == OZOS_ERR_BUFFER_TOO_SMALL) printf("• Root Cause    : Goi tin nho hon 80 bytes (Buffer too small)\n");
         printf("=================================================================\n");
         free(buffer);
         return 1;

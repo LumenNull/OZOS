@@ -67,6 +67,11 @@ Optimized for high-throughput bare-metal micro-kernel execution, vector register
 TOTAL WIRE HEADER SIZE: EXACTLY 80 BYTES (640 Bits, Zero Padding)
 ```
 
+#### Profile A Dual MAC Gatekeeper Sub-Profiles:
+* **Sub-Profile A1 (CRC16-CCITT Hardware Fast Gate):** Wire CRC16-CCITT polynomial calculated over the 78-byte header (`0..77`). Default in bare-metal `libozos.h` for $<20\text{ns}$ DDoS filtering.
+* **Sub-Profile A2 (FNV-1a-64 Keyed/Tripwire Gate):** Domain-separated 64-bit FNV-1a folded into 16 bits covering Header (`0..77`) AND Payload (`80..80+len`). Used in Cockpit Local Vault and CLI automation.
+* **Universal Cross-Verification:** All Profile A validators (`ozos.exe packet-verify`, `OZOSEngine.validateAligned80BytePacket`, `ozos-cli.py`) automatically detect and cross-validate both Sub-profiles A1 and A2.
+
 ### Profile B: Web Cockpit Wire Frame (`GENS-v1`)
 Optimized for zero-copy JavaScript `DataView` parsing, WebAssembly module bounds verification, and GenesisShield transport (`zero_dct.wasm`, `genesis-shield.js`, `ozos-engine.js`).
 
