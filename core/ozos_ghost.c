@@ -52,6 +52,8 @@ static void ozos_ghost_dispatch_packet(const uint8_t* rx_buffer, size_t rx_len, 
     if (magic == OZOS_MAGIC_HANDSHAKE_SYN && rx_len >= sizeof(ozos_handshake_syn_t)) {
         const ozos_handshake_syn_t* syn = (const ozos_handshake_syn_t*)rx_buffer;
         printf("[λ] INCOMING :: HANDSHAKE SYN (42 Bytes) detected from physical air-gap\n");
+        printf("[!] Acoustic Notice: SYN detected from unauthenticated physical air-gap broadcast.\n");
+        printf("    Out-of-band verification required to bind peer identity.\n");
 
         if (!ozos_handshake_syn_verify(syn)) {
             printf("[!] TRIPWIRE :: MAC16 verification failed. Packet dropped.\n");
@@ -544,7 +546,8 @@ int main(int argc, char* argv[]) {
         printf("  panic-wipe              - Emergency memory scrub & working set purge\n");
         printf("  beacon [epoch] [root]   - Emit stealth beacon (22B) via speaker\n");
         printf("  syn                     - Emit stealth handshake offer (42B) via speaker\n");
-        printf("  ack <syn_frame_hex>     - Emit stealth handshake ack (54B) via speaker\n");
+        printf("  ack <syn_hex> [--pinned-peer-pubkey <pk>] - Emit stealth handshake ack (54B, optional pin)\n");
+        printf("  version                 - Show version, commit, and pinned WASM SHA-256\n");
         printf("  sign \"<12 words>\" ...   - Sign payload from mind-bound mnemonic\n");
         printf("  listen <wav_file>       - Decode acoustic carrier from WAV stream\n");
         printf("  test-audio              - Emit 18.5 kHz carrier pulse (0.5s)\n");
@@ -553,6 +556,15 @@ int main(int argc, char* argv[]) {
     }
 
     const char* cmd = argv[1];
+
+    /* VERSION: Output identity, release tag, and WASM pin */
+    if (strcmp(cmd, "--version") == 0 || strcmp(cmd, "-v") == 0 || strcmp(cmd, "-V") == 0 || strcmp(cmd, "version") == 0) {
+        printf("O.Z.O.S Ghost Daemon v1.2.0 (Headless Sovereign Micro-Daemon)\n");
+        printf("• Target         : C99 Bare-Metal Ephemeral Enclave\n");
+        printf("• Pinned WASM SHA: d7924fedcda753e0b9eefdaf779eb657f67fba50da96472dc98c92b393d7b4a3\n");
+        printf("• Canonical Repo : https://github.com/LumenNull/OZOS.git\n");
+        return 0;
+    }
 
     /* GENESIS BLOCK: Inspect & Verify Immutable Historical Inscription */
     if (strcmp(cmd, "genesis") == 0 || strcmp(cmd, "genesis-block") == 0) {
@@ -674,22 +686,59 @@ int main(int argc, char* argv[]) {
     /* 4. ACK: Respond to SYN offer with inaudible 54-byte ACK */
     if (strcmp(cmd, "ack") == 0) {
         if (argc < 3) {
-            printf("Usage: ozos_ghost.exe ack <syn_frame_hex>\n");
+            printf("Usage: ozos_ghost.exe ack <syn_frame_hex> [--pinned-peer-pubkey <64_hex_pubkey>]\n");
             return 1;
+        }
+
+        const char* syn_hex = argv[2];
+        const char* pinned_peer_pk_hex = NULL;
+        for (int i = 3; i < argc; ++i) {
+            if (strcmp(argv[i], "--pinned-peer-pubkey") == 0 && i + 1 < argc) {
+                pinned_peer_pk_hex = argv[++i];
+            } else {
+                printf("[!] Unknown argument or malformed flag: %s\n", argv[i]);
+                return 1;
+            }
         }
 
         uint8_t syn_bytes[sizeof(ozos_handshake_syn_t)];
         size_t syn_len = 0;
-        if (!parse_hex_to_bytes(argv[2], syn_bytes, sizeof(syn_bytes), &syn_len) || syn_len != sizeof(ozos_handshake_syn_t)) {
+        if (!parse_hex_to_bytes(syn_hex, syn_bytes, sizeof(syn_bytes), &syn_len) || syn_len != sizeof(ozos_handshake_syn_t)) {
             printf("[!] Invalid SYN hex string (Must be exactly 42 hex bytes).\n");
             return 1;
+        }
+
+        ozos_handshake_syn_t* syn = (ozos_handshake_syn_t*)syn_bytes;
+        if (!ozos_handshake_syn_verify(syn)) {
+            printf("[!] Handshake SYN verification failed: MAC16 or magic mismatch!\n");
+            return 1;
+        }
+
+        if (pinned_peer_pk_hex) {
+            uint8_t pinned_pk[32];
+            size_t pinned_len = 0;
+            if (!parse_hex_to_bytes(pinned_peer_pk_hex, pinned_pk, 32, &pinned_len) || pinned_len != 32) {
+                printf("[!] Pinned peer pubkey must be exactly 64 valid hex characters (32 bytes).\n");
+                return 1;
+            }
+            if (memcmp(syn->eph_pubkey, pinned_pk, 32) != 0) {
+                char syn_pk_hex[65];
+                for (int p = 0; p < 32; p++) sprintf(&syn_pk_hex[p * 2], "%02x", syn->eph_pubkey[p]);
+                printf("[!] [REJECTED] Peer PubKey in SYN (0x%s) does NOT match pinned peer pubkey (0x%s)!\n",
+                       syn_pk_hex, pinned_peer_pk_hex);
+                return 1;
+            }
+            printf("[#] Pinned Peer PubKey verified: 0x%s\n", pinned_peer_pk_hex);
+        } else {
+            printf("[!] Acoustic Notice: SYN received over physical channel without pinned peer identity.\n");
+            printf("    PFS ensures tunnel secrecy, but peer identity must be verified out-of-band.\n");
         }
 
         ozos_handshake_ack_t ack;
         uint8_t session_key[32];
         printf("[λ] Computing Curve25519 ECDH & transmitting ACK (54 Bytes)...\n");
 
-        bool ok = ozos_ghost_emit_stealth_ack((const ozos_handshake_syn_t*)syn_bytes, &ack, session_key);
+        bool ok = ozos_ghost_emit_stealth_ack(syn, &ack, session_key);
         if (!ok) {
             printf("[!] Handshake ACK failed or tripwire MAC16 mismatch!\n");
             ozos_ghost_zeroize(session_key, sizeof(session_key));
@@ -947,7 +996,7 @@ int main(int argc, char* argv[]) {
 
         uint32_t sample_rate = 44100;
         float tone_dur = 0.040f;
-        float pre_dur  = 0.120f;
+        float pre_dur  = 0.080f; /* 80ms preamble (2 chunks) bit-exact matching ozos_ghost.h */
         size_t samples_per_tone = (size_t)(sample_rate * tone_dur);
         size_t samples_pre = (size_t)(sample_rate * pre_dur);
 
@@ -1004,6 +1053,18 @@ int main(int argc, char* argv[]) {
                 return 1;
             }
             printf("[🔒] Type    : HANDSHAKE SYN (42 Bytes, Ephemeral Curve25519 Offer)\n");
+            printf("•   Acoustic : ⚠️ SYN received over unauthenticated physical broadcast.\n");
+            printf("               PFS provides secrecy; peer identity must be verified out-of-band.\n");
+            printf("•   Acoustic : ⚠️ SYN received over unauthenticated physical broadcast.\n");
+            printf("               PFS provides secrecy; peer identity must be verified out-of-band.\n");
+            printf("•   Acoustic : ⚠️ SYN received over unauthenticated physical broadcast.\n");
+            printf("               PFS provides secrecy; peer identity must be verified out-of-band.\n");
+            printf("•   Acoustic : ⚠️ SYN received over unauthenticated physical broadcast.\n");
+            printf("               PFS provides secrecy; peer identity must be verified out-of-band.\n");
+            printf("•   Acoustic : ⚠️ SYN received over unauthenticated physical broadcast.\n");
+            printf("               PFS provides secrecy; peer identity must be verified out-of-band.\n");
+            printf("•   Acoustic : ⚠️ SYN received over unauthenticated physical broadcast.\n");
+            printf("               PFS provides secrecy; peer identity must be verified out-of-band.\n");
         } else if (magic == OZOS_MAGIC_HANDSHAKE_ACK) {
             if (rx_len < sizeof(ozos_handshake_ack_t)) {
                 printf("[!] Packet truncated (< %zu bytes for HANDSHAKE ACK).\n", sizeof(ozos_handshake_ack_t));

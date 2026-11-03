@@ -41,6 +41,34 @@ class OZOSRequestHandler(http.server.SimpleHTTPRequestHandler):
         self.send_error(404, "Directory listing disabled by policy")
         return None
 
+    def do_GET(self):
+        clean = self.path.split("?")[0].split("#")[0]
+        if clean in ("/server.py", "/server.py/", "/.git", "/.git/"):
+            self.send_error(404, "File not found")
+            return
+        super().do_GET()
+
+    def do_GET(self):
+        clean = self.path.split("?")[0].split("#")[0]
+        if clean in ("/server.py", "/server.py/", "/.git", "/.git/"):
+            self.send_error(404, "File not found")
+            return
+        super().do_GET()
+
+    def do_GET(self):
+        clean = self.path.split("?")[0].split("#")[0]
+        if clean in ("/server.py", "/server.py/", "/.git", "/.git/"):
+            self.send_error(404, "File not found")
+            return
+        super().do_GET()
+
+    def do_GET(self):
+        clean = self.path.split("?")[0].split("#")[0]
+        if clean in ("/server.py", "/server.py/", "/.git", "/.git/"):
+            self.send_error(404, "File not found")
+            return
+        super().do_GET()
+
     def end_headers(self):
         self.send_header('Cross-Origin-Opener-Policy', 'same-origin')
         self.send_header('Cross-Origin-Embedder-Policy', 'require-corp')
@@ -88,20 +116,40 @@ class OZOSRequestHandler(http.server.SimpleHTTPRequestHandler):
                 if not isinstance(data, dict):
                     raise ValueError("JSON payload must be an object with 'args' array")
                 args = data.get('args', [])
-                if not isinstance(args, list):
-                    raise ValueError("'args' must be a list of strings")
-                # Path sanitization: Prevent arbitrary filesystem write/overwrite outside server directory
+                if not isinstance(args, list) or len(args) == 0:
+                    raise ValueError("'args' must be a non-empty list of strings")
+                
+                ALLOWED_COMMANDS = {
+                    "packet-build", "packet-verify", "packet-sign", "audio-synth", "audio-decode",
+                    "handshake-syn", "handshake-ack", "handshake-finish", "tunnel-encrypt", "tunnel-decrypt",
+                    "gossip-beacon", "gossip-listen", "brainseed-gen", "brainseed-restore", "keygen", "benchmark", "status"
+                }
+                cmd_name = str(args[0])
+                if cmd_name not in ALLOWED_COMMANDS:
+                    raise ValueError(f"Command not permitted by sovereign allowlist: {cmd_name}")
+
                 safe_args = []
                 for a in args:
-                    a_str = str(a)
-                    if a_str.endswith(".wav") or "/" in a_str or "\\" in a_str:
-                        safe_args.append(os.path.basename(a_str))
-                    else:
-                        safe_args.append(a_str)
+                    if not isinstance(a, str):
+                        raise ValueError("Command arguments must be strings")
+                    a_base = os.path.basename(a)
+                    target = os.path.realpath(os.path.join(DIRECTORY, a_base))
+                    if not target.startswith(DIRECTORY) or os.path.islink(os.path.join(DIRECTORY, a_base)):
+                        raise ValueError(f"Invalid path traversal or symlink detected: {a}")
+                    safe_args.append(a_base)
+                
                 cmd = [OZOS_EXE] + safe_args
                 res = subprocess.run(cmd, capture_output=True, encoding='utf-8', errors='replace', cwd=DIRECTORY, timeout=15)
+                
+                is_success = (res.returncode == 0)
+                for a in safe_args:
+                    if a.endswith(".wav"):
+                        target_wav = os.path.realpath(os.path.join(DIRECTORY, a))
+                        if not os.path.exists(target_wav) or os.path.getsize(target_wav) == 0:
+                            is_success = False
+                
                 resp_data = {
-                    "success": res.returncode == 0,
+                    "success": is_success,
                     "stdout": res.stdout,
                     "stderr": res.stderr
                 }
@@ -126,7 +174,7 @@ class OZOSRequestHandler(http.server.SimpleHTTPRequestHandler):
             self.wfile.write(resp_bytes)
             return
 
-        super().do_POST()
+        self.send_error(404, "Endpoint not found")
 
     def guess_type(self, path):
         if path.endswith('.wasm'):
@@ -138,7 +186,8 @@ class OZOSRequestHandler(http.server.SimpleHTTPRequestHandler):
 if __name__ == '__main__':
     os.chdir(DIRECTORY)
     HOST = "127.0.0.1"
-    assert HOST in ("127.0.0.1", "localhost", "::1"), "BẢO VỆ CHỦ QUYỀN: Server bridge chỉ được phép bind vào loopback cục bộ (127.0.0.1)!"
+    if HOST not in ("127.0.0.1", "localhost", "::1"):
+        raise SystemExit("BẢO VỆ CHỦ QUYỀN: Server bridge chỉ được phép bind vào loopback cục bộ (127.0.0.1)!")
     with ThreadedTCPServer((HOST, PORT), OZOSRequestHandler) as httpd:
         print("=================================================================")
         print("  [OK] O.Z.O.S SOVEREIGN COMMAND STATION & NATIVE BRIDGE ACTIVE")

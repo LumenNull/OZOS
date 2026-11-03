@@ -99,7 +99,16 @@ class OZOSEngine {
     
     buildPacket(payloadStr, customNonce = null, magic = 0x47454E01) {
         if (customNonce !== null && customNonce !== undefined) {
-            this.currentNonce = BigInt(customNonce);
+            let parsed;
+            try {
+                parsed = BigInt(customNonce);
+            } catch (e) {
+                throw new Error("Nonce tùy chỉnh không hợp lệ: " + e.message);
+            }
+            if (parsed < 0n || parsed > 0xFFFFFFFFFFFFFFFFn) {
+                throw new Error(`Nonce tùy chỉnh nằm ngoài phạm vi 64-bit không dấu [0, 2^64-1]: ${parsed}`);
+            }
+            this.currentNonce = parsed;
         } else {
             if (this.currentNonce >= 0xFFFFFFFFFFFFFFFFn) {
                 throw new Error("Tràn bộ đếm Nonce (Nonce đạt cực đại 2^64-1). Yêu cầu thiết lập lại Nonce chủ quyền.");
@@ -163,9 +172,24 @@ class OZOSEngine {
                 parsedNonce = null;
             }
         }
+        if (parsedNonce !== null && (parsedNonce < 0n || parsedNonce > 0xFFFFFFFFFFFFFFFFn)) {
+            return { valid: false, code: 3, error: `Giá trị Nonce không hợp lệ (nằm ngoài phạm vi 64-bit không dấu [0, 2^64-1]): ${parsedNonce}` };
+        }
         const effectiveLastNonce = (parsedNonce !== null && parsedNonce !== 0n)
             ? parsedNonce
             : this.lastSeenPeerNonce;
+        if (effectiveLastNonce < 0n || effectiveLastNonce > 0xFFFFFFFFFFFFFFFFn) {
+            return { valid: false, code: 3, error: `Giá trị Nonce không hợp lệ (nằm ngoài phạm vi 64-bit không dấu [0, 2^64-1]): ${effectiveLastNonce}` };
+        }
+
+        // Kiểm tra hệ số chấm động độc hại trong fingerprint slots (NaN / Infinity)
+        const viewInitial = new DataView(packetUint8.buffer, packetUint8.byteOffset, packetUint8.byteLength);
+        for (let i = 0; i < 15; i++) {
+            const val = viewInitial.getFloat32(12 + i * 4, true);
+            if (!Number.isFinite(val)) {
+                return { valid: false, code: 7, error: "Phát hiện hệ số chấm động độc hại (NaN hoặc Infinity trong fingerprint slots)" };
+            }
+        }
 
         const ptr = this.wasm._malloc(packetUint8.length);
         this.wasm.HEAPU8.set(packetUint8, ptr);
@@ -937,9 +961,15 @@ class OZOSEngine {
                 parsedNonce = null;
             }
         }
+        if (parsedNonce !== null && (parsedNonce < 0n || parsedNonce > 0xFFFFFFFFFFFFFFFFn)) {
+            return { valid: false, code: 2, reason: `Nonce không hợp lệ (phải nằm trong [0, 2^64-1]): ${parsedNonce}` };
+        }
         const effectiveLastNonce = (parsedNonce !== null && parsedNonce !== 0n)
             ? parsedNonce
             : this.lastSeenAlignedNonce;
+        if (effectiveLastNonce < 0n || effectiveLastNonce > 0xFFFFFFFFFFFFFFFFn) {
+            return { valid: false, code: 2, reason: `Nonce không hợp lệ (phải nằm trong [0, 2^64-1]): ${effectiveLastNonce}` };
+        }
 
         const incomingNonce = view.getBigUint64(64, true);
         if (incomingNonce <= effectiveLastNonce) {
@@ -1029,16 +1059,24 @@ class OZOSEngine {
      *   tính lại MAC nếu không có khóa bí mật.
      */
     saveLocalVault(dataObj, vaultKey = null) {
-        const rawStr = JSON.stringify(dataObj);
+        if (dataObj === undefined) {
+            return { success: false, error: "Dữ liệu Vault không được để trống (undefined)." };
+        }
+        let rawStr;
+        try {
+            rawStr = JSON.stringify(dataObj);
+        } catch (e) {
+            return { success: false, error: "Dữ liệu Vault chứa tham chiếu vòng hoặc không thể tuần tự hóa JSON: " + e.message };
+        }
         const testLen = new TextEncoder().encode(rawStr).length;
         if (testLen > 65535) {
             return { success: false, error: `Dữ liệu Vault JSON vượt quá giới hạn kích thước tối đa (${testLen} > 65535 bytes).` };
         }
-        if (vaultKey !== null && vaultKey !== undefined && typeof vaultKey === 'string' && vaultKey.length < 8) {
-            return { success: false, error: "Mật khẩu két sắt (vaultKey) phải có độ dài tối thiểu 8 ký tự để bảo đảm entropy phòng thủ duyệt vét cạn." };
-        }
-        if (vaultKey !== null && vaultKey !== undefined && typeof vaultKey === 'string' && vaultKey.length < 8) {
-            return { valid: false, error: "Mật khẩu két sắt (vaultKey) phải có độ dài tối thiểu 8 ký tự." };
+        if (vaultKey !== null && vaultKey !== undefined) {
+            const keyStr = String(vaultKey);
+            if (keyStr.length < 8) {
+                return { success: false, error: "Mật khẩu két sắt (vaultKey) phải có độ dài tối thiểu 8 ký tự để bảo đảm entropy phòng thủ duyệt vét cạn." };
+            }
         }
         let secretSeed = 0xA5A5A5A5n;
         if (vaultKey !== null && vaultKey !== undefined) {

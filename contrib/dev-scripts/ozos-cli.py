@@ -110,13 +110,20 @@ def build_aligned_packet(payload_str, nonce=1001, secret_seed=0xA5A5A5A5):
 def validate_aligned_packet(packet_bytes, last_seen_nonce=0, secret_seed=0xA5A5A5A5):
     if packet_bytes is None or not isinstance(packet_bytes, (bytes, bytearray, memoryview)):
         return False, "Dữ liệu gói tin không hợp lệ (yêu cầu bytes-like object)", None
+    packet_bytes = bytes(packet_bytes)
     if len(packet_bytes) < 80:
         return False, "Kích thước nhỏ hơn 80 bytes", None
+    if isinstance(last_seen_nonce, float):
+        return False, "last_seen_nonce không được là số thực (float)", None
+    if last_seen_nonce is None:
+        return False, "last_seen_nonce không được là None", None
     if not isinstance(last_seen_nonce, int):
-        try:
-            last_seen_nonce = int(last_seen_nonce)
-        except Exception:
-            last_seen_nonce = 0
+        if isinstance(last_seen_nonce, str) and last_seen_nonce.strip().isdigit():
+            last_seen_nonce = int(last_seen_nonce.strip())
+        else:
+            return False, f"last_seen_nonce không hợp lệ: {last_seen_nonce!r}", None
+    if last_seen_nonce < 0 or last_seen_nonce > 0xFFFFFFFFFFFFFFFF:
+        return False, f"last_seen_nonce nằm ngoài phạm vi 64-bit [0, 2^64-1]: {last_seen_nonce}", None
 
     # Kiểm tra hệ số chấm động độc hại (NaN / Infinity)
     import math

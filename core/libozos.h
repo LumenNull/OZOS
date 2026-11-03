@@ -240,6 +240,8 @@ OZOS_INLINE void ozos_packet_build(
     out_pkt->header_mac16 = ozos_compute_mac16(out_pkt);
 }
 
+#define OZOS_A2_DOMAIN_CONSTANT      0xA5A5A5A5ULL /* Hang so domain mac dinh cua Sub-Profile A2 */
+
 /**
  * Dong dau niem phong Sub-Profile A2 (FNV-1a-64 Fold) bao ve toan ven ca Header (0..77) lan Payload (80..80+len).
  */
@@ -249,7 +251,7 @@ OZOS_INLINE void ozos_packet_seal_a2(
     uint64_t secret_seed
 ) {
     if (!frame_buffer) return;
-    uint64_t h = secret_seed;
+    uint64_t h = (secret_seed != 0) ? secret_seed : OZOS_A2_DOMAIN_CONSTANT;
     for (size_t i = 0; i < 78; ++i) {
         h = ((h ^ (uint64_t)frame_buffer[i]) * 0x100000001B3ULL);
     }
@@ -277,7 +279,7 @@ OZOS_INLINE void ozos_packet_build_frame(
     ozos_packet_build(pkt, nonce, coeffs, payload_len);
     if (payload && payload_len > 0) {
         memcpy(frame_buffer + OZOS_PACKET_HEADER_SIZE, payload, payload_len);
-        ozos_packet_seal_a2(frame_buffer, payload_len, secret_seed);
+        ozos_packet_seal_a2(frame_buffer, payload_len, (secret_seed != 0) ? secret_seed : OZOS_A2_DOMAIN_CONSTANT);
     }
 }
 
@@ -335,11 +337,9 @@ OZOS_INLINE ozos_status_t ozos_packet_validate(
         /* Sub-Profile A1 (CRC16-CCITT chi bao ve 78B header) */
         if (pkt->payload_len == 0) {
             mac_ok = true; /* An toan tuyet doi khi khong co payload */
-        } else if (buffer_size >= OZOS_PACKET_HEADER_SIZE + (size_t)pkt->payload_len + 96) {
-            /* 96 bytes la do dai chu ky Ed25519 (64B sig + 32B pubkey) */
-            mac_ok = true; /* Chu ky Ed25519 bao ve toan ven payload */
         } else {
-            /* Goi tin khong ky nhung co payload: Sub-Profile A1 khong bao ve payload! */
+            /* Goi tin co payload: Sub-Profile A1 chi bao ve 78B header, tuyet doi khong bao ve payload!
+               Loai bo heuristic buffer_size >= 80 + len + 96: khong bao gio chap nhan A1 co payload khi chua xac thuc chu ky! */
             return OZOS_ERR_A1_PAYLOAD_UNPROTECTED;
         }
     }

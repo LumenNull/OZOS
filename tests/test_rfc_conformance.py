@@ -149,7 +149,7 @@ res_syn = subprocess.run([OZOS_EXE, "handshake-syn"], capture_output=True, encod
 syn_hex = None
 a_sk_hex = None
 a_pub_hex = None
-for line in res_syn.stdout.splitlines():
+for line in (res_syn.stdout + "\n" + res_syn.stderr).splitlines():
     if "Ephemeral Secret A :" in line:
         a_sk_hex = line.split("0x")[1].split(" ")[0].strip()
     elif "Ephemeral PubKey A :" in line:

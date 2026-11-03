@@ -354,6 +354,11 @@ static void cmd_keygen(const char* custom_seed_hex) {
     printf("• Sovereign Public Key: 0x%s (32 Bytes Ed25519)\n", pk_hex);
     printf("• Dac tinh Mat ma     : RFC 8032 Curve25519 (Constant-Time, Zero-Allocation)\n");
     printf("=================================================================\n");
+    printf("💡 LƯU Ý BẢO MẬT & QUẢN TRỊ DANH BẠ:\n");
+    printf("• Cặp khóa chỉ hiển thị trên terminal phiên hiện tại, KHÔNG lưu xuống đĩa.\n");
+    printf("• Fingerprint tác giả : 0x%.16s...\n", pk_hex);
+    printf("• Hãy lưu trữ seed 64-hex ở nơi an toàn; mất seed đồng nghĩa mất vĩnh viễn định danh!\n");
+    printf("=================================================================\n");
     return 0;
 }
 
@@ -981,12 +986,13 @@ static int cmd_handshake_syn(const char* wav_path, uint32_t session_nonce) {
     bytes_to_hex(a_pub, 32, a_pub_hex);
     bytes_to_hex((const uint8_t*)&syn, sizeof(syn), syn_hex);
 
+    fprintf(stderr, "=================================================================\n");
+    fprintf(stderr, "  [BI MAT NOI BO - TUYET DOI KHONG CHIA SE CHO PEER / PUBLIC]\n");
+    fprintf(stderr, "  • Ephemeral Secret A : 0x%s\n", a_sk_hex);
+    fprintf(stderr, "=================================================================\n");
     printf("=================================================================\n");
     printf("  [MẢNH GHÉP 2] BẮT TAY HAI CHIỀU VÔ THANH: KHỞI TẠO (SYN)\n");
     printf("=================================================================\n");
-    printf("  [BI MAT NOI BO - TUYET DOI KHONG CHIA SE CHO PEER / PUBLIC]\n");
-    printf("  • Ephemeral Secret A : 0x%s\n", a_sk_hex);
-    printf("-----------------------------------------------------------------\n");
     printf("  [THONG TIN PHAT SONG CONG KHAI / AIR-GAP TRANSMISSION]\n");
     printf("  • Ephemeral PubKey A : 0x%s (Curve25519 32 Bytes)\n", a_pub_hex);
     printf("  • Session Nonce      : %u (Anti-replay timestamp)\n", session_nonce);
@@ -1037,7 +1043,10 @@ static int cmd_handshake_ack(const char* syn_hex, const char* wav_path, const ch
                    syn_pk_hex, pinned_peer_pk_hex);
             return 1;
         }
-        printf("• Pinned Peer Check  : ✅ Peer PubKey khop hoan toan voi khoa da ghim!\n");
+        printf("• Pinned Peer Check  : ✅ Peer PubKey khop hoan toan voi khoa da ghim (Fingerprint: 0x%.16s...)!\n", pinned_peer_pk_hex);
+    } else {
+        printf("• Pinned Peer Check  : ⚠️ CẢNH BÁO TOFU: SYN không được đối chiếu khóa ghim (--pinned-peer-pubkey).\n");
+        printf("                       PFS đảm bảo bí mật đường truyền, cần xác thực đối tác out-of-band.\n");
     }
 
     uint8_t b_pub[32], b_sk[32];
@@ -1424,33 +1433,38 @@ static int cmd_gossip_listen(const char* beacon_hex, uint32_t my_epoch) {
    MAIN ENTRY POINT
    ============================================================================= */
 
+static void print_banner(void) {
+    printf("=================================================================\n");
+    printf("  O.Z.O.S // NATIVE SOVEREIGN EXECUTABLE (ozos.exe)\n");
+    printf("  Protocol: OZOS-80 Wire Format | Architecture: x86_64 Native C\n");
+    printf("=================================================================\n\n");
+    printf("Cac lenh tac chien co san:\n");
+    printf("  ozos.exe status                        - Trang thai tram & Mo neo TPM 2.0\n");
+    printf("  ozos.exe tpm                           - Chuan doan phan cung TPM 2.0\n");
+    printf("  ozos.exe keygen [seed_hex]             - [MẢNH GHÉP 1] Sinh cap khoa Ban the Ed25519\n");
+    printf("  ozos.exe packet-sign <msg> [nonce]     - [MẢNH GHÉP 1] Ky so Ban the Ed25519 vao goi tin\n");
+    printf("  ozos.exe packet-build <msg> [nonce]    - Dong goi tin 80-byte SIMD (Chua ky)\n");
+    printf("  ozos.exe packet-verify <hex> [last_n]  - Tham dinh MAC16 & Ed25519 chu ky Ban the\n");
+    printf("  ozos.exe handshake-syn [wav] [nonce]   - [MẢNH GHÉP 2] Khoi tao Bat tay Vo thanh (SYN)\n");
+    printf("  ozos.exe handshake-ack <syn> [wav] [--pinned-peer-pubkey <pk>] - [MẢNH GHÉP 2] Phan hoi Bat tay\n");
+    printf("  ozos.exe handshake-finish <ack> <sk><pk>- [MẢNH GHÉP 2] Hoan tat Bắt tay & Mở Đường hầm\n");
+    printf("  ozos.exe tunnel-encrypt <msg> <key>    - [MẢNH GHÉP 2] Ma hoa goi tin qua Duong ham\n");
+    printf("  ozos.exe tunnel-decrypt <hex> <key>    - [MẢNH GHÉP 2] Giai ma va xac thuc Poly1305\n");
+    printf("  ozos.exe brainseed-gen [passphrase]    - [MẢNH GHÉP 3] Sinh 12 tu Tri nao BIP-39\n");
+    printf("  ozos.exe brainseed-restore <12 words>  - [MẢNH GHÉP 3] Phuc sinh Danh tinh tu 12 tu\n");
+    printf("  ozos.exe gossip-beacon [epoch] [wav]   - [MẢNH GHÉP 4] Phat Xung tim Lan truyen Vo thanh\n");
+    printf("  ozos.exe gossip-listen <beacon> [epoch]- [MẢNH GHÉP 4] Phan xu Dong thuan Merkle\n");
+    printf("  ozos.exe audio-synth <txt> <wav> [opt] - Tong hop song am (Mac dinh: --stealth 18-20kHz)\n");
+    printf("  ozos.exe audio-decode <in.wav> [opt]   - Giai ma song am qua Bo loc Goertzel (Auto)\n");
+    printf("  ozos.exe daemon [port]                 - Khoi chay Background Node (Mac dinh 7788)\n");
+    printf("  ozos.exe benchmark                     - Do luong throughput vi kien truc\n");
+    printf("  ozos.exe version / --version           - Hien thi phien ban va SHA-256 pin\n");
+    printf("=================================================================\n");
+}
+
 int main(int argc, char* argv[]) {
     if (argc < 2) {
-        printf("=================================================================\n");
-        printf("  O.Z.O.S // NATIVE SOVEREIGN EXECUTABLE (ozos.exe)\n");
-        printf("  Protocol: OZOS-80 Wire Format | Architecture: x86_64 Native C\n");
-        printf("=================================================================\n\n");
-        printf("Cac lenh tac chien co san:\n");
-        printf("  ozos.exe status                        - Trang thai tram & Mo neo TPM 2.0\n");
-        printf("  ozos.exe tpm                           - Chuan doan phan cung TPM 2.0\n");
-        printf("  ozos.exe keygen [seed_hex]             - [MẢNH GHÉP 1] Sinh cap khoa Ban the Ed25519\n");
-        printf("  ozos.exe packet-sign <msg> [nonce]     - [MẢNH GHÉP 1] Ky so Ban the Ed25519 vao goi tin\n");
-        printf("  ozos.exe packet-build <msg> [nonce]    - Dong goi tin 80-byte SIMD (Chua ky)\n");
-        printf("  ozos.exe packet-verify <hex> [last_n]  - Tham dinh MAC16 & Ed25519 chu ky Ban the\n");
-        printf("  ozos.exe handshake-syn [wav] [nonce]   - [MẢNH GHÉP 2] Khoi tao Bat tay Vo thanh (SYN)\n");
-        printf("  ozos.exe handshake-ack <syn> [wav]     - [MẢNH GHÉP 2] Phan hoi Bat tay & Thiet lap khoa (ACK)\n");
-        printf("  ozos.exe handshake-finish <ack> <sk><pk>- [MẢNH GHÉP 2] Hoan tat Bắt tay & Mở Đường hầm\n");
-        printf("  ozos.exe tunnel-encrypt <msg> <key>    - [MẢNH GHÉP 2] Ma hoa goi tin qua Duong ham\n");
-        printf("  ozos.exe tunnel-decrypt <hex> <key>    - [MẢNH GHÉP 2] Giai ma va xac thuc Poly1305\n");
-        printf("  ozos.exe brainseed-gen [passphrase]    - [MẢNH GHÉP 3] Sinh 12 tu Tri nao BIP-39\n");
-        printf("  ozos.exe brainseed-restore <12 words>  - [MẢNH GHÉP 3] Phuc sinh Danh tinh tu 12 tu\n");
-        printf("  ozos.exe gossip-beacon [epoch] [wav]   - [MẢNH GHÉP 4] Phat Xung tim Lan truyen Vo thanh\n");
-        printf("  ozos.exe gossip-listen <beacon> [epoch]- [MẢNH GHÉP 4] Phan xu Dong thuan Merkle\n");
-        printf("  ozos.exe audio-synth <txt> <wav> [opt] - Tong hop song am (Mac dinh: --stealth 18-20kHz)\n");
-        printf("  ozos.exe audio-decode <in.wav> [opt]   - Giai ma song am qua Bo loc Goertzel (Auto)\n");
-        printf("  ozos.exe daemon [port]                 - Khoi chay Background Node (Mac dinh 7788)\n");
-        printf("  ozos.exe benchmark                     - Do luong throughput vi kien truc\n");
-        printf("=================================================================\n");
+        print_banner();
         return 0;
     }
 
@@ -1566,6 +1580,20 @@ int main(int argc, char* argv[]) {
         cmd_daemon(port);
     } else if (strcmp(cmd, "benchmark") == 0) {
         cmd_benchmark();
+    } else if (strcmp(cmd, "--version") == 0 || strcmp(cmd, "-v") == 0 || strcmp(cmd, "-V") == 0 || strcmp(cmd, "version") == 0) {
+        printf("=================================================================\n");
+        printf("  O.Z.O.S Sovereign Microkernel v1.2.0 (Self-Sovereign Invariant Engine)\n");
+        printf("=================================================================\n");
+        printf("• Git Commit     : 554ff42\n");
+        printf("• Target Arch    : x86_64 / MSVC C99 Bare-Metal\n");
+        printf("• Pinned WASM SHA: d7924fedcda753e0b9eefdaf779eb657f67fba50da96472dc98c92b393d7b4a3\n");
+        printf("• Canonical Repo : https://github.com/LumenNull/OZOS.git\n");
+        printf("• License        : MIT Sovereign License 2026\n");
+        printf("=================================================================\n");
+        return 0;
+    } else if (strcmp(cmd, "--help") == 0 || strcmp(cmd, "-h") == 0 || strcmp(cmd, "help") == 0) {
+        print_banner();
+        return 0;
     } else {
         printf("Lenh khong hop le: '%s'. Go 'ozos.exe' de xem huong dan.\n", cmd);
         return 1;

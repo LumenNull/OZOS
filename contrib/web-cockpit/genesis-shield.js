@@ -67,13 +67,22 @@ class GenesisShield {
         dataView.setUint32(offset, magicHeader, true); offset += 4;
         let effectiveNonce;
         if (nonce !== null && nonce !== undefined) {
-            effectiveNonce = BigInt(nonce);
+            let parsed;
+            try {
+                parsed = BigInt(nonce);
+            } catch (e) {
+                throw new Error("Nonce tùy chỉnh không hợp lệ: " + e.message);
+            }
+            if (parsed < 0n || parsed > 0xFFFFFFFFFFFFFFFFn) {
+                throw new Error(`Nonce tùy chỉnh nằm ngoài phạm vi 64-bit không dấu [0, 2^64-1]: ${parsed}`);
+            }
+            effectiveNonce = parsed;
         } else {
+            if (this.currentNonce >= 0xFFFFFFFFFFFFFFFFn) {
+                throw new Error("Tràn bộ đếm Nonce (Nonce đạt cực đại 2^64-1). Yêu cầu thiết lập lại Nonce chủ quyền.");
+            }
             this.currentNonce = this.currentNonce + 1n;
             effectiveNonce = this.currentNonce;
-        }
-        if (effectiveNonce >= 0xFFFFFFFFFFFFFFFFn) {
-            throw new Error("Tràn bộ đếm Nonce (Nonce đạt cực đại 2^64-1). Yêu cầu thiết lập lại Nonce chủ quyền.");
         }
         dataView.setBigUint64(offset, effectiveNonce, true); offset += 8;
         
@@ -112,11 +121,25 @@ class GenesisShield {
                 parsedNonce = null;
             }
         }
+        if (parsedNonce !== null && (parsedNonce < 0n || parsedNonce > 0xFFFFFFFFFFFFFFFFn)) {
+            return 3; // Nonce ngoài phạm vi [0, 2^64-1]
+        }
         const effectiveLastNonce = (parsedNonce !== null && parsedNonce !== 0n)
             ? parsedNonce
             : this.lastSeenNonce;
+        if (effectiveLastNonce < 0n || effectiveLastNonce > 0xFFFFFFFFFFFFFFFFn) {
+            return 3;
+        }
 
         const view = new DataView(uint8View.buffer, uint8View.byteOffset, uint8View.byteLength);
+
+        // 0. Kiểm tra hệ số chấm động độc hại trong fingerprint slots (NaN / Infinity)
+        for (let i = 0; i < 15; i++) {
+            const val = view.getFloat32(12 + i * 4, true);
+            if (!Number.isFinite(val)) {
+                return 7; // Phát hiện hệ số chấm động độc hại
+            }
+        }
 
         // 1. Kiểm tra Magic Header
         const magic = view.getUint32(0, true);

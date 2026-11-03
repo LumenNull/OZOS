@@ -416,6 +416,12 @@ const OZOSEngine = require('./contrib/web-cockpit/ozos-engine.js');
 const GenesisShield = require('./contrib/web-cockpit/genesis-shield.js');
 
 const engine = new OZOSEngine();
+engine.wasm = {
+    _malloc: () => 0,
+    _free: () => {},
+    HEAPU8: new Uint8Array(1024),
+    _parse_and_validate_packet: () => 0
+};
 const shield = new GenesisShield();
 shield.isReady = true;
 
@@ -551,6 +557,12 @@ const OZOSEngine = require('./contrib/web-cockpit/ozos-engine.js');
 const GenesisShield = require('./contrib/web-cockpit/genesis-shield.js');
 
 const engine = new OZOSEngine();
+engine.wasm = {
+    _malloc: () => 0,
+    _free: () => {},
+    HEAPU8: new Uint8Array(1024),
+    _parse_and_validate_packet: () => 0
+};
 const shield = new GenesisShield();
 shield.isReady = true;
 
@@ -606,6 +618,12 @@ const OZOSEngine = require('./contrib/web-cockpit/ozos-engine.js');
 const GenesisShield = require('./contrib/web-cockpit/genesis-shield.js');
 
 const engine = new OZOSEngine();
+engine.wasm = {
+    _malloc: () => 0,
+    _free: () => {},
+    HEAPU8: new Uint8Array(1024),
+    _parse_and_validate_packet: () => 0
+};
 const shield = new GenesisShield();
 shield.isReady = true;
 
@@ -948,6 +966,12 @@ const OZOSEngine = require('./contrib/web-cockpit/ozos-engine.js');
 const GenesisShield = require('./contrib/web-cockpit/genesis-shield.js');
 
 const engine = new OZOSEngine();
+engine.wasm = {
+    _malloc: () => 0,
+    _free: () => {},
+    HEAPU8: new Uint8Array(1024),
+    _parse_and_validate_packet: () => 0
+};
 const shield = new GenesisShield();
 shield.isReady = true;
 
@@ -1263,9 +1287,168 @@ check_test("Handshake-ack xac thuc peer theo khoa da ghim va audio-synth thoat m
            pinned_peer_ok and synth_exit_ok,
            "Pinned peer handshake authentication & audio-synth error exit code hygiene verified")
 
+# ----------------------------------------------------------------------
+# 41. TEST ROUND 12: Neutralize Library ozos_packet_validate A1+96 Hole
+# ----------------------------------------------------------------------
+print("\n[TEST 41/46] Kiem Tra Thu Vien libozos.h Tu Choi A1 Co Payload Du Dem 96B Rac...")
+proc_lib = subprocess.run([os.path.join(REPO_ROOT, "tests", "test_libozos.exe")],
+                          capture_output=True, text=True, encoding="utf-8", errors="replace", cwd=REPO_ROOT)
+lib_a1_ok = (proc_lib.returncode == 0) and ("tu choi A1 co payload (+96B)" in proc_lib.stdout)
+check_test("Thu vien libozos.h tu choi Sub-Profile A1 co payload du dem 96 byte rac",
+           lib_a1_ok,
+           "Library A1+96 heuristic bypass neutralized fail-closed")
+
+# ----------------------------------------------------------------------
+# 42. TEST ROUND 12: Ghost ack Pinned Peer Authentication & Unknown Flags Guard
+# ----------------------------------------------------------------------
+print("\n[TEST 42/46] Kiem Tra Ghost ack Pinned Peer Check & Tu Choi Co La...")
+ghost_exe = os.path.join(REPO_ROOT, "ozos_ghost.exe")
+rc_gh_unk = subprocess.run([ghost_exe, "ack", syn_hex_val, "--unknown-flag"],
+                           capture_output=True, text=True, encoding="utf-8", errors="replace", cwd=REPO_ROOT).returncode
+rc_gh_wrong = subprocess.run([ghost_exe, "ack", syn_hex_val, "--pinned-peer-pubkey", "f" * 64],
+                             capture_output=True, text=True, encoding="utf-8", errors="replace", cwd=REPO_ROOT).returncode
+rc_gh_match = subprocess.run([ghost_exe, "ack", syn_hex_val, "--pinned-peer-pubkey", peer_pk_val],
+                             capture_output=True, text=True, encoding="utf-8", errors="replace", cwd=REPO_ROOT).returncode
+
+ghost_ack_ok = (rc_gh_unk == 1 and rc_gh_wrong == 1 and rc_gh_match == 0)
+check_test("Ghost ack ton trong --pinned-peer-pubkey va tu choi co la fail-closed",
+           ghost_ack_ok,
+           f"Ghost ack pin & flag hygiene verified (unk={rc_gh_unk}, wrong={rc_gh_wrong}, match={rc_gh_match})")
+
+# ----------------------------------------------------------------------
+# 43. TEST ROUND 12: JS Nonce Range Bounds [0, 2^64-1] & Negative Nonce Rejection
+# ----------------------------------------------------------------------
+print("\n[TEST 43/46] Kiem Tra JS Nonce Range Bounds [0, 2^64-1] & Chặn Nonce Am...")
+test_js_range_str = """
+const OZOSEngine = require('./contrib/web-cockpit/ozos-engine.js');
+const GenesisShield = require('./contrib/web-cockpit/genesis-shield.js');
+
+const engine = new OZOSEngine();
+engine.wasm = {
+    _malloc: () => 0,
+    _free: () => {},
+    HEAPU8: new Uint8Array(1024),
+    _parse_and_validate_packet: () => 0
+};
+const shield = new GenesisShield();
+shield.isReady = true;
+
+// 1. Check negative lastSeenNonce in validateAligned80BytePacket
+const pkt = engine.buildAligned80BytePacket("RANGE_TEST", 1000);
+const res_neg = engine.validateAligned80BytePacket(pkt.packetBytes, -1n);
+if (res_neg.valid) process.exit(1);
+
+// 2. Check out-of-bounds 2^64 wrap in validatePacket
+engine.wasm = {
+    _malloc: (n) => 100,
+    _free: (p) => {},
+    HEAPU8: new Uint8Array(2048),
+    _parse_and_validate_packet: (ptr, len, last_n) => 0
+};
+shield.wasm = engine.wasm;
+
+const gen_pkt = engine.buildPacket("GEN_RANGE_TEST", 1000);
+const res_wrap = engine.validatePacket(gen_pkt.packetBytes, 18446744073709551616n); // 2^64
+if (res_wrap.valid) process.exit(2);
+
+const res_shield_neg = shield.validatePacket(gen_pkt.packetBytes, -1n);
+if (res_shield_neg === 0) process.exit(3);
+
+// 3. Check explicit customNonce builder bounds
+let threw_neg = false;
+try {
+    engine.buildPacket("TEST", -1n);
+} catch (e) {
+    threw_neg = true;
+}
+if (!threw_neg) process.exit(4);
+
+process.exit(0);
+"""
+p_js_range = subprocess.run(["node", "-e", test_js_range_str], cwd=REPO_ROOT, capture_output=True, text=True, encoding="utf-8", errors="replace")
+js_range_ok = (p_js_range.returncode == 0)
+check_test("JS validators chan dung nonce am, chan tran 2^64 va chan customNonce ngoai bien",
+           js_range_ok,
+           "JS Nonce range invariants [0, 2^64-1] strictly enforced across Engine and Shield")
+
+# ----------------------------------------------------------------------
+# 44. TEST ROUND 12: Python last_seen_nonce Coercion Guard & Memoryview Decoding
+# ----------------------------------------------------------------------
+print("\n[TEST 44/46] Kiem Tra Python last_seen_nonce Coercion Guard & Memoryview...")
+val_bad_str, _, _ = ozos_cli_mod.validate_aligned_packet(bytes(raw_nan_pkt), last_seen_nonce="abc")
+val_bad_flt, _, _ = ozos_cli_mod.validate_aligned_packet(bytes(raw_nan_pkt), last_seen_nonce=7999.5)
+val_bad_none, _, _ = ozos_cli_mod.validate_aligned_packet(bytes(raw_nan_pkt), last_seen_nonce=None)
+
+# Memoryview test with valid packet
+valid_pkt_py, _ = ozos_cli_mod.build_aligned_packet("PYTHON_MEMVIEW_SOVEREIGN", 8888)
+val_memview, _, data_dict = ozos_cli_mod.validate_aligned_packet(memoryview(valid_pkt_py), 8000)
+
+py_coercion_ok = (val_bad_str is False) and (val_bad_flt is False) and (val_bad_none is False) and (val_memview is True) and (data_dict["payload"] == "PYTHON_MEMVIEW_SOVEREIGN")
+check_test("Python tu choi last_seen_nonce rac/float/None va giai ma thanh cong memoryview",
+           py_coercion_ok,
+           "Python nonce coercion guard and memoryview decoding verified")
+
+# ----------------------------------------------------------------------
+# 45. TEST ROUND 12: Genesis Float Finiteness Validation (NaN / Inf in fingerprint slots)
+# ----------------------------------------------------------------------
+print("\n[TEST 45/46] Kiem Tra Genesis Float Finiteness Validation (NaN / Inf Fingerprint)...")
+test_js_gen_float = """
+const OZOSEngine = require('./contrib/web-cockpit/ozos-engine.js');
+const GenesisShield = require('./contrib/web-cockpit/genesis-shield.js');
+
+const engine = new OZOSEngine();
+engine.wasm = {
+    _malloc: () => 0,
+    _free: () => {},
+    HEAPU8: new Uint8Array(1024),
+    _parse_and_validate_packet: () => 0
+};
+const shield = new GenesisShield();
+shield.isReady = true;
+
+const pkt = engine.buildPacket("GENESIS_FLOAT_TEST", 1000);
+const buf = new Uint8Array(pkt.packetBytes);
+const view = new DataView(buf.buffer, buf.byteOffset, buf.byteLength);
+
+// Inject NaN at fingerprint slot 0 (bytes 12..15)
+view.setFloat32(12, NaN, true);
+
+// Both engine and shield must strictly reject with code 7
+const res_eng = engine.validatePacket(buf, 500);
+const res_shield = shield.validatePacket(buf, 500);
+
+if (res_eng.valid || res_eng.code !== 7) process.exit(1);
+if (res_shield !== 7) process.exit(2);
+process.exit(0);
+"""
+p_js_gen_float = subprocess.run(["node", "-e", test_js_gen_float], cwd=REPO_ROOT, capture_output=True, text=True, encoding="utf-8", errors="replace")
+gen_float_ok = (p_js_gen_float.returncode == 0)
+check_test("Genesis validators tu choi he so float NaN / Infinity trong fingerprint slots",
+           gen_float_ok,
+           "Genesis float finiteness loop operational across Engine and Shield")
+
+# ----------------------------------------------------------------------
+# 46. TEST ROUND 12: CLI & Ghost --version Command & Stderr Secret Isolation
+# ----------------------------------------------------------------------
+print("\n[TEST 46/46] Kiem Tra CLI & Ghost --version, --help & Tach Secret Ra Stderr...")
+rc_ver, out_ver, _ = run_ozos("--version")
+proc_gh_ver = subprocess.run([ghost_exe, "--version"], capture_output=True, text=True, encoding="utf-8", errors="replace", cwd=REPO_ROOT)
+
+version_ok = (rc_ver == 0 and "554ff42" in out_ver and "d7924fedcda753e0" in out_ver) and \
+             (proc_gh_ver.returncode == 0 and "d7924fedcda753e0" in proc_gh_ver.stdout)
+
+# Verify handshake-syn outputs secret to stderr, NOT stdout
+p_syn = subprocess.run([os.path.join(REPO_ROOT, "ozos.exe"), "handshake-syn"],
+                       capture_output=True, text=True, encoding="utf-8", errors="replace", cwd=REPO_ROOT)
+secret_isolated = ("Ephemeral Secret A" in p_syn.stderr) and ("Ephemeral Secret A" not in p_syn.stdout)
+
+check_test("CLI & Ghost ho tro --version, --help va tach Ephemeral Secret A ra stderr",
+           version_ok and secret_isolated,
+           "Version command provenance and stream separation hygiene verified")
+
 print("\n======================================================================")
 if all_passed:
-    print("  🏆 KET LUAN: 40/40 BAI KIEM TRA RED TEAM VONG 1-11 DEU PASS 100%!")
+    print("  🏆 KET LUAN: 46/46 BAI KIEM TRA RED TEAM VONG 1-12 DEU PASS 100%!")
     print("  CAC VECTO TAN CONG DUOC PHAM VI AUDIT XAC NHAN DA DUOC KIEM TRA VA XU LY AN TOAN.")
     print("======================================================================")
     sys.exit(0)

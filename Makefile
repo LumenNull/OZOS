@@ -82,6 +82,9 @@ wasm:
 		echo "  [NOTICE] emcc not found in PATH; using pre-built bit-exact zero_dct.wasm (15,885 bytes, SHA256: d7924fedcda753e0b9eefdaf779eb657f67fba50da96472dc98c92b393d7b4a3)."; \
 	fi
 
+check_wasm:
+	@$(PYTHON) contrib/dev-scripts/check_wasm_staleness.py
+
 test_wasm:
 	@echo "================================================================="
 	@echo "  [O.Z.O.S] RUNNING WASM HEADLESS & 15-TIER VERIFICATION"

@@ -68,7 +68,19 @@ int main(void) {
     st = ozos_packet_validate(buffer, 80 + 15, 4999ULL, &validated);
     if (st != OZOS_ERR_MAC16_MISMATCH) TEST_FAIL("Tampered packet", "MAC16 khong bat duoc bit sua doi");
 
-    TEST_PASS("Cong gac Tripwire MAC16 chan dung goi tin gia mao");
+    /* Kiem tra lo hong A1+96: Goi tin A1 co payload du dem 96 byte rac phai bi TU CHOI OZOS_ERR_A1_PAYLOAD_UNPROTECTED */
+    ozos_packet80_t a1_pkt;
+    ozos_packet_build(&a1_pkt, 5001ULL, sample_coeffs, 15);
+    uint8_t a1_buf[80 + 15 + 96];
+    memcpy(a1_buf, &a1_pkt, 80);
+    memcpy(a1_buf + 80, "FORGED_A1_PAYLD", 15);
+    memset(a1_buf + 80 + 15, 0x42, 96);
+    st = ozos_packet_validate(a1_buf, sizeof(a1_buf), 4999ULL, &validated);
+    if (st != OZOS_ERR_A1_PAYLOAD_UNPROTECTED) {
+        TEST_FAIL("A1+96 payload check", "Library chap nhan A1 co payload khi dem 96 byte rac");
+    }
+
+    TEST_PASS("Cong gac Tripwire MAC16 chan dung goi tin gia mao va tu choi A1 co payload (+96B)");
 
     /* TEST 3: Anti-Replay Attack Protection */
     printf("\n[TEST 3/7] Chong Tan Cong Phat Lai (Anti-Replay Protection)...\n");
