@@ -236,6 +236,32 @@ This repository strictly enforces **Level 0 Zero-PII Policy**:
 
 ---
 
+## Threat Model, Design Decisions & Operational Security (OpSec)
+
+Following exhaustive 10-round adversarial Red Team audits, the operational boundaries and intentional architectural invariants of O.Z.O.S are formally cataloged below:
+
+### 1. Keyed Vault Entropy Model & Confidentiality Scope
+* **Tamper-Evidence Tripwire:** The Keyed Local Vault (`ozos-engine.js:saveLocalVault`) uses domain-separated 64-bit FNV-1a designed for zero-allocation microsecond execution (~330,000 derivations/sec) without PBKDF2/Argon2 iteration overhead. Security against brute-force forgery relies strictly on the entropy of `vaultKey`. High-risk environments must use strong high-entropy passphrases.
+* **Integrity vs Confidentiality:** Local Vault records provide **Tamper-Evidence & Integrity Only**; the underlying JSON payload (amount, ledger metadata, timestamps) is stored in Base64-encoded plaintext. Applications requiring confidentiality must encrypt sensitive fields (e.g. via ChaCha20-Poly1305) prior to vault sealing.
+
+### 2. Acoustic Physical Transport & Ephemeral Handshake Bounds
+* **Open Physical Broadcast Medium:** Acoustic near-ultrasound (18.1 - 19.8 kHz) operates across shared physical airspaces. Discovery SYN frames are unauthenticated broadcast probes that establish ephemeral session keys with Perfect Forward Secrecy (PFS) via Curve25519 ECDH.
+* **Out-of-Band Peer Authentication:** An established session key (`K_session`) guarantees channel confidentiality and tamper-resistance via Poly1305, but does NOT attest the physical identity of the remote speaker. High-security deployments must bind SYN exchanges to pinned peer public keys or authenticate session hashes out-of-band (e.g., optical QR scan or BIP-39 verbal confirmation).
+
+### 3. State Persistence & Hardware Monotonicity
+* **Ephemeral Anti-Replay Invariants:** In-memory anti-replay state tracking in Web Cockpit (`OZOSEngine`, `GenesisShield`) and CLI executions is scoped to active process memory.
+* **VM Rollback & Snapshot Immunity:** Full defense against virtual machine snapshot rollback attacks requires persisting monotonic nonces into hardware-backed non-volatile registers (such as TPM 2.0 NVRAM or seL4 hardware counter channels).
+
+### 4. Canonical Distribution, Upgrade Guidance & N-Day Advisory
+* **Authoritative Source:** The canonical repository for O.Z.O.S is strictly `https://github.com/LumenNull/OZOS.git`. Releases and commits are cryptographically verified via git commit provenance from `LumenNull <350623492+LumenNull@users.noreply.github.com>`.
+* **Binary Provenance & SHA-256 Pinning:** All shipped WebAssembly modules (`zero_dct.wasm`) must match the pinned SHA-256 hash `d7924fedcda753e046643ae23a78018e6e890c01eec9f6a6237076c8c4e4604d`. Verify locally via:
+  ```bash
+  sha256sum contrib/web-cockpit/zero_dct.wasm core/zero_dct.wasm
+  ```
+* **Upgrade Policy:** Deprecated or unpatched node deployments are susceptible to public patch-diff reverse-engineering (N-day exploitation). Node operators must continuously track the `main` branch. Older versions prior to Round 10 hardening (commit `c68c1ce`) are considered deprecated.
+
+---
+
 ## License
 
 Released under the [MIT License](LICENSE).

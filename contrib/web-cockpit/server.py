@@ -64,7 +64,10 @@ class OZOSRequestHandler(http.server.SimpleHTTPRequestHandler):
             self.wfile.write(b'{"error":"Forbidden: Cross-Origin Request Blocked"}\n')
             return
         if self.path == '/api/cmd':
-            # Giả định an toàn: Chỉ chấp nhận các kết nối cục bộ nội bộ (127.0.0.1) từ trạm chỉ huy của chủ quyền
+            # Mô hình tin cậy: Server bridge bind chặt vào 127.0.0.1, giả định tin tưởng localhost cục bộ.
+            # Dành riêng cho Web Cockpit chạy trên máy của chính node chủ quyền.
+            # Yêu cầu không có header Origin (CLI local/curl) hoặc Origin localhost được chấp nhận theo thiết kế.
+            # Mọi đường dẫn file ghi ra đều được sandbox tuyệt đối vào thư mục server.
             try:
                 cl_val = self.headers.get('Content-Length')
                 if cl_val is None:
