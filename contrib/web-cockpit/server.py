@@ -27,8 +27,12 @@ PORT = 8899
 DIRECTORY = os.path.dirname(os.path.abspath(__file__))
 OZOS_EXE = os.path.join(DIRECTORY, "ozos.exe")
 
+class ThreadedTCPServer(socketserver.ThreadingMixIn, socketserver.TCPServer):
+    daemon_threads = True
+    allow_reuse_address = True
+
 class OZOSRequestHandler(http.server.SimpleHTTPRequestHandler):
-    timeout = 15
+    timeout = 10
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, directory=DIRECTORY, **kwargs)
@@ -122,8 +126,7 @@ class OZOSRequestHandler(http.server.SimpleHTTPRequestHandler):
 
 if __name__ == '__main__':
     os.chdir(DIRECTORY)
-    socketserver.TCPServer.allow_reuse_address = True
-    with socketserver.TCPServer(("127.0.0.1", PORT), OZOSRequestHandler) as httpd:
+    with ThreadedTCPServer(("127.0.0.1", PORT), OZOSRequestHandler) as httpd:
         print("=================================================================")
         print("  [OK] O.Z.O.S SOVEREIGN COMMAND STATION & NATIVE BRIDGE ACTIVE")
         print(f"  [URL] http://localhost:{PORT}")

@@ -3,6 +3,8 @@
 
 #define _CRT_SECURE_NO_WARNINGS
 
+#define OZOS_MAX_PASSPHRASE_LEN 500
+
 #include "tweetnacl.h"
 #include "bip39_words.h"
 #include <stdint.h>
@@ -207,6 +209,7 @@ static inline bool ozos_brainseed_generate_ex(
     uint8_t seed32_out[32]
 ) {
     if (!mnemonic_out || max_mnemonic_len < 120 || !entropy16) return false;
+    if (passphrase && strlen(passphrase) > OZOS_MAX_PASSPHRASE_LEN) return false;
 
     /* 1. Tính mã kiểm tra Checksum (4 bits đầu của SHA-256) */
     uint8_t hash[32] = {0};
@@ -270,6 +273,7 @@ static inline bool ozos_brainseed_restore(
     const char* passphrase
 ) {
     if (!seed32_out || !mnemonic_str) return false;
+    if (passphrase && strlen(passphrase) > OZOS_MAX_PASSPHRASE_LEN) return false;
 
     /* Tách 12 từ */
     char copy[512];

@@ -46,9 +46,12 @@ O.Z.O.S is a self-sovereign cryptographic micro-kernel designed for high-adversi
 
 ---
 
-## Wire Format Specification (OZOS-80)
+## Wire Format Specifications (Dual Profile Architecture)
 
-The core packet header (`ozos_packet80_t` in `core/libozos.h`) is exactly 80 bytes (640 bits), SIMD 16-byte aligned (`OZOS_ALIGN16`, zero struct padding) for direct vector register execution:
+O.Z.O.S defines two distinct, specialized binary wire profiles tailored for specific operational environments:
+
+### Profile A: Bare-Metal SIMD Carrier (`OZOS-80`)
+Optimized for high-throughput bare-metal micro-kernel execution, vector register loading (`v128_load`), and near-ultrasound acoustic modulation (`ozos.exe`, `ozos_ghost`).
 
 ```text
 +-------------------------------------------------------------------------------+
@@ -62,6 +65,23 @@ The core packet header (`ozos_packet80_t` in `core/libozos.h`) is exactly 80 byt
 |  [Offset 0x4C - 0x4D]     |  [Offset 0x4E - 0x4F] • O(1) Gatekeeper < 20ns    |
 +---------------------------+---------------------------------------------------+
 TOTAL WIRE HEADER SIZE: EXACTLY 80 BYTES (640 Bits, Zero Padding)
+```
+
+### Profile B: Web Cockpit Wire Frame (`GENS-v1`)
+Optimized for zero-copy JavaScript `DataView` parsing, WebAssembly module bounds verification, and GenesisShield transport (`zero_dct.wasm`, `genesis-shield.js`, `ozos-engine.js`).
+
+```text
++-----------------------+-------------------------------------------------------+
+|  MAGIC (uint32_t = 4B)|  MONOTONIC NONCE (uint64_t = 8 Bytes)                 |
+|  [0x00 - 0x03] 0x47454E01  [Offset 0x04 - 0x0B] • Anti-Replay Counter           |
++-----------------------+-------------------------------------------------------+
+|  PERCEPTUAL FINGERPRINT (15 x float32 = 60 Bytes)                             |
+|  [Offset 0x0C - 0x47] • Low-Frequency Perceptual Anchors (4x4 Matrix)         |
++-------------------------------------------------------+-----------------------+
+|  PAYLOAD CHECKSUM (uint32_t = 4B)                     |  PAYLOAD LEN (u32=4B) |
+|  [Offset 0x48 - 0x4B] • FNV-1a Checksum (Slot 15)     |  [Offset 0x4C - 0x4F] |
++-------------------------------------------------------+-----------------------+
+TOTAL WIRE HEADER SIZE: EXACTLY 80 BYTES (640 Bits)
 ```
 
 ### Sovereign Identity Attachment (Detached Ed25519)

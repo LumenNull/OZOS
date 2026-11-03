@@ -270,6 +270,7 @@ static void cmd_status(void) {
     printf("  • Thuy van Quang hoc  : 2D-DCT 8x8 Orthonormal Luminance Symmetry Delta\n");
     printf("  • Bo loc Song am      : 32 Bo loc Goertzel O(N) Zero-RAM Purity\n");
     printf("=================================================================\n");
+    return 0;
 }
 
 /* =============================================================================
@@ -353,6 +354,7 @@ static void cmd_keygen(const char* custom_seed_hex) {
     printf("• Sovereign Public Key: 0x%s (32 Bytes Ed25519)\n", pk_hex);
     printf("• Dac tinh Mat ma     : RFC 8032 Curve25519 (Constant-Time, Zero-Allocation)\n");
     printf("=================================================================\n");
+    return 0;
 }
 
 static int cmd_packet_sign(const char* message, uint64_t nonce, const char* custom_seed_hex) {
@@ -819,6 +821,7 @@ static void cmd_benchmark(void) {
     printf("• Bang thong xu ly (Throughput): %.2f TRIEU goi tin / giay\n", packets_per_sec / 1e6);
     printf("• Danh gia                    : VUOT TROI GAP 1,000 LAN TCP/IP TRUYEN THONG!\n");
     printf("=================================================================\n");
+    return 0;
 }
 
 /* =============================================================================
@@ -1162,7 +1165,11 @@ static int cmd_tunnel_decrypt(const char* frame_hex, const char* session_key_hex
    COMMANDS: [MẢNH GHÉP 3] 12-WORD BRAINSEED (BIP-39 + PBKDF2)
    ============================================================================= */
 
-static void cmd_brainseed_gen(const char* passphrase) {
+static int cmd_brainseed_gen(const char* passphrase) {
+    if (passphrase && strlen(passphrase) > OZOS_MAX_PASSPHRASE_LEN) {
+        fprintf(stderr, "🚨 [TU CHOI] Passphrase vuot qua gioi han an toan cho phep (Toi da %d ky tu).\n", OZOS_MAX_PASSPHRASE_LEN);
+        return 1;
+    }
     uint8_t entropy[16];
     randombytes(entropy, 16);
 
@@ -1195,9 +1202,14 @@ static void cmd_brainseed_gen(const char* passphrase) {
     printf("   bạn chỉ cần ghi nhớ 12 từ này trong đầu. Bất kỳ máy tính nào trên\n");
     printf("   thế giới chạy 'ozos.exe brainseed-restore' sẽ tái tạo 100%% danh tính!\n");
     printf("=================================================================\n");
+    return 0;
 }
 
 static int cmd_brainseed_restore(const char* mnemonic_str, const char* passphrase) {
+    if (passphrase && strlen(passphrase) > OZOS_MAX_PASSPHRASE_LEN) {
+        fprintf(stderr, "🚨 [TU CHOI] Passphrase vuot qua gioi han an toan cho phep (Toi da %d ky tu).\n", OZOS_MAX_PASSPHRASE_LEN);
+        return 1;
+    }
     if (!mnemonic_str) {
         printf("Loi: ozos brainseed-restore \"<12 tu cach nhau boi dau cach>\" [passphrase]\n");
         return 1;
@@ -1269,6 +1281,7 @@ static void cmd_gossip_beacon(uint32_t epoch, const char* wav_path) {
         printf("• Near-Ultrasound WAV: %s (18.1 - 19.8 kHz, 100%% Vo thanh)\n", wav_path);
     }
     printf("=================================================================\n");
+    return 0;
 }
 
 static int cmd_gossip_listen(const char* beacon_hex, uint32_t my_epoch) {
@@ -1411,7 +1424,7 @@ int main(int argc, char* argv[]) {
         return cmd_tunnel_decrypt(argv[2], argv[3]);
     } else if (strcmp(cmd, "brainseed-gen") == 0) {
         const char* passphrase = (argc >= 3) ? argv[2] : "";
-        cmd_brainseed_gen(passphrase);
+        return cmd_brainseed_gen(passphrase);
     } else if (strcmp(cmd, "brainseed-restore") == 0) {
         if (argc < 3) {
             printf("Loi: ozos.exe brainseed-restore \"<12 words>\" [passphrase]\n");

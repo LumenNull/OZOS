@@ -706,23 +706,29 @@ check_test("ozos_ghost listen chan chat moi boundary (rx_len = 0, 3, 513 deu exi
            f"Ghost bounds: t0={proc0.returncode}, t3={proc3.returncode}, t513={proc513.returncode}")
 
 # ----------------------------------------------------------------------
-# 26. TEST ROUND 7: Brainseed Multi-Milestone Passphrase Sweep (0..2000 chars)
+# 26. TEST ROUND 7: Brainseed Passphrase Scope (<= 500 chars valid, > 500 fail-closed)
 # ----------------------------------------------------------------------
-print("\n[TEST 26/28] Kiem Tra Brainseed Sweep Passphrase Nhieu Moc (0, 1, 119, 120, 256, 512, 1024, 2000)...")
+print("\n[TEST 26/28] Kiem Tra Brainseed Passphrase Cap (Toi da 500 ky tu, > 500 bi tu choi fail-closed)...")
 words = "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about"
-mils = [0, 1, 119, 120, 244, 256, 500, 512, 1024, 1500, 2000]
-all_mil_ok = True
-for m in mils:
+valid_mils = [0, 1, 119, 120, 244, 256, 500]
+all_valid_ok = True
+for m in valid_mils:
     pass_str = "K" * m
     rc_g, out_g, _ = run_ozos("brainseed-gen", pass_str)
     rc_r, out_r, _ = run_ozos("brainseed-restore", words, pass_str)
     if rc_g != 0 or rc_r != 0 or "Ed25519" not in out_r:
-        all_mil_ok = False
+        all_valid_ok = False
         break
 
-check_test("Brainseed vuot qua toan bo cac moc passphrase (0, 1, 119, 120, 244, 256, 500, 512, 1024, 1500, 2000 ky tu)",
-           all_mil_ok,
-           "Passphrase multi-milestone stack safety confirmed 100%")
+# Test fail-closed on passphrases > 500 characters (Triệt tiêu hoàn toàn silent truncation / identity fork)
+rc_over501_g, _, err_g = run_ozos("brainseed-gen", "P" * 501)
+rc_over501_r, _, err_r = run_ozos("brainseed-restore", words, "P" * 501)
+rc_over1016_r, _, _ = run_ozos("brainseed-restore", words, "P" * 1016)
+
+cap_enforced = all_valid_ok and (rc_over501_g == 1) and (rc_over501_r == 1) and (rc_over1016_r == 1)
+check_test("Brainseed chap nhan passphrase hop le <= 500 ky tu va TU CHOI dut khoat khi > 500 ky tu (No identity fork)",
+           cap_enforced,
+           "Passphrase boundary cap strictly enforced fail-closed at 500 chars")
 
 # ----------------------------------------------------------------------
 # 27. TEST ROUND 7: server.py Robustness & Parser Fuzzing (Non-dict, non-list, bad JSON)
