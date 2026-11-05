@@ -277,7 +277,7 @@ static inline bool ozos_ghost_emit_stealth_ack(const ozos_handshake_syn_t* syn, 
     }
 
     uint8_t auth_tag[16];
-    ozos_compute_handshake_auth_tag(auth_tag, out_session_key, syn->eph_pubkey, eph_pk_b);
+    ozos_compute_handshake_auth_tag_ex(auth_tag, out_session_key, syn->eph_pubkey, eph_pk_b, syn->session_nonce);
 
     ozos_handshake_ack_build(out_ack, eph_pk_b, auth_tag);
 

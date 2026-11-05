@@ -114,100 +114,99 @@ int verify_dual_path_anti_dfa(
 }
 
 // =============================================================================
-// 3. TẦNG 3 & 7: CỔNG GÁC TRIPWIRE MAC16 (CHỐNG DDoS & CHE CHẮN NĂNG LƯỢNG)
+// 3. TẦNG 3 & 7: CỔNG GÁC TRIPWIRE MAC16 (SIPHASH-2-4 KEYED PRF GATEKEEPER)
 // =============================================================================
+// LƯU Ý BẢO MẬT (F3 Remediation):
+// - Thay thế hoàn toàn hàm băm FNV-1a có mặt nạ (vốn bị rút gọn đại số hoặc không phải
+//   là MAC mật mã học thực thụ) bằng thuật toán MAC khóa đối xứng SipHash-2-4
+//   (Aumasson & Bernstein, INDOCRYPT 2012 - ARX Pseudorandom Function).
+// - Không tuyên bố khả năng chống tấn công phân tích năng lượng phần cứng (Anti-CPA)
+//   trên hàm kiểm tra nhanh 16-bit này; đối với bảo mật mật mã toàn diện, hệ thống
+//   sử dụng Poly1305 (RFC 8439) và chữ ký số Ed25519 ở tầng xác thực chính.
+
+#define SIPROTL(x, b) (uint64_t)(((x) << (b)) | ((x) >> (64 - (b))))
+#define SIPROUND()           \
+    do {                     \
+        v0 += v1;            \
+        v1 = SIPROTL(v1, 13);\
+        v1 ^= v0;            \
+        v0 = SIPROTL(v0, 32);\
+        v2 += v3;            \
+        v3 = SIPROTL(v3, 16);\
+        v3 ^= v2;            \
+        v0 += v3;            \
+        v3 = SIPROTL(v3, 21);\
+        v3 ^= v0;            \
+        v2 += v1;            \
+        v1 = SIPROTL(v1, 17);\
+        v1 ^= v2;            \
+        v2 = SIPROTL(v2, 32);\
+    } while (0)
 
 /**
- * Boolean-to-Arithmetic (B2A) Goubin First-Order Conversion (Goubin CHES 2001):
- * Chuyển đổi cặp chia sẻ Boolean (x_bool, r) với x = x_bool ^ r sang chia sẻ số học A
- * sao cho x = (A + r) mod 2^64 mà không bao giờ lộ giá trị thực x trên thanh ghi!
- */
-static inline uint64_t goubin_b2a_64(uint64_t x_bool, uint64_t r) {
-    uint64_t gamma = (r ^ 0xA5A55A5AA5A55A5AULL) + 0x9E3779B97F4A7C15ULL;
-    OZOS_COMPILER_BARRIER();
-    uint64_t t = x_bool ^ gamma;
-    t = t - gamma;
-    t = t ^ x_bool;
-    gamma = gamma ^ r;
-    uint64_t a = x_bool ^ gamma;
-    a = a - gamma;
-    a = a ^ t;
-    return a;
-}
-
-/**
- * Arithmetic-to-Boolean (A2B) First-Order Conversion:
- * Chuyển đổi cặp chia sẻ số học (a_arith, r_arith) với x = (a_arith + r_arith) mod 2^64
- * về lại chia sẻ Boolean x_bool = x ^ r_bool thông qua cộng ripple-carry có mặt nạ.
- */
-static inline uint64_t masked_a2b_64(uint64_t a_arith, uint64_t r_arith, uint64_t r_bool) {
-    /* Cộng hai chia sẻ số học dưới lớp mặt nạ Boolean r_bool (Kogge-Stone / Ripple Masked Adder) */
-    uint64_t p = (a_arith ^ r_bool) ^ r_arith;
-    uint64_t g = (a_arith & r_arith);
-    uint64_t c = 0;
-    for (int bit = 0; bit < 64; ++bit) {
-        uint64_t mask_bit = 1ULL << bit;
-        uint64_t p_unmasked = (p ^ r_bool) & mask_bit;
-        uint64_t g_bit = g & mask_bit;
-        uint64_t next_c = (g_bit | (p_unmasked & c)) << 1;
-        c |= next_c;
-    }
-    return p ^ c;
-}
-
-/**
- * Tính mã kiểm tra nhanh 16-bit (Fast Gatekeeper MAC) có che chắn mặt nạ (First-Order Masking)
- * để từ chối gói tin rác ngay lập tức trước khi gọi hàm giải mã nặng.
- *
- * Bảo chứng Toán học (Mathematical Invariant):
- * Nhờ phép chuyển đổi B2A -> Nhân phân phối trên miền số học Z_{2^64} -> A2B ở mỗi vòng lặp,
- * các biến trung gian trong thanh ghi phụ thuộc hoàn toàn vào `random_mask`, nhưng kết quả
- * mở mặt nạ cuối cùng bất biến tuyệt đối (100% mask-invariant) với mọi giá trị `random_mask`!
+ * Tính mã xác thực thông điệp nhanh 16-bit (Fast Gatekeeper MAC) dựa trên
+ * hàm PRF mật mã học SipHash-2-4 với khóa 128-bit (k0 = secret_seed, k1 = key_high)
+ * để lọc gói tin rác tức thì trước khi gọi hàm xác thực Ed25519 / Poly1305.
  */
 uint16_t compute_fast_gate_mac(
     const uint8_t* data,
     size_t len,
     uint64_t secret_seed,
-    uint64_t random_mask
+    uint64_t key_high
 ) {
-    const uint64_t FNV_PRIME = 0x100000001B3ULL;
+    if (!data && len > 0) return 0;
 
-    // Chia sẻ Boolean của trạng thái h: h_bool = h ^ mask_state
-    uint64_t mask_state = (random_mask != 0ULL) ? random_mask : 0x5A5AA5A55A5AA5A5ULL;
-    uint64_t h_bool = secret_seed ^ mask_state;
-    OZOS_COMPILER_BARRIER();
+    uint64_t k0 = secret_seed;
+    uint64_t k1 = (key_high != 0ULL) ? key_high : (secret_seed ^ 0x4F5A4F5353495048ULL);
 
-    for (size_t i = 0; i < len; ++i) {
-        // 1. Nạp byte dữ liệu dưới lớp mặt nạ tiến hóa theo vị trí i
-        uint64_t byte_mask = (mask_state >> ((i & 7) * 8)) & 0xFFULL;
-        uint64_t masked_b = (uint64_t)data[i] ^ byte_mask;
-        OZOS_COMPILER_BARRIER();
+    uint64_t v0 = 0x736f6d6570736575ULL ^ k0;
+    uint64_t v1 = 0x646f72616e646f6dULL ^ k1;
+    uint64_t v2 = 0x6c7967656e657261ULL ^ k0;
+    uint64_t v3 = 0x7465646279746573ULL ^ k1;
 
-        // 2. Thực hiện phép XOR của FNV-1a trực tiếp trên miền chia sẻ Boolean:
-        //    (h ^ data[i]) = (h_bool ^ masked_b) ^ (mask_state ^ byte_mask)
-        uint64_t x_bool = h_bool ^ masked_b;
-        uint64_t r_bool = mask_state ^ byte_mask;
+    const uint8_t* end = data + (len - (len % 8));
+    const int left = (int)(len & 7);
+    uint64_t b = ((uint64_t)len) << 56;
 
-        // 3. Chuyển đổi Boolean sharing (x_bool, r_bool) sang Arithmetic sharing (a_arith, r_bool)
-        //    sao cho: x = (a_arith + r_bool) mod 2^64
-        uint64_t a_arith = goubin_b2a_64(x_bool, r_bool);
-        OZOS_COMPILER_BARRIER();
-
-        // 4. Nhân với hằng số FNV_PRIME trên miền chia sẻ số học (Tuyến tính hoàn toàn mod 2^64!):
-        //    x * P = (a_arith * P + r_bool * P) mod 2^64
-        uint64_t prod_a = a_arith * FNV_PRIME;
-        uint64_t prod_r = r_bool * FNV_PRIME;
-        OZOS_COMPILER_BARRIER();
-
-        // 5. Xoay mặt nạ trạng thái cho vòng lặp tiếp theo và chuyển đổi A2B về lại Boolean sharing
-        mask_state = (mask_state << 13) | (mask_state >> 51);
-        mask_state ^= 0x9E3779B97F4A7C15ULL;
-        h_bool = masked_a2b_64(prod_a, prod_r, mask_state);
+    for (const uint8_t* p = data; p != end; p += 8) {
+        uint64_t m = ((uint64_t)p[0])       |
+                     ((uint64_t)p[1] << 8)  |
+                     ((uint64_t)p[2] << 16) |
+                     ((uint64_t)p[3] << 24) |
+                     ((uint64_t)p[4] << 32) |
+                     ((uint64_t)p[5] << 40) |
+                     ((uint64_t)p[6] << 48) |
+                     ((uint64_t)p[7] << 56);
+        v3 ^= m;
+        SIPROUND();
+        SIPROUND();
+        v0 ^= m;
     }
 
-    // Gỡ mặt nạ bước cuối cùng để trích xuất MAC 16-bit chuẩn xác
-    uint64_t unmasked = h_bool ^ mask_state;
-    return (uint16_t)((unmasked ^ (unmasked >> 16) ^ (unmasked >> 32)) & 0xFFFFU);
+    switch (left) {
+        case 7: b |= ((uint64_t)end[6]) << 48; /* fallthrough */
+        case 6: b |= ((uint64_t)end[5]) << 40; /* fallthrough */
+        case 5: b |= ((uint64_t)end[4]) << 32; /* fallthrough */
+        case 4: b |= ((uint64_t)end[3]) << 24; /* fallthrough */
+        case 3: b |= ((uint64_t)end[2]) << 16; /* fallthrough */
+        case 2: b |= ((uint64_t)end[1]) << 8;  /* fallthrough */
+        case 1: b |= ((uint64_t)end[0]); break;
+        case 0: break;
+    }
+
+    v3 ^= b;
+    SIPROUND();
+    SIPROUND();
+    v0 ^= b;
+
+    v2 ^= 0xFFULL;
+    SIPROUND();
+    SIPROUND();
+    SIPROUND();
+    SIPROUND();
+
+    uint64_t tag64 = v0 ^ v1 ^ v2 ^ v3;
+    return (uint16_t)((tag64 ^ (tag64 >> 16) ^ (tag64 >> 32) ^ (tag64 >> 48)) & 0xFFFFU);
 }
 
 // =============================================================================

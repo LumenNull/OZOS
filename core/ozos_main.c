@@ -207,20 +207,61 @@ static short* read_wav_file(const char* filepath, size_t* out_num_samples, uint3
     FILE* f = fopen(filepath, "rb");
     if (!f) return NULL;
 
-    wav_header_t h;
-    if (fread(&h, sizeof(h), 1, f) != 1) {
+    fseek(f, 0, SEEK_END);
+    long sz = ftell(f);
+    if (sz < 44) {
+        fclose(f);
+        return NULL;
+    }
+    fseek(f, 0, SEEK_SET);
+
+    uint8_t riff_hdr[12];
+    if (fread(riff_hdr, 1, 12, f) != 12 ||
+        memcmp(riff_hdr, "RIFF", 4) != 0 ||
+        memcmp(riff_hdr + 8, "WAVE", 4) != 0) {
         fclose(f);
         return NULL;
     }
 
-    if (memcmp(h.riff_tag, "RIFF", 4) != 0 || memcmp(h.wave_tag, "WAVE", 4) != 0) {
+    uint32_t sample_rate = 44100;
+    long data_offset = -1;
+    long data_bytes = 0;
+
+    while (ftell(f) + 8 <= sz) {
+        char chunk_id[4];
+        uint32_t chunk_sz = 0;
+        if (fread(chunk_id, 1, 4, f) != 4 || fread(&chunk_sz, 4, 1, f) != 1) break;
+        long chunk_pos = ftell(f);
+        if (memcmp(chunk_id, "fmt ", 4) == 0 && chunk_sz >= 16) {
+            uint8_t fmt_buf[16];
+            if (fread(fmt_buf, 1, 16, f) == 16) {
+                memcpy(&sample_rate, fmt_buf + 4, 4);
+            }
+        } else if (memcmp(chunk_id, "data", 4) == 0) {
+            data_offset = chunk_pos;
+            data_bytes = (long)chunk_sz;
+            break;
+        }
+        long next_pos = chunk_pos + (long)chunk_sz + (chunk_sz & 1);
+        if (next_pos <= chunk_pos || next_pos > sz) break;
+        fseek(f, next_pos, SEEK_SET);
+    }
+
+    if (data_offset < 0) {
+        data_offset = 44;
+        data_bytes = sz - 44;
+    }
+    if (data_offset + data_bytes > sz) {
+        data_bytes = sz - data_offset;
+    }
+    if (data_bytes <= 0 || data_bytes > 50 * 1024 * 1024) {
         fclose(f);
         return NULL;
     }
 
-    *out_sample_rate = h.sample_rate;
-    size_t samples_count = h.data_size / sizeof(short);
-    short* buf = (short*)malloc(h.data_size);
+    fseek(f, data_offset, SEEK_SET);
+    size_t samples_count = (size_t)data_bytes / sizeof(short);
+    short* buf = (short*)malloc(samples_count * sizeof(short));
     if (!buf) {
         fclose(f);
         return NULL;
@@ -233,8 +274,84 @@ static short* read_wav_file(const char* filepath, size_t* out_num_samples, uint3
     }
 
     fclose(f);
+    *out_sample_rate = sample_rate;
     *out_num_samples = samples_count;
     return buf;
+}
+
+/* =============================================================================
+   PERSISTENT PEER PIN STORE (.ozos_known_peers) & ANTI-REPLAY NONCE STORE
+   ============================================================================= */
+
+/**
+ * Kiểm tra và ghi nhận khóa công khai của đối tác vào kho ghim bền vững `.ozos_known_peers`
+ * (Cơ chế tương tự SSH known_hosts: Trust-On-First-Use + Phát hiện đổi khóa MITM).
+ * Trả về:
+ *   1 : Đã tồn tại trong `.ozos_known_peers` và KHỚP 100%
+ *   0 : Lần đầu tiên gặp peer này (TOFU), đã ghi vào `.ozos_known_peers`
+ *  -1 : PHÁT HIỆN ĐỔI KHÓA BẤT THƯỜNG (KEY CHANGED / MITM ALERT) -> Fail-closed!
+ */
+static int ozos_check_and_record_peer_pin(const char* peer_id, const char* pk_hex, char* out_expected_hex) {
+    if (!peer_id || !*peer_id || !pk_hex || strlen(pk_hex) != 64) return 0;
+
+    FILE* f = fopen(".ozos_known_peers", "r");
+    if (f) {
+        char line_peer[128];
+        char line_pk[128];
+        while (fscanf(f, "%127s %127s", line_peer, line_pk) == 2) {
+            if (strcmp(line_peer, peer_id) == 0 && strlen(line_pk) == 64) {
+                fclose(f);
+                bool match = true;
+                for (int i = 0; i < 64; ++i) {
+                    char c1 = line_pk[i];
+                    char c2 = pk_hex[i];
+                    if (c1 >= 'A' && c1 <= 'F') c1 += 32;
+                    if (c2 >= 'A' && c2 <= 'F') c2 += 32;
+                    if (c1 != c2) { match = false; break; }
+                }
+                if (out_expected_hex) {
+                    memcpy(out_expected_hex, line_pk, 64);
+                    out_expected_hex[64] = '\0';
+                }
+                return match ? 1 : -1;
+            }
+        }
+        fclose(f);
+    }
+
+    FILE* fw = fopen(".ozos_known_peers", "a");
+    if (fw) {
+        fprintf(fw, "%s %s\n", peer_id, pk_hex);
+        fclose(fw);
+    }
+    return 0;
+}
+
+static void ozos_cli_load_tunnel_nonces(void) {
+    FILE* f = fopen(".ozos_tunnel_nonces", "r");
+    if (!f) return;
+    char nonce_hex[128];
+    while (fscanf(f, "%127s", nonce_hex) == 1) {
+        if (strlen(nonce_hex) == 48 && is_valid_hex(nonce_hex, 48)) {
+            uint8_t n24[24];
+            hex_to_bytes(nonce_hex, n24, 24);
+            memcpy(g_ozos_tunnel_seen_nonces[g_ozos_tunnel_seen_pos], n24, 24);
+            g_ozos_tunnel_seen_pos = (g_ozos_tunnel_seen_pos + 1U) % OZOS_TUNNEL_REPLAY_WINDOW;
+            if (g_ozos_tunnel_seen_count < OZOS_TUNNEL_REPLAY_WINDOW) {
+                g_ozos_tunnel_seen_count++;
+            }
+        }
+    }
+    fclose(f);
+}
+
+static void ozos_cli_record_tunnel_nonce(const uint8_t nonce24[24]) {
+    FILE* f = fopen(".ozos_tunnel_nonces", "a");
+    if (!f) return;
+    char n_hex[49];
+    bytes_to_hex(nonce24, 24, n_hex);
+    fprintf(f, "%s\n", n_hex);
+    fclose(f);
 }
 
 /* =============================================================================
@@ -613,9 +730,9 @@ static int cmd_packet_build(const char* message, uint64_t nonce) {
     return 0;
 }
 
-static int cmd_packet_verify(const char* hex_str, uint64_t last_seen_nonce, const char* trusted_author_pk_hex) {
+static int cmd_packet_verify(const char* hex_str, uint64_t last_seen_nonce, const char* trusted_author_pk_hex, const char* peer_id) {
     if (!hex_str) {
-        printf("Loi: ozos packet-verify <hex> [last_seen_nonce] [trusted_author_pk]\n");
+        printf("Loi: ozos packet-verify <hex> [last_seen_nonce] [trusted_author_pk] [--peer-id <id>]\n");
         return 1;
     }
 
@@ -739,6 +856,23 @@ static int cmd_packet_verify(const char* hex_str, uint64_t last_seen_nonce, cons
             printf("• Author PubKey  : 0x%s\n", pk_hex);
             final_rc = 1;
         } else {
+            if (peer_id != NULL && *peer_id != '\0') {
+                char expected_pin_hex[65] = {0};
+                int pin_st = ozos_check_and_record_peer_pin(peer_id, pk_hex, expected_pin_hex);
+                if (pin_st < 0) {
+                    printf("Trang thai: 🚨 BI TU CHOI: PHAT HIEN THAY DOI KHOA DOI TAC (PEER KEY CHANGED / MITM ALERT)!\n");
+                    printf("• Peer ID        : %s\n", peer_id);
+                    printf("• Pinned Key     : 0x%s (Trong danh ba .ozos_known_peers)\n", expected_pin_hex);
+                    printf("• Presented Key  : 0x%s [CANH BAO: KEY CHANGED / MITM]\n", pk_hex);
+                    printf("=================================================================\n");
+                    free(buffer);
+                    return 1;
+                } else if (pin_st == 1) {
+                    printf("• Known Peers    : ✅ Khoa cong khai khop voi danh ba .ozos_known_peers (Peer: %s)\n", peer_id);
+                } else {
+                    printf("• Known Peers    : ℹ️ [TOFU FIRST-USE PINNED] Da luu khoa lan dau cho peer '%s' vao .ozos_known_peers\n", peer_id);
+                }
+            }
             /* Chu ky toan hoc dung. Bay gio doi chieu Sovereign Trust Anchor */
             if (trusted_author_pk_hex != NULL) {
                 if (strlen(trusted_author_pk_hex) != 64 || !is_valid_hex(trusted_author_pk_hex, 64)) {
@@ -754,7 +888,7 @@ static int cmd_packet_verify(const char* hex_str, uint64_t last_seen_nonce, cons
                     printf("• Pinned Peer Check  : ℹ️ Xac thuc theo khoa ghim CLI argument (TOFU). Kiem tra van tay out-of-band.\n");
                     printf("• Full Fingerprint   : 0x%s\n", pk_hex);
                     printf("• TOFU Notice        : ℹ️ Pinned via CLI argument. Verify this fingerprint out-of-band.\n");
-                    printf("Trang thai: ✅ HOP LE TUYET DOI (100%% INVARIANT INTEGRITY & SOVEREIGN VERIFIED)\n");
+                    printf("Trang thai: ✅ [XAC THUC THEO KHOA GHIM CLI / TOFU] HOP LE TUYET DOI (100%% INVARIANT INTEGRITY & SOVEREIGN VERIFIED)\n");
                     printf("• Chu ky Ban the : ✅ CHỮ KÝ ED25519 HỢP LỆ VÀ ĐÃ XÁC THỰC TÁC GIẢ CHỦ QUYỀN!\n");
                     printf("• Author PubKey  : 0x%s [TRUSTED PINNED SOVEREIGN KEY]\n", pk_hex);
                     final_rc = 0;
@@ -765,12 +899,17 @@ static int cmd_packet_verify(const char* hex_str, uint64_t last_seen_nonce, cons
                     printf("• Expected Key   : 0x%s\n", trusted_author_pk_hex);
                     final_rc = 1;
                 }
+            } else if (peer_id != NULL && *peer_id != '\0') {
+                printf("• Full Fingerprint   : 0x%s\n", pk_hex);
+                printf("Trang thai: ✅ [XAC THUC THEO DANH BA .ozos_known_peers] HOP LE TUYET DOI (100%% INVARIANT INTEGRITY & SOVEREIGN VERIFIED)\n");
+                printf("• Author PubKey  : 0x%s [PINNED PEER '%s']\n", pk_hex, peer_id);
+                final_rc = 0;
             } else {
                 /* Khong truyen key doi chieu: Canh bao tu tham chieu */
                 printf("Trang thai: ⚠️ HOP LE TOAN HOC (SELF-SIGNED FRAME - CHUA DOI CHIEU DANH BA CHU QUYEN)\n");
                 printf("• Chu ky Ban the : ℹ️ CHỮ KÝ ED25519 HỢP LỆ (SELF-REFERENTIAL - CHƯA ĐỐI CHIẾU SOVEREIGN ANCHOR)\n");
                 printf("• Author PubKey  : 0x%s [CHUA DOI CHIEU SOVEREIGN ANCHOR]\n", pk_hex);
-                printf("  💡 Goi y: ozos.exe packet-verify <hex> [last_n] <trusted_author_pk_hex>\n");
+                printf("  💡 Goi y: ozos.exe packet-verify <hex> [last_n] <trusted_author_pk_hex> [--peer-id <id>]\n");
                 final_rc = 0;
             }
         }
@@ -810,45 +949,39 @@ static size_t ozos_synth_preamble_ex(uint32_t sample_rate, float duration_sec, u
     return needed;
 }
 
-static int cmd_audio_synth(const char* text_data, const char* out_wav, uint8_t mode) {
-    if (!text_data || !out_wav) {
-        printf("Loi: ozos audio-synth <text> <output.wav> [--stealth | --audible]\n");
-        return 1;
-    }
-
-    size_t text_len = strlen(text_data);
-    if (text_len > 1024) {
+static int cmd_audio_synth_bytes(const uint8_t* raw_data, size_t data_len, const char* out_wav, uint8_t mode, float pre_dur) {
+    if (!raw_data || !out_wav) return 1;
+    if (data_len > 1024) {
         printf("Loi: Du lieu am thanh toi da 1024 bytes.\n");
         return 1;
     }
 
     uint32_t sample_rate = 44100;
     float tone_dur = 0.040f;
-    float pre_dur  = 0.040f;
     size_t samples_per_tone = (size_t)(sample_rate * tone_dur);
     size_t samples_pre = (size_t)(sample_rate * pre_dur);
-    size_t total_samples = samples_pre * 2 + text_len * samples_per_tone;
+    size_t total_samples = samples_pre * 2 + data_len * samples_per_tone;
 
     short* wav_samples = (short*)malloc(total_samples * sizeof(short));
     if (!wav_samples) return 1;
 
-    float float_block[2048];
+    float float_block[4096];
     size_t offset = 0;
 
-    size_t pre_samples = ozos_synth_preamble_ex(sample_rate, pre_dur, mode, float_block, 2048);
+    size_t pre_samples = ozos_synth_preamble_ex(sample_rate, pre_dur, mode, float_block, 4096);
     for (size_t i = 0; i < pre_samples && offset < total_samples; ++i) {
         wav_samples[offset++] = (short)(float_block[i] * 32767.0f);
     }
 
-    for (size_t b = 0; b < text_len; ++b) {
-        uint8_t byte_val = (uint8_t)text_data[b];
-        size_t byte_samples = ozos_synth_fsk_byte_ex(byte_val, (float)sample_rate, tone_dur, mode, float_block, 2048);
+    for (size_t b = 0; b < data_len; ++b) {
+        uint8_t byte_val = raw_data[b];
+        size_t byte_samples = ozos_synth_fsk_byte_ex(byte_val, (float)sample_rate, tone_dur, mode, float_block, 4096);
         for (size_t i = 0; i < byte_samples && offset < total_samples; ++i) {
             wav_samples[offset++] = (short)(float_block[i] * 32767.0f);
         }
     }
 
-    pre_samples = ozos_synth_preamble_ex(sample_rate, pre_dur, mode, float_block, 2048);
+    pre_samples = ozos_synth_preamble_ex(sample_rate, pre_dur, mode, float_block, 4096);
     for (size_t i = 0; i < pre_samples && offset < total_samples; ++i) {
         wav_samples[offset++] = (short)(float_block[i] * 32767.0f);
     }
@@ -865,6 +998,14 @@ static int cmd_audio_synth(const char* text_data, const char* out_wav, uint8_t m
 
     free(wav_samples);
     return success ? 0 : 1;
+}
+
+static int cmd_audio_synth(const char* text_data, const char* out_wav, uint8_t mode) {
+    if (!text_data || !out_wav) {
+        printf("Loi: ozos audio-synth <text> <output.wav> [--stealth | --audible]\n");
+        return 1;
+    }
+    return cmd_audio_synth_bytes((const uint8_t*)text_data, strlen(text_data), out_wav, mode, 0.040f);
 }
 
 static int cmd_audio_decode(const char* in_wav, int forced_mode) {
@@ -922,11 +1063,28 @@ static int cmd_audio_decode(const char* in_wav, int forced_mode) {
         mode = (p_stealth > p_audible) ? OZOS_AUDIO_MODE_STEALTH : OZOS_AUDIO_MODE_AUDIBLE;
     }
 
+    /* Tu dong nhan dien Preamble 80ms (2 chunks cua ozos_ghost / --raw-frame) hoac 40ms (1 chunk) */
+    if (num_samples >= samples_pre * 4 + samples_per_tone) {
+        float float_pre2[2048];
+        for (size_t i = 0; i < samples_pre && i < 2048; ++i) {
+            float_pre2[i] = (float)raw_samples[samples_pre + i] / 32768.0f;
+        }
+        float f_lo = (mode == OZOS_AUDIO_MODE_STEALTH) ? OZOS_STEALTH_PRE_LO : OZOS_FSK_PREAMBLE_LO;
+        float f_hi = (mode == OZOS_AUDIO_MODE_STEALTH) ? OZOS_STEALTH_PRE_HI : OZOS_FSK_PREAMBLE_HI;
+        float p0_2 = ozos_goertzel_power(float_pre2, samples_pre, f_lo, (float)sample_rate);
+        float p1_2 = ozos_goertzel_power(float_pre2, samples_pre, f_hi, (float)sample_rate);
+        if (p0_2 > 0.005f && p1_2 > 0.005f) {
+            samples_pre *= 2; /* 80ms preamble detected */
+        }
+    }
+
     size_t offset = samples_pre;
     size_t data_len = (num_samples - samples_pre * 2) / samples_per_tone;
     if (data_len > 1024) data_len = 1024;
 
+    uint8_t decoded_bytes[1025];
     char decoded_str[1025];
+    char decoded_hex[2050];
     float float_block[2048];
 
     for (size_t b = 0; b < data_len; ++b) {
@@ -934,10 +1092,12 @@ static int cmd_audio_decode(const char* in_wav, int forced_mode) {
             float_block[i] = (float)raw_samples[offset + i] / 32768.0f;
         }
         uint8_t decoded_byte = ozos_decode_fsk_byte_ex(float_block, samples_per_tone, (float)sample_rate, mode);
-        decoded_str[b] = (char)decoded_byte;
+        decoded_bytes[b] = decoded_byte;
+        decoded_str[b] = (decoded_byte >= 32 && decoded_byte <= 126) ? (char)decoded_byte : '.';
         offset += samples_per_tone;
     }
     decoded_str[data_len] = '\0';
+    bytes_to_hex(decoded_bytes, data_len, decoded_hex);
 
     printf("=================================================================\n");
     printf("  [AUDIO DECODE HOÀN TẤT] BÓC TÁCH QUA 32 BỘ LỌC GOERTZEL O(N)\n");
@@ -945,6 +1105,7 @@ static int cmd_audio_decode(const char* in_wav, int forced_mode) {
     printf("• Kenh thu nhan  : %s\n", (mode == OZOS_AUDIO_MODE_STEALTH) ? "🔇 CAN SIEU AM VO THANH (18.1 - 19.8 kHz)" : "🔊 NGHE DUOC (1.6 - 3.8 kHz)");
     printf("• Do dai giai ma : %zu bytes\n", data_len);
     printf("• Noi dung boc   : \"%s\"\n", decoded_str);
+    printf("• Hex Frame      : %s\n", decoded_hex);
     printf("=================================================================\n");
 
     free(raw_samples);
@@ -1125,7 +1286,7 @@ static uint32_t ozos_lookup_syn_nonce(const char* a_pub_hex) {
     return found_nonce;
 }
 
-static int cmd_handshake_syn(const char* wav_path, uint32_t session_nonce) {
+static int cmd_handshake_syn(const char* wav_path, uint32_t session_nonce, const char* secret_file, bool no_secret, bool raw_frame) {
     uint8_t a_pub[32], a_sk[32];
     if (ozos_ecdh_keypair(a_pub, a_sk) != 0) {
         printf("🚨 Sinh cap khoa Ephemeral A that bai!\n");
@@ -1144,10 +1305,21 @@ static int cmd_handshake_syn(const char* wav_path, uint32_t session_nonce) {
 
     ozos_record_syn_nonce(a_pub_hex, session_nonce);
 
-    fprintf(stderr, "=================================================================\n");
-    fprintf(stderr, "  [BI MAT NOI BO - TUYET DOI KHONG CHIA SE CHO PEER / PUBLIC]\n");
-    fprintf(stderr, "  • Ephemeral Secret A : 0x%s\n", a_sk_hex);
-    fprintf(stderr, "=================================================================\n");
+    if (secret_file != NULL && *secret_file != '\0') {
+        FILE* sf = fopen(secret_file, "w");
+        if (!sf) {
+            ozos_crypto_zeroize(a_sk_hex, sizeof(a_sk_hex));
+            fprintf(stderr, "🚨 [LOI] Khong the ghi Ephemeral Secret A vao file: %s\n", secret_file);
+            return 1;
+        }
+        fprintf(sf, "%s\n", a_sk_hex);
+        fclose(sf);
+    } else if (!no_secret) {
+        fprintf(stderr, "=================================================================\n");
+        fprintf(stderr, "  [BI MAT NOI BO - TUYET DOI KHONG CHIA SE CHO PEER / PUBLIC]\n");
+        fprintf(stderr, "  • Ephemeral Secret A : 0x%s\n", a_sk_hex);
+        fprintf(stderr, "=================================================================\n");
+    }
     ozos_crypto_zeroize(a_sk_hex, sizeof(a_sk_hex));
     printf("=================================================================\n");
     printf("  [MẢNH GHÉP 2] BẮT TAY HAI CHIỀU VÔ THANH: KHỞI TẠO (SYN)\n");
@@ -1157,12 +1329,21 @@ static int cmd_handshake_syn(const char* wav_path, uint32_t session_nonce) {
     printf("  • Session Nonce      : %u (Anti-replay timestamp)\n", session_nonce);
     printf("  • SYN Frame Size     : %zu bytes (Magic 0x4F5A4831 'OZH1')\n", sizeof(syn));
     printf("  • SYN Frame Hex      :\n%s\n", syn_hex);
+    if (secret_file != NULL && *secret_file != '\0') {
+        printf("  • Ephemeral Secret   : [DA GHI AN TOAN VAO FILE: %s]\n", secret_file);
+    } else if (no_secret) {
+        printf("  • Ephemeral Secret   : [DA AN THEO CO --no-secret]\n");
+    }
 
     if (wav_path) {
-        if (cmd_audio_synth(syn_hex, wav_path, OZOS_AUDIO_MODE_STEALTH) != 0) {
+        int synth_rc = raw_frame
+            ? cmd_audio_synth_bytes((const uint8_t*)&syn, sizeof(syn), wav_path, OZOS_AUDIO_MODE_STEALTH, 0.080f)
+            : cmd_audio_synth(syn_hex, wav_path, OZOS_AUDIO_MODE_STEALTH);
+        if (synth_rc != 0) {
             return 1;
         }
-        printf("• Near-Ultrasound WAV: %s (18.1 - 19.8 kHz, 100%% Vo thanh)\n", wav_path);
+        printf("• Near-Ultrasound WAV: %s (18.1 - 19.8 kHz, 100%% Vo thanh%s)\n",
+               wav_path, raw_frame ? ", 80ms Raw Binary Frame" : "");
     }
     printf("=================================================================\n");
     printf("Huong dan tiep theo cho Node B:\n");
@@ -1171,9 +1352,9 @@ static int cmd_handshake_syn(const char* wav_path, uint32_t session_nonce) {
     return 0;
 }
 
-static int cmd_handshake_ack(const char* syn_hex, const char* wav_path, const char* pinned_peer_pk_hex) {
+static int cmd_handshake_ack(const char* syn_hex, const char* wav_path, const char* pinned_peer_pk_hex, const char* peer_id, bool raw_frame) {
     if (!syn_hex) {
-        printf("Loi: ozos handshake-ack <syn_hex> [ack.wav]\n");
+        printf("Loi: ozos handshake-ack <syn_hex> [ack.wav] [--pinned-peer-pubkey <pk>] [--peer-id <id>] [--raw-frame]\n");
         return 1;
     }
     size_t hex_len = strlen(syn_hex);
@@ -1194,6 +1375,20 @@ static int cmd_handshake_ack(const char* syn_hex, const char* wav_path, const ch
     bytes_to_hex(syn.eph_pubkey, 32, syn_pk_hex);
     ozos_record_syn_nonce(syn_pk_hex, syn.session_nonce);
 
+    if (peer_id != NULL && *peer_id != '\0') {
+        char expected_pin_hex[65] = {0};
+        int pin_st = ozos_check_and_record_peer_pin(peer_id, syn_pk_hex, expected_pin_hex);
+        if (pin_st < 0) {
+            printf("🚨 [TU CHOI / MITM ALERT] Khoa cong khai SYN cua peer '%s' (0x%s) da THAY DOI so voi .ozos_known_peers (0x%s)!\n",
+                   peer_id, syn_pk_hex, expected_pin_hex);
+            return 1;
+        } else if (pin_st == 1) {
+            printf("• Known Peers Store  : ✅ Peer '%s' khop 100%% voi danh ba .ozos_known_peers (0x%s)\n", peer_id, syn_pk_hex);
+        } else {
+            printf("• Known Peers Store  : ℹ️ [TOFU FIRST-USE PINNED] Da luu khoa lan dau cho peer '%s' vao .ozos_known_peers\n", peer_id);
+        }
+    }
+
     if (pinned_peer_pk_hex != NULL) {
         if (strlen(pinned_peer_pk_hex) != 64 || !is_valid_hex(pinned_peer_pk_hex, 64)) {
             printf("🚨 [TU CHOI] Pinned Peer PubKey phai co do dai dung 64 ky tu hex hop le.\n");
@@ -1208,7 +1403,7 @@ static int cmd_handshake_ack(const char* syn_hex, const char* wav_path, const ch
         }
         printf("• Pinned Peer Check  : ✅ Peer PubKey khop hoan toan voi khoa da ghim (Full Fingerprint: 0x%s)!\n", syn_pk_hex);
         printf("• TOFU Notice        : ℹ️ Pinned via CLI argument. Verify full 64-hex fingerprint out-of-band.\n");
-    } else {
+    } else if (peer_id == NULL) {
         printf("• Pinned Peer Check  : ⚠️ CẢNH BÁO TOFU: SYN không được đối chiếu khóa ghim (--pinned-peer-pubkey).\n");
         printf("• Peer Fingerprint   : 0x%s (Verify out-of-band before trusting session)\n", syn_pk_hex);
         printf("                       PFS đảm bảo bí mật đường truyền, cần xác thực đối tác out-of-band.\n");
@@ -1237,7 +1432,7 @@ static int cmd_handshake_ack(const char* syn_hex, const char* wav_path, const ch
     ozos_crypto_zeroize(shared_secret, sizeof(shared_secret));
 
     uint8_t auth_tag[16];
-    if (ozos_compute_handshake_auth_tag(auth_tag, session_key, syn.eph_pubkey, b_pub) != 0) {
+    if (ozos_compute_handshake_auth_tag_ex(auth_tag, session_key, syn.eph_pubkey, b_pub, syn.session_nonce) != 0) {
         ozos_crypto_zeroize(session_key, sizeof(session_key));
         printf("🚨 Compute Handshake Auth Tag that bai!\n");
         return 1;
@@ -1257,17 +1452,21 @@ static int cmd_handshake_ack(const char* syn_hex, const char* wav_path, const ch
     printf("=================================================================\n");
     printf("• Ephemeral PubKey B : 0x%s (Curve25519 32 Bytes)\n", b_pub_hex);
     printf("• K_session Thiet lap: 0x%s (X25519 + SHA-512 KDF + Nonce Bound)\n", k_sess_hex);
-    printf("• Poly1305 Auth Tag  : 0x%02x%02x%02x%02x...%02x%02x\n",
+    printf("• Poly1305 Auth Tag  : 0x%02x%02x%02x%02x...%02x%02x (Transcript + Nonce Bound)\n",
            auth_tag[0], auth_tag[1], auth_tag[2], auth_tag[3], auth_tag[14], auth_tag[15]);
     printf("• Acoustic Notice    : ⚠️ SYN phat song qua kenh vat ly khong xac thuc peer identity.\n");
     printf("                       K_session dam bao bi mat duong truyen (PFS), can xac thuc peer out-of-band.\n");
     printf("• ACK Frame Hex      :\n%s\n", ack_hex);
 
     if (wav_path) {
-        if (cmd_audio_synth(ack_hex, wav_path, OZOS_AUDIO_MODE_STEALTH) != 0) {
+        int synth_rc = raw_frame
+            ? cmd_audio_synth_bytes((const uint8_t*)&ack, sizeof(ack), wav_path, OZOS_AUDIO_MODE_STEALTH, 0.080f)
+            : cmd_audio_synth(ack_hex, wav_path, OZOS_AUDIO_MODE_STEALTH);
+        if (synth_rc != 0) {
             return 1;
         }
-        printf("• Near-Ultrasound WAV: %s (18.1 - 19.8 kHz, 100%% Vo thanh)\n", wav_path);
+        printf("• Near-Ultrasound WAV: %s (18.1 - 19.8 kHz, 100%% Vo thanh%s)\n",
+               wav_path, raw_frame ? ", 80ms Raw Binary Frame" : "");
     }
     printf("=================================================================\n");
     printf("Huong dan tiep theo cho Node A:\n");
@@ -1320,18 +1519,10 @@ static int cmd_handshake_finish(const char* ack_hex, const char* a_sk_hex, const
         return 1;
     }
 
-    /* Fallback compatibility if caller did not persist SYN nonce via CLI */
-    if (!ozos_verify_handshake_auth_tag(ack.auth_tag, session_key, a_pub, ack.eph_pubkey) && session_nonce != 0) {
-        uint8_t legacy_key[32];
-        if (ozos_kdf_session_key_ex(legacy_key, shared_secret, 0) == 0 &&
-            ozos_verify_handshake_auth_tag(ack.auth_tag, legacy_key, a_pub, ack.eph_pubkey)) {
-            memcpy(session_key, legacy_key, 32);
-        }
-        ozos_crypto_zeroize(legacy_key, sizeof(legacy_key));
-    }
+    bool tag_ok = ozos_verify_handshake_auth_tag_ex(ack.auth_tag, session_key, a_pub, ack.eph_pubkey, session_nonce);
     ozos_crypto_zeroize(shared_secret, sizeof(shared_secret));
 
-    if (!ozos_verify_handshake_auth_tag(ack.auth_tag, session_key, a_pub, ack.eph_pubkey)) {
+    if (!tag_ok) {
         ozos_crypto_zeroize(session_key, sizeof(session_key));
         printf("🚨 [XAC THUC THAT BAI] Poly1305 Auth Tag cua Node B khong khop!\n");
         return 1;
@@ -1429,6 +1620,12 @@ static int cmd_tunnel_decrypt(const char* frame_hex, const char* session_key_hex
     if (!frame_buf) return 1;
     hex_to_bytes(frame_hex, frame_buf, byte_count);
 
+    /* Nap danh sach Nonce 24-byte da giai ma tu bo nho ben vung .ozos_tunnel_nonces (Chong Replay giua cac lan goi CLI) */
+    ozos_cli_load_tunnel_nonces();
+
+    uint8_t frame_nonce[24];
+    memcpy(frame_nonce, frame_buf + 4, 24);
+
     uint8_t plaintext[OZOS_TUNNEL_MAX_PAYLOAD + 1];
     size_t plain_len = 0;
     bool ok = ozos_tunnel_decrypt(plaintext, &plain_len, frame_buf, byte_count, session_key);
@@ -1439,6 +1636,7 @@ static int cmd_tunnel_decrypt(const char* frame_hex, const char* session_key_hex
     printf("  [MẢNH GHÉP 2] KẾT QUẢ GIẢI MÃ ĐƯỜNG HẦM ÂM HỌC (OZHD)\n");
     printf("=================================================================\n");
     if (ok) {
+        ozos_cli_record_tunnel_nonce(frame_nonce);
         plaintext[plain_len] = '\0';
         printf("Trang thai: ✅ XÁC THỰC POLY1305 & GIẢI MÃ THÀNH CÔNG 100%%\n");
         printf("• Payload Length : %zu bytes\n", plain_len);
@@ -1446,7 +1644,7 @@ static int cmd_tunnel_decrypt(const char* frame_hex, const char* session_key_hex
         printf("=================================================================\n");
         return 0;
     } else {
-        printf("Trang thai: 🚨 TỪ CHỐI! KHÓA PHIÊN SAI HOẶC DỮ LIỆU ĐÃ BỊ SỬA ĐỔI / NGHE LÉN!\n");
+        printf("Trang thai: 🚨 TỪ CHỐI! KHÓA PHIÊN SAI, GÓI TIN BỊ PHÁT LẠI (REPLAY) HOẶC DỮ LIỆU ĐÃ BỊ SỬA ĐỔI!\n");
         printf("=================================================================\n");
         return 1;
     }
@@ -1546,7 +1744,7 @@ static int cmd_brainseed_restore(const char* mnemonic_str, const char* passphras
    COMMANDS: [MẢNH GHÉP 4] ACOUSTIC GOSSIP MESH & STATE MERKLE SYNC
    ============================================================================= */
 
-static int cmd_gossip_beacon(uint32_t epoch, const char* wav_path) {
+static int cmd_gossip_beacon(uint32_t epoch, const char* wav_path, bool raw_frame) {
     if (epoch == 0) epoch = 100;
 
     ozos_tpm_info_t tpm;
@@ -1572,14 +1770,19 @@ static int cmd_gossip_beacon(uint32_t epoch, const char* wav_path) {
     printf("• Peer ID            : 0x%08X (Dinh danh Nut Lan truyen)\n", peer_id);
     printf("• Epoch Nonce        : %u (Phien ban trang thai dong don dieu)\n", epoch);
     printf("• Merkle Root        : 0x%016llX (Toan ven cay trang thai O(log N))\n", root);
+    printf("• Security Notice    : ℹ️ [UNAUTHENTICATED CRC16 BEACON - INTEGRITY ONLY]\n");
     printf("• Beacon Size        : %zu bytes (Magic 0x4F5A4753 'OZGS')\n", sizeof(beacon));
     printf("• Beacon Frame Hex   :\n%s\n", beacon_hex);
 
     if (wav_path) {
-        if (cmd_audio_synth(beacon_hex, wav_path, OZOS_AUDIO_MODE_STEALTH) != 0) {
+        int synth_rc = raw_frame
+            ? cmd_audio_synth_bytes((const uint8_t*)&beacon, sizeof(beacon), wav_path, OZOS_AUDIO_MODE_STEALTH, 0.080f)
+            : cmd_audio_synth(beacon_hex, wav_path, OZOS_AUDIO_MODE_STEALTH);
+        if (synth_rc != 0) {
             return 1;
         }
-        printf("• Near-Ultrasound WAV: %s (18.1 - 19.8 kHz, 100%% Vo thanh)\n", wav_path);
+        printf("• Near-Ultrasound WAV: %s (18.1 - 19.8 kHz, 100%% Vo thanh%s)\n",
+               wav_path, raw_frame ? ", 80ms Raw Binary Frame" : "");
     }
     printf("=================================================================\n");
     return 0;
@@ -1617,10 +1820,12 @@ static int cmd_gossip_listen(const char* beacon_hex, uint32_t my_epoch) {
     printf("=================================================================\n");
     printf("  [MẢNH GHÉP 4] PHÂN XỬ ĐỒNG THUẬN TRẠNG THÁI MERKLE VÔ THANH\n");
     printf("=================================================================\n");
+    printf("• Beacon Auth Mode   : ⚠️ [UNAUTHENTICATED CRC16 BEACON - INTEGRITY ONLY / NO PEER SIG]\n");
     printf("• Remote Peer ID     : 0x%08X (Epoch: %u | Root: 0x%016llX)\n",
            remote_beacon.peer_id, remote_beacon.epoch_nonce, remote_beacon.merkle_root);
     printf("• Local Node State   : Epoch: %u | Root: 0x%016llX\n", my_epoch, my_root);
 
+    int rc = 0;
     if (act == OZOS_GOSSIP_IN_SYNC) {
         printf("• Phan quyet Dong thuan: ✅ IN_SYNC - Hai nut hoan toan dong thuan trang thai!\n");
     } else if (act == OZOS_GOSSIP_PEER_AHEAD) {
@@ -1631,9 +1836,18 @@ static int cmd_gossip_listen(const char* beacon_hex, uint32_t my_epoch) {
         printf("  -> San sang phat song am truyen delta cho nut doi phuong.\n");
     } else {
         printf("• Phan quyet Dong thuan: ⚠️  FORK_DETECTED - Phat hien re nhanh Merkle khac nhau o cung Epoch!\n");
+        printf("• Hanh dong Cach ly    : 🔒 [STATE QUARANTINED] Khoa tu dong cap nhat delta va ghi bien ban .ozos_fork_quarantine!\n");
+        FILE* fq = fopen(".ozos_fork_quarantine", "a");
+        if (fq) {
+            fprintf(fq, "FORK_DETECTED epoch=%u peer_id=0x%08X local_root=0x%016llX remote_root=0x%016llX\n",
+                    my_epoch, remote_beacon.peer_id,
+                    (unsigned long long)my_root, (unsigned long long)remote_beacon.merkle_root);
+            fclose(fq);
+        }
+        rc = 2;
     }
     printf("=================================================================\n");
-    return 0;
+    return rc;
 }
 
 /* =============================================================================
@@ -1721,11 +1935,12 @@ int main(int argc, char* argv[]) {
         return cmd_packet_build(msg, nonce);
     } else if (strcmp(cmd, "packet-verify") == 0) {
         if (argc < 3) {
-            printf("Loi: Vui long truyen vao chuoi Hex: ozos.exe packet-verify <hex> [last_n] [trusted_author_pk]\n");
+            printf("Loi: Vui long truyen vao chuoi Hex: ozos.exe packet-verify <hex> [last_n] [trusted_author_pk] [--peer-id <id>]\n");
             return 1;
         }
         uint64_t last_n = 1000ULL;
         const char* trusted_pk = NULL;
+        const char* peer_id = NULL;
         bool has_last_n = false;
         bool has_trusted_pk = false;
         for (int i = 3; i < argc; ++i) {
@@ -1736,6 +1951,12 @@ int main(int argc, char* argv[]) {
                 }
                 trusted_pk = argv[++i];
                 has_trusted_pk = true;
+            } else if (strcmp(argv[i], "--peer-id") == 0) {
+                if (peer_id != NULL || i + 1 >= argc) {
+                    fprintf(stderr, "🚨 [LOI CU PHAP] Co '--peer-id' bi trung lap hoac thieu gia tri.\n");
+                    return 1;
+                }
+                peer_id = argv[++i];
             } else if (argv[i][0] == '-') {
                 fprintf(stderr, "🚨 [LOI CU PHAP] Co khong hop le: '%s'\n", argv[i]);
                 return 1;
@@ -1753,32 +1974,53 @@ int main(int argc, char* argv[]) {
                 return 1;
             }
         }
-        return cmd_packet_verify(argv[2], last_n, trusted_pk);
+        return cmd_packet_verify(argv[2], last_n, trusted_pk, peer_id);
     } else if (strcmp(cmd, "handshake-syn") == 0) {
-        if (argc > 4) {
-            fprintf(stderr, "🚨 [LOI CU PHAP] Qua nhieu tham so cho lenh handshake-syn.\n");
-            return 1;
-        }
-        const char* wav_path = (argc >= 3) ? argv[2] : NULL;
-        if (wav_path && wav_path[0] == '-') {
-            fprintf(stderr, "🚨 [LOI CU PHAP] Co khong hop le: '%s'\n", wav_path);
-            return 1;
-        }
+        const char* wav_path = NULL;
         uint32_t session_nonce = 0;
-        if (argc == 4) {
-            if (!parse_strict_u32(argv[3], &session_nonce) || session_nonce == 0) {
-                fprintf(stderr, "🚨 [LOI CU PHAP] Session nonce khong hop le: '%s'\n", argv[3]);
+        bool has_wav = false;
+        bool has_nonce = false;
+        const char* secret_file = NULL;
+        bool no_secret = false;
+        bool raw_frame = false;
+        for (int i = 2; i < argc; ++i) {
+            if (strcmp(argv[i], "--secret-file") == 0) {
+                if (secret_file != NULL || i + 1 >= argc) {
+                    fprintf(stderr, "🚨 [LOI CU PHAP] Co --secret-file bi trung lap hoac thieu duong dan.\n");
+                    return 1;
+                }
+                secret_file = argv[++i];
+            } else if (strcmp(argv[i], "--no-secret") == 0) {
+                no_secret = true;
+            } else if (strcmp(argv[i], "--raw-frame") == 0) {
+                raw_frame = true;
+            } else if (argv[i][0] == '-') {
+                fprintf(stderr, "🚨 [LOI CU PHAP] Co khong hop le: '%s'\n", argv[i]);
+                return 1;
+            } else if (!has_wav) {
+                wav_path = argv[i];
+                has_wav = true;
+            } else if (!has_nonce) {
+                if (!parse_strict_u32(argv[i], &session_nonce) || session_nonce == 0) {
+                    fprintf(stderr, "🚨 [LOI CU PHAP] Session nonce khong hop le: '%s'\n", argv[i]);
+                    return 1;
+                }
+                has_nonce = true;
+            } else {
+                fprintf(stderr, "🚨 [LOI CU PHAP] Qua nhieu tham so cho lenh handshake-syn.\n");
                 return 1;
             }
         }
-        return cmd_handshake_syn(wav_path, session_nonce);
+        return cmd_handshake_syn(wav_path, session_nonce, secret_file, no_secret, raw_frame);
     } else if (strcmp(cmd, "handshake-ack") == 0) {
         if (argc < 3) {
-            printf("Loi: ozos.exe handshake-ack <syn_hex> [output_ack.wav] [--pinned-peer-pubkey <pk>]\n");
+            printf("Loi: ozos.exe handshake-ack <syn_hex> [output_ack.wav] [--pinned-peer-pubkey <pk>] [--peer-id <id>] [--raw-frame]\n");
             return 1;
         }
         const char* wav_path = NULL;
         const char* pinned_peer_pk = NULL;
+        const char* peer_id = NULL;
+        bool raw_frame = false;
         for (int i = 3; i < argc; ++i) {
             if (strcmp(argv[i], "--pinned-peer-pubkey") == 0) {
                 if (pinned_peer_pk != NULL) {
@@ -1791,6 +2033,14 @@ int main(int argc, char* argv[]) {
                     fprintf(stderr, "🚨 [LOI] Thieu tham so khoa cong khai cho co --pinned-peer-pubkey <64_hex_pk>!\n");
                     return 1;
                 }
+            } else if (strcmp(argv[i], "--peer-id") == 0) {
+                if (peer_id != NULL || i + 1 >= argc) {
+                    fprintf(stderr, "🚨 [LOI CU PHAP] Co --peer-id bi trung lap hoac thieu gia tri!\n");
+                    return 1;
+                }
+                peer_id = argv[++i];
+            } else if (strcmp(argv[i], "--raw-frame") == 0) {
+                raw_frame = true;
             } else if (!wav_path && argv[i][0] != '-') {
                 wav_path = argv[i];
             } else {
@@ -1798,7 +2048,7 @@ int main(int argc, char* argv[]) {
                 return 1;
             }
         }
-        return cmd_handshake_ack(argv[2], wav_path, pinned_peer_pk);
+        return cmd_handshake_ack(argv[2], wav_path, pinned_peer_pk, peer_id, raw_frame);
     } else if (strcmp(cmd, "handshake-finish") == 0) {
         if (argc != 5) {
             printf("Loi: ozos.exe handshake-finish <ack_hex> <a_sk_hex> <a_pub_hex>\n");
@@ -1832,23 +2082,32 @@ int main(int argc, char* argv[]) {
         const char* passphrase = (argc == 4) ? argv[3] : "";
         return cmd_brainseed_restore(argv[2], passphrase);
     } else if (strcmp(cmd, "gossip-beacon") == 0) {
-        if (argc > 4) {
-            fprintf(stderr, "🚨 [LOI CU PHAP] Qua nhieu tham so cho lenh gossip-beacon.\n");
-            return 1;
-        }
         uint32_t epoch = 100;
-        if (argc >= 3) {
-            if (!parse_strict_u32(argv[2], &epoch) || epoch == 0) {
-                fprintf(stderr, "🚨 [LOI CU PHAP] Epoch khong hop le: '%s' (phai la so nguyen duong).\n", argv[2]);
+        const char* wav_path = NULL;
+        bool has_epoch = false;
+        bool has_wav = false;
+        bool raw_frame = false;
+        for (int i = 2; i < argc; ++i) {
+            if (strcmp(argv[i], "--raw-frame") == 0) {
+                raw_frame = true;
+            } else if (argv[i][0] == '-') {
+                fprintf(stderr, "🚨 [LOI CU PHAP] Co khong hop le: '%s'\n", argv[i]);
+                return 1;
+            } else if (!has_epoch) {
+                if (!parse_strict_u32(argv[i], &epoch) || epoch == 0) {
+                    fprintf(stderr, "🚨 [LOI CU PHAP] Epoch khong hop le: '%s' (phai la so nguyen duong).\n", argv[i]);
+                    return 1;
+                }
+                has_epoch = true;
+            } else if (!has_wav) {
+                wav_path = argv[i];
+                has_wav = true;
+            } else {
+                fprintf(stderr, "🚨 [LOI CU PHAP] Qua nhieu tham so cho lenh gossip-beacon.\n");
                 return 1;
             }
         }
-        const char* wav_path = (argc == 4) ? argv[3] : NULL;
-        if (wav_path && wav_path[0] == '-') {
-            fprintf(stderr, "🚨 [LOI CU PHAP] Co khong hop le: '%s'\n", wav_path);
-            return 1;
-        }
-        return cmd_gossip_beacon(epoch, wav_path);
+        return cmd_gossip_beacon(epoch, wav_path, raw_frame);
     } else if (strcmp(cmd, "gossip-listen") == 0) {
         if (argc < 3 || argc > 4) {
             printf("Loi: ozos.exe gossip-listen <beacon_hex> [my_epoch]\n");

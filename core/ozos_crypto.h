@@ -338,68 +338,122 @@ static inline int ozos_kdf_session_key(
  * dành riêng cho bước xác thực bắt tay Poly1305, tuyệt đối không tái sử dụng trực tiếp
  * khóa phiên K_session của đường hầm XSalsa20.
  */
-static inline void ozos_derive_handshake_poly1305_subkey(
+static inline void ozos_derive_handshake_poly1305_subkey_ex(
     uint8_t subkey_out[32],
     const uint8_t session_key[32],
     const uint8_t a_pub[32],
-    const uint8_t b_pub[32]
+    const uint8_t b_pub[32],
+    uint32_t session_nonce
 ) {
     const char domain_label[] = "OZOS_POLY1305_HANDSHAKE_SUBKEY_V1";
-    uint8_t buf[32 + 32 + 32 + sizeof(domain_label)];
+    uint8_t buf[32 + 32 + 32 + sizeof(domain_label) + 4];
     memcpy(buf, session_key, 32);
     memcpy(buf + 32, a_pub, 32);
     memcpy(buf + 64, b_pub, 32);
     memcpy(buf + 96, domain_label, sizeof(domain_label));
+    size_t buf_len = 96 + sizeof(domain_label);
+    if (session_nonce != 0U) {
+        buf[buf_len + 0] = (uint8_t)(session_nonce & 0xFFU);
+        buf[buf_len + 1] = (uint8_t)((session_nonce >> 8) & 0xFFU);
+        buf[buf_len + 2] = (uint8_t)((session_nonce >> 16) & 0xFFU);
+        buf[buf_len + 3] = (uint8_t)((session_nonce >> 24) & 0xFFU);
+        buf_len += 4;
+    }
 
     uint8_t digest[64];
-    crypto_hash(digest, buf, sizeof(buf));
+    crypto_hash(digest, buf, buf_len);
     memcpy(subkey_out, digest, 32);
 
     ozos_crypto_zeroize(buf, sizeof(buf));
     ozos_crypto_zeroize(digest, sizeof(digest));
 }
 
+static inline void ozos_derive_handshake_poly1305_subkey(
+    uint8_t subkey_out[32],
+    const uint8_t session_key[32],
+    const uint8_t a_pub[32],
+    const uint8_t b_pub[32]
+) {
+    ozos_derive_handshake_poly1305_subkey_ex(subkey_out, session_key, a_pub, b_pub, 0U);
+}
+
 /**
- * Tính toán Thẻ xác nhận bắt tay Auth Tag (16 Bytes Poly1305):
- * AuthTag = Poly1305(SubKey_Handshake, A_pub || B_pub)
+ * Tính toán Thẻ xác nhận bắt tay Auth Tag (16 Bytes Poly1305) có gắn kết session_nonce:
+ * AuthTag = Poly1305(SubKey_Handshake, A_pub || B_pub || session_nonce)
  */
+static inline int ozos_compute_handshake_auth_tag_ex(
+    uint8_t tag_out[16],
+    const uint8_t session_key[32],
+    const uint8_t a_pub[32],
+    const uint8_t b_pub[32],
+    uint32_t session_nonce
+) {
+    if (!tag_out || !session_key || !a_pub || !b_pub) return -1;
+    uint8_t transcript[68];
+    memcpy(transcript, a_pub, 32);
+    memcpy(transcript + 32, b_pub, 32);
+    size_t t_len = 64;
+    if (session_nonce != 0U) {
+        transcript[64] = (uint8_t)(session_nonce & 0xFFU);
+        transcript[65] = (uint8_t)((session_nonce >> 8) & 0xFFU);
+        transcript[66] = (uint8_t)((session_nonce >> 16) & 0xFFU);
+        transcript[67] = (uint8_t)((session_nonce >> 24) & 0xFFU);
+        t_len = 68;
+    }
+
+    uint8_t poly_subkey[32];
+    ozos_derive_handshake_poly1305_subkey_ex(poly_subkey, session_key, a_pub, b_pub, session_nonce);
+    int rc = crypto_onetimeauth_poly1305(tag_out, transcript, (unsigned long long)t_len, poly_subkey);
+    ozos_crypto_zeroize(poly_subkey, sizeof(poly_subkey));
+    return rc;
+}
+
 static inline int ozos_compute_handshake_auth_tag(
     uint8_t tag_out[16],
     const uint8_t session_key[32],
     const uint8_t a_pub[32],
     const uint8_t b_pub[32]
 ) {
-    if (!tag_out || !session_key || !a_pub || !b_pub) return -1;
-    uint8_t transcript[64];
-    memcpy(transcript, a_pub, 32);
-    memcpy(transcript + 32, b_pub, 32);
-
-    uint8_t poly_subkey[32];
-    ozos_derive_handshake_poly1305_subkey(poly_subkey, session_key, a_pub, b_pub);
-    int rc = crypto_onetimeauth_poly1305(tag_out, transcript, 64, poly_subkey);
-    ozos_crypto_zeroize(poly_subkey, sizeof(poly_subkey));
-    return rc;
+    return ozos_compute_handshake_auth_tag_ex(tag_out, session_key, a_pub, b_pub, 0U);
 }
 
 /**
- * Xác thực Thẻ bắt tay Auth Tag:
+ * Xác thực Thẻ bắt tay Auth Tag có gắn kết session_nonce:
  */
+static inline bool ozos_verify_handshake_auth_tag_ex(
+    const uint8_t expected_tag[16],
+    const uint8_t session_key[32],
+    const uint8_t a_pub[32],
+    const uint8_t b_pub[32],
+    uint32_t session_nonce
+) {
+    if (!expected_tag || !session_key || !a_pub || !b_pub) return false;
+    uint8_t transcript[68];
+    memcpy(transcript, a_pub, 32);
+    memcpy(transcript + 32, b_pub, 32);
+    size_t t_len = 64;
+    if (session_nonce != 0U) {
+        transcript[64] = (uint8_t)(session_nonce & 0xFFU);
+        transcript[65] = (uint8_t)((session_nonce >> 8) & 0xFFU);
+        transcript[66] = (uint8_t)((session_nonce >> 16) & 0xFFU);
+        transcript[67] = (uint8_t)((session_nonce >> 24) & 0xFFU);
+        t_len = 68;
+    }
+
+    uint8_t poly_subkey[32];
+    ozos_derive_handshake_poly1305_subkey_ex(poly_subkey, session_key, a_pub, b_pub, session_nonce);
+    int rc = crypto_onetimeauth_poly1305_verify(expected_tag, transcript, (unsigned long long)t_len, poly_subkey);
+    ozos_crypto_zeroize(poly_subkey, sizeof(poly_subkey));
+    return (rc == 0);
+}
+
 static inline bool ozos_verify_handshake_auth_tag(
     const uint8_t expected_tag[16],
     const uint8_t session_key[32],
     const uint8_t a_pub[32],
     const uint8_t b_pub[32]
 ) {
-    if (!expected_tag || !session_key || !a_pub || !b_pub) return false;
-    uint8_t transcript[64];
-    memcpy(transcript, a_pub, 32);
-    memcpy(transcript + 32, b_pub, 32);
-
-    uint8_t poly_subkey[32];
-    ozos_derive_handshake_poly1305_subkey(poly_subkey, session_key, a_pub, b_pub);
-    int rc = crypto_onetimeauth_poly1305_verify(expected_tag, transcript, 64, poly_subkey);
-    ozos_crypto_zeroize(poly_subkey, sizeof(poly_subkey));
-    return (rc == 0);
+    return ozos_verify_handshake_auth_tag_ex(expected_tag, session_key, a_pub, b_pub, 0U);
 }
 
 /**

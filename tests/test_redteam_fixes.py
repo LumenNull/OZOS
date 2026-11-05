@@ -2103,9 +2103,150 @@ check_test("JS Shield luu Uint8Array 40KB (F14-A), Engine khong lam hong current
            p_js_r14_lows.returncode == 0,
            "F14-A, F14-B, F14-C JS invariants verified")
 
+# ----------------------------------------------------------------------
+# 59. TEST ROUND 14 (F2 Deep): Nonce-Bound Handshake Poly1305 Auth Tag & Cross-Process Tunnel Anti-Replay
+# ----------------------------------------------------------------------
+print("\n[TEST 59/62] Kiem Tra Rang Buoc Nonce Vao Poly1305 Handshake Tag & Chong Phat Lai Tunnel Qua Nhieu Process (F2)...")
+for st_f in [".ozos_syn_state", ".ozos_tunnel_nonces", ".ozos_known_peers", ".ozos_fork_quarantine"]:
+    st_p = os.path.join(REPO_ROOT, st_f)
+    if os.path.exists(st_p):
+        os.remove(st_p)
+
+tmp_sec59 = os.path.join(REPO_ROOT, "_test_r14_59_secret.txt")
+if os.path.exists(tmp_sec59):
+    os.remove(tmp_sec59)
+
+rc_syn59, out_syn59, _ = run_ozos("handshake-syn", "--raw-frame", "--secret-file", tmp_sec59)
+syn59_hex = [l.strip() for l in out_syn59.splitlines() if len(l.strip()) == 84 and all(c in "0123456789abcdefABCDEF" for c in l.strip())][0]
+a_pub59 = ""
+for l in out_syn59.splitlines():
+    if "Ephemeral PubKey A" in l and "0x" in l:
+        a_pub59 = l.split("0x")[1].split()[0].strip()
+a_sk59 = open(tmp_sec59, "r").read().strip() if os.path.exists(tmp_sec59) else ""
+if os.path.exists(tmp_sec59):
+    os.remove(tmp_sec59)
+
+rc_ack59, out_ack59, _ = run_ozos("handshake-ack", syn59_hex, "--raw-frame")
+ack59_hex = [l.strip() for l in out_ack59.splitlines() if len(l.strip()) == 108 and all(c in "0123456789abcdefABCDEF" for c in l.strip())][0]
+rc_fin59, out_fin59, _ = run_ozos("handshake-finish", ack59_hex, a_sk59, a_pub59)
+
+# Extract session key from handshake-finish
+sess_key59 = ""
+for l in out_fin59.splitlines():
+    if "K_session Thiet lap" in l and "0x" in l:
+        sess_key59 = l.split("0x")[1].split()[0].strip()
+
+rc_enc59, out_enc59, _ = run_ozos("tunnel-encrypt", "LENH_CHUYEN_KHOAN_1_TY", sess_key59)
+enc59_hex = [l.strip() for l in out_enc59.splitlines() if len(l.strip()) >= 96 and all(c in "0123456789abcdefABCDEF" for c in l.strip())][0]
+
+# First tunnel-decrypt in process #1 must succeed (rc == 0)
+rc_dec59_first, out_dec59_first, _ = run_ozos("tunnel-decrypt", enc59_hex, sess_key59)
+# Second tunnel-decrypt of the exact same frame in process #2 must be REJECTED (rc != 0)
+rc_dec59_replay, out_dec59_replay, _ = run_ozos("tunnel-decrypt", enc59_hex, sess_key59)
+
+f2_deep_ok = (rc_syn59 == 0 and rc_ack59 == 0 and rc_fin59 == 0 and len(sess_key59) == 64 and
+              rc_dec59_first == 0 and "LENH_CHUYEN_KHOAN_1_TY" in out_dec59_first and
+              rc_dec59_replay != 0 and "REPLAY" in out_dec59_replay.upper())
+check_test("Poly1305 Handshake Auth Tag gan chat session_nonce va Tunnel Decrypt chan phat lai xuyen tien trinh CLI (F2)",
+           f2_deep_ok,
+           f"Handshake + Cross-process anti-replay verified (first_rc={rc_dec59_first}, replay_rc={rc_dec59_replay})")
+
+# ----------------------------------------------------------------------
+# 60. TEST ROUND 14 (F8 & Item 15): --raw-frame, audio-decode 80ms Binary Frame, --no-secret & --secret-file
+# ----------------------------------------------------------------------
+print("\n[TEST 60/62] Kiem Tra --raw-frame, audio-decode 80ms Binary Frame & Bao Ve Ephemeral Secret (--no-secret / --secret-file)...")
+tmp_wav60 = os.path.join(REPO_ROOT, "_test_r14_60_syn.wav")
+tmp_sec60 = os.path.join(REPO_ROOT, "_test_r14_60_secret.txt")
+if os.path.exists(tmp_sec60):
+    os.remove(tmp_sec60)
+
+rc_syn60, out_syn60, err_syn60 = run_ozos("handshake-syn", tmp_wav60, "88888", "--raw-frame", "--secret-file", tmp_sec60)
+# Verify secret was NOT printed to stdout or stderr, and was written to tmp_sec60
+sec_file_ok = os.path.exists(tmp_sec60) and len(open(tmp_sec60, "r").read().strip()) == 64
+no_leak_ok = ("Ephemeral Secret A" not in (out_syn60 + err_syn60)) or ("REDACTED" in (out_syn60 + err_syn60))
+
+# Verify BOTH ozos.exe audio-decode AND ozos_ghost.exe listen decode the 42-byte binary SYN frame from WAV
+rc_adec60, out_adec60, _ = run_ozos("audio-decode", tmp_wav60)
+proc_gh60 = subprocess.run([GHOST_EXE, "listen", tmp_wav60], capture_output=True, text=True, encoding="utf-8", errors="replace", cwd=REPO_ROOT)
+
+for tf in [tmp_wav60, tmp_sec60]:
+    if os.path.exists(tf):
+        os.remove(tf)
+
+f8_ceremony_ok = (rc_syn60 == 0 and sec_file_ok and no_leak_ok and
+                  rc_adec60 == 0 and "42 bytes" in out_adec60 and "31485a4f" in out_adec60.lower() and
+                  proc_gh60.returncode == 0 and "[MAC16 VERIFIED]" in proc_gh60.stdout)
+check_test("ozos audio-decode & ozos_ghost listen giai ma WAV --raw-frame 42B dong nhat va --secret-file khong ro ri terminal",
+           f8_ceremony_ok,
+           f"Cross-binary audio-decode + secret redaction verified (sec_file={sec_file_ok}, no_leak={no_leak_ok})")
+
+# ----------------------------------------------------------------------
+# 61. TEST ROUND 14 (Item 15): Persistent Peer Pin Store (.ozos_known_peers) & MITM Key-Change Detection
+# ----------------------------------------------------------------------
+print("\n[TEST 61/62] Kiem Tra So Danh Ba Khoa Ghim (.ozos_known_peers) Phat Hien Thay Doi Khoa / MITM (Item 15)...")
+peers_file = os.path.join(REPO_ROOT, ".ozos_known_peers")
+if os.path.exists(peers_file):
+    os.remove(peers_file)
+
+# 1. First contact with node_alpha pins sovereign_pk (TOFU) -> rc == 0
+rc_pin1, out_pin1, err_pin1 = run_ozos("packet-verify", signed_hex, "1000", "--peer-id", "node_alpha")
+# 2. Second contact with node_alpha using the same key -> rc == 0
+rc_pin2, out_pin2, err_pin2 = run_ozos("packet-verify", signed_hex, "1000", "--peer-id", "node_alpha")
+# 3. Third contact claiming to be node_alpha but signed by a DIFFERENT key (attacker_hex) -> MUST FAIL (rc == 1, MITM alert)
+rc_pin_mitm, out_pin_mitm, err_pin_mitm = run_ozos("packet-verify", attacker_hex, "1000", "--peer-id", "node_alpha")
+combined_mitm = (out_pin_mitm or "") + (err_pin_mitm or "")
+
+pin_store_ok = (rc_pin1 == 0 and ("XAC THUC THEO DANH BA .ozos_known_peers" in out_pin1 or "TOFU FIRST-USE PINNED" in out_pin1) and
+                rc_pin2 == 0 and
+                rc_pin_mitm == 1 and ("KEY CHANGED" in combined_mitm or "MITM" in combined_mitm or "THAY DOI KHOA" in combined_mitm))
+check_test("Persistent Peer Pin Store (.ozos_known_peers) ghim khoa lan dau va chan dung ke gia mao doi khoa (Item 15)",
+           pin_store_ok,
+           f"Pin store TOFU & MITM key-change rejection verified (pin1={rc_pin1}, pin2={rc_pin2}, mitm={rc_pin_mitm})")
+
+# ----------------------------------------------------------------------
+# 62. TEST ROUND 14 (Item 16): Gossip [UNAUTHENTICATED CRC16 BEACON] Labeling & FORK_DETECTED Quarantine
+# ----------------------------------------------------------------------
+print("\n[TEST 62/62] Kiem Tra Nhan Canh Bao [UNAUTHENTICATED CRC16 BEACON] & Phong Toa .ozos_fork_quarantine Khi Fork (Item 16)...")
+quarantine_file = os.path.join(REPO_ROOT, ".ozos_fork_quarantine")
+if os.path.exists(quarantine_file):
+    os.remove(quarantine_file)
+
+# Build a gossip beacon at epoch 100
+rc_gb, out_gb, _ = run_ozos("gossip-beacon", "100", "--raw-frame")
+gb_hex = [l.strip() for l in out_gb.splitlines() if len(l.strip()) == 44 and all(c in "0123456789abcdefABCDEF" for c in l.strip())][0]
+
+# Mutate the Merkle root inside the 22-byte beacon (bytes 8..16) and recompute reflected CRC16 (0x8408) so it's a valid beacon with a DIFFERENT root at epoch 100
+gb_bytes = bytearray.fromhex(gb_hex)
+gb_bytes[8] ^= 0xFF
+crc_g = 0xFFFF
+for b in gb_bytes[:20]:
+    crc_g ^= b
+    for _ in range(8):
+        crc_g = ((crc_g >> 1) ^ 0x8408) & 0xFFFF if (crc_g & 1) else (crc_g >> 1) & 0xFFFF
+struct.pack_into("<H", gb_bytes, 20, crc_g)
+fork_gb_hex = gb_bytes.hex()
+
+rc_glisten, out_glisten, _ = run_ozos("gossip-listen", fork_gb_hex, "100")
+quarantine_created = os.path.exists(quarantine_file)
+
+# Clean up runtime state files
+for st_f in [".ozos_syn_state", ".ozos_tunnel_nonces", ".ozos_known_peers", ".ozos_fork_quarantine"]:
+    st_p = os.path.join(REPO_ROOT, st_f)
+    if os.path.exists(st_p):
+        try: os.remove(st_p)
+        except: pass
+
+item16_ok = ("UNAUTHENTICATED CRC16 BEACON" in out_gb and
+             "UNAUTHENTICATED CRC16 BEACON" in out_glisten and
+             "FORK_DETECTED" in out_glisten and
+             quarantine_created and rc_glisten == 2)
+check_test("Gossip in ro nhan [UNAUTHENTICATED CRC16 BEACON], kich hoat .ozos_fork_quarantine va tra ve exit code 2 khi FORK_DETECTED",
+           item16_ok,
+           f"Gossip honesty & fork quarantine verified (rc={rc_glisten}, quarantine={quarantine_created})")
+
 print("\n======================================================================")
 if all_passed:
-    print("  🏆 KET LUAN: 58/58 BAI KIEM TRA RED TEAM VONG 1-14 + EXTERNAL AUDIT PASS 100%!")
+    print("  🏆 KET LUAN: 62/62 BAI KIEM TRA RED TEAM VONG 1-14 + EXTERNAL AUDIT PASS 100%!")
     print("  CAC VECTO TAN CONG DUOC PHAM VI AUDIT XAC NHAN DA DUOC KIEM TRA VA XU LY AN TOAN.")
     print("======================================================================")
     sys.exit(0)

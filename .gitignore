@@ -82,3 +82,9 @@ $RECYCLE.BIN/
 
 .ozos_syn_state
 **/.ozos_syn_state
+.ozos_tunnel_nonces
+**/.ozos_tunnel_nonces
+.ozos_known_peers
+**/.ozos_known_peers
+.ozos_fork_quarantine
+**/.ozos_fork_quarantine

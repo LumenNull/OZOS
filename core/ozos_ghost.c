@@ -197,6 +197,7 @@ static void ozos_ghost_dispatch_packet(const uint8_t* rx_buffer, size_t rx_len, 
     else if (magic == OZOS_MAGIC_GOSSIP_BEACON && rx_len >= sizeof(ozos_gossip_beacon_t)) {
         const ozos_gossip_beacon_t* beacon = (const ozos_gossip_beacon_t*)rx_buffer;
         printf("[λ] INCOMING :: GOSSIP BEACON (22 Bytes) from Peer 0x%08X\n", beacon->peer_id);
+        printf("[!] [UNAUTHENTICATED CRC16 BEACON - INTEGRITY ONLY] Gossip beacon carries CRC-16 integrity only (no cryptographic peer signature).\n");
 
         if (!ozos_gossip_beacon_verify(beacon)) {
             printf("[!] TRIPWIRE :: Beacon MAC16 invalid. Dropped.\n");
@@ -213,6 +214,15 @@ static void ozos_ghost_dispatch_packet(const uint8_t* rx_buffer, size_t rx_len, 
             printf("[Σ] CONSENSUS :: IN_SYNC verified (Air-gap Merkle State Aligned)\n");
         } else if (act == OZOS_GOSSIP_FORK_DETECTED) {
             printf("[🚨] CONSENSUS :: FORK_DETECTED! Conflicting Merkle roots in same epoch %u. State fork alert!\n", beacon->epoch_nonce);
+            FILE* qf = fopen(".ozos_fork_quarantine", "wb");
+            if (qf) {
+                fprintf(qf, "FORK_DETECTED epoch=%u peer_id=0x%08X peer_root=0x%016llX local_root=0x%016llX\n",
+                        beacon->epoch_nonce, beacon->peer_id,
+                        (unsigned long long)beacon->merkle_root,
+                        (unsigned long long)my_merkle_root);
+                fclose(qf);
+            }
+            printf("[🔒] QUARANTINE :: State sync halted (.ozos_fork_quarantine active).\n");
         }
     }
     /* 3. ALIGNED 80-BYTE GENESIS PACKET */
@@ -847,6 +857,7 @@ int main(int argc, char* argv[]) {
             }
         }
 
+        printf("[!] [UNAUTHENTICATED CRC16 BEACON - INTEGRITY ONLY] Gossip beacons use CRC-16 integrity (no peer signature).\n");
         printf("[λ] Transmitting inaudible Gossip Beacon (22 Bytes, 18.1 - 19.8 kHz)...\n");
         bool ok = ozos_ghost_emit_stealth_beacon(epoch, root);
         if (ok) {
@@ -860,9 +871,17 @@ int main(int argc, char* argv[]) {
 
     /* 3. SYN: Emit inaudible 42-byte handshake SYN offer */
     if (strcmp(cmd, "syn") == 0) {
-        if (argc > 2) {
-            printf("[!] Unexpected arguments for syn.\n");
-            return 1;
+        const char* secret_file = NULL;
+        bool no_secret = false;
+        for (int i = 2; i < argc; ++i) {
+            if (strcmp(argv[i], "--secret-file") == 0 && i + 1 < argc) {
+                secret_file = argv[++i];
+            } else if (strcmp(argv[i], "--no-secret") == 0) {
+                no_secret = true;
+            } else {
+                printf("[!] Unexpected arguments for syn: %s\n", argv[i]);
+                return 1;
+            }
         }
         ozos_handshake_syn_t syn;
         uint8_t secret_a[32];
@@ -876,10 +895,23 @@ int main(int argc, char* argv[]) {
             return 1;
         }
 
+        if (secret_file) {
+            FILE* sf = fopen(secret_file, "wb");
+            if (sf) {
+                for (int i = 0; i < 32; i++) fprintf(sf, "%02x", secret_a[i]);
+                fprintf(sf, "\n");
+                fclose(sf);
+            }
+        }
+
         printf("-----------------------------------------------------------------\n");
-        printf("[#] Ephemeral Secret A : 0x");
-        for (int i = 0; i < 32; i++) printf("%02x", secret_a[i]);
-        printf(" (Volatile Stack RAM)\n");
+        if (!no_secret && !secret_file) {
+            printf("[#] Ephemeral Secret A : 0x");
+            for (int i = 0; i < 32; i++) printf("%02x", secret_a[i]);
+            printf(" (Volatile Stack RAM)\n");
+        } else {
+            printf("[#] Ephemeral Secret A : [REDACTED FROM TERMINAL]\n");
+        }
 
         printf("[#] Ephemeral PubKey A : 0x");
         for (int i = 0; i < 32; i++) printf("%02x", syn.eph_pubkey[i]);
@@ -897,12 +929,13 @@ int main(int argc, char* argv[]) {
     /* 4. ACK: Respond to SYN offer with inaudible 54-byte ACK */
     if (strcmp(cmd, "ack") == 0) {
         if (argc < 3) {
-            printf("Usage: ozos_ghost.exe ack <syn_frame_hex> [--pinned-peer-pubkey <64_hex_pubkey>]\n");
+            printf("Usage: ozos_ghost.exe ack <syn_frame_hex> [--pinned-peer-pubkey <64_hex_pubkey>] [--peer-id <id>]\n");
             return 1;
         }
 
         const char* syn_hex = argv[2];
         const char* pinned_peer_pk_hex = NULL;
+        const char* peer_id_label = NULL;
         for (int i = 3; i < argc; ++i) {
             if (strcmp(argv[i], "--pinned-peer-pubkey") == 0 && i + 1 < argc) {
                 if (pinned_peer_pk_hex != NULL) {
@@ -910,6 +943,12 @@ int main(int argc, char* argv[]) {
                     return 1;
                 }
                 pinned_peer_pk_hex = argv[++i];
+            } else if (strcmp(argv[i], "--peer-id") == 0 && i + 1 < argc) {
+                if (peer_id_label != NULL) {
+                    printf("[!] Duplicate --peer-id flag.\n");
+                    return 1;
+                }
+                peer_id_label = argv[++i];
             } else {
                 printf("[!] Unknown argument or malformed flag: %s\n", argv[i]);
                 return 1;
@@ -927,6 +966,39 @@ int main(int argc, char* argv[]) {
         if (!ozos_handshake_syn_verify(syn)) {
             printf("[!] Handshake SYN verification failed: MAC16, magic, or low-order curve point!\n");
             return 1;
+        }
+
+        if (peer_id_label) {
+            char actual_hex[65];
+            for (int p = 0; p < 32; p++) sprintf(&actual_hex[p * 2], "%02x", syn->eph_pubkey[p]);
+            actual_hex[64] = '\0';
+            FILE* fp = fopen(".ozos_known_peers", "rb");
+            bool found = false;
+            if (fp) {
+                char line[256];
+                while (fgets(line, sizeof(line), fp)) {
+                    char stored_id[64] = {0};
+                    char stored_hex[128] = {0};
+                    if (sscanf(line, "%63s %127s", stored_id, stored_hex) == 2 && strcmp(stored_id, peer_id_label) == 0) {
+                        found = true;
+                        if (_stricmp(stored_hex, actual_hex) != 0) {
+                            fclose(fp);
+                            printf("[!] [REJECTED] KEY CHANGED / MITM DETECTED for peer '%s' (stored=0x%s vs incoming=0x%s)!\n",
+                                   peer_id_label, stored_hex, actual_hex);
+                            return 1;
+                        }
+                        break;
+                    }
+                }
+                fclose(fp);
+            }
+            if (!found) {
+                FILE* fw = fopen(".ozos_known_peers", "ab");
+                if (fw) {
+                    fprintf(fw, "%s %s\n", peer_id_label, actual_hex);
+                    fclose(fw);
+                }
+            }
         }
 
         if (pinned_peer_pk_hex) {
