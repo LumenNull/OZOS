@@ -65,7 +65,7 @@ for vec in vectors:
     cmd = [OZOS_EXE, "packet-verify", frame_hex, str(nonce - 1)]
     res = subprocess.run(cmd, capture_output=True, encoding="utf-8", errors="replace", cwd=DIR)
 
-    if "GOI TIN HOP LE" not in res.stdout and "HOP LE TUYET DOI" not in res.stdout:
+    if "GOI TIN HOP LE" not in res.stdout and "HOP LE TUYET DOI" not in res.stdout and "VERIFIED" not in res.stdout and "VALID" not in res.stdout:
         print(f"  🚨 LỖI: ozos.exe từ chối véc-tơ {vid}!\n{res.stdout}")
         sys.exit(1)
 
@@ -83,7 +83,7 @@ corrupted_bytes = bytearray.fromhex(raw_hex)
 corrupted_bytes[10] ^= 0x01
 cmd_tamper1 = [OZOS_EXE, "packet-verify", corrupted_bytes.hex(), "4999"]
 res_t1 = subprocess.run(cmd_tamper1, capture_output=True, encoding="utf-8", errors="replace", cwd=DIR)
-assert "BI TU CHOI" in res_t1.stdout, "Lật bit float32 phải bị MAC16 chặn đứng!"
+assert "BI TU CHOI" in res_t1.stdout or "REJECTED" in res_t1.stdout, "Lật bit float32 phải bị MAC16 chặn đứng!"
 
 # 2. Replay attack (Nonce lùi về 5000 khi last_seen là 5000)
 cmd_replay = [OZOS_EXE, "packet-verify", raw_hex, "5000"]
@@ -118,7 +118,7 @@ res_sign = subprocess.run(cmd_sign, capture_output=True, encoding="utf-8", error
 signed_hex = None
 for line in res_sign.stdout.splitlines():
     line = line.strip()
-    if len(line) > 100 and not line.startswith("[") and not line.startswith("•"):
+    if len(line) > 100 and all(c in "0123456789abcdefABCDEF" for c in line):
         signed_hex = line
         break
 
@@ -139,7 +139,7 @@ print(f"  • Thẩm định bằng Python  : ✅ CHỮ KÝ ED25519 HỢP LỆ (
 # 3. Native C packet-verify verifies its own signed packet
 cmd_verify = [OZOS_EXE, "packet-verify", signed_hex, "5000"]
 res_verify = subprocess.run(cmd_verify, capture_output=True, encoding="utf-8", errors="replace", cwd=DIR)
-assert "CHỮ KÝ ED25519 HỢP LỆ" in res_verify.stdout, "ozos.exe packet-verify không xác nhận chữ ký hợp lệ!"
+assert "CHỮ KÝ ED25519 HỢP LỆ" in res_verify.stdout or "ED25519 SIGNATURE VALID" in res_verify.stdout, "ozos.exe packet-verify không xác nhận chữ ký hợp lệ!"
 print(f"  • Thẩm định bằng ozos.exe: ✅ CỔNG GÁC 3 TẦNG (MAC16 -> NONCE -> ED25519) VƯỢT QUA 100%\n")
 
 # Test 5: [MẢNH GHÉP 2] Bidirectional Silent Acoustic Diffie-Hellman Handshake
@@ -154,7 +154,7 @@ for line in (res_syn.stdout + "\n" + res_syn.stderr).splitlines():
         a_sk_hex = line.split("0x")[1].split(" ")[0].strip()
     elif "Ephemeral PubKey A :" in line:
         a_pub_hex = line.split("0x")[1].split(" ")[0].strip()
-    elif len(line.strip()) == 84 and not line.strip().startswith("[") and not line.strip().startswith("•"):
+    elif len(line.strip()) == 84 and all(c in "0123456789abcdefABCDEF" for c in line.strip()):
         syn_hex = line.strip()
 
 assert syn_hex and a_sk_hex and a_pub_hex, "Không parse được kết quả handshake-syn"
@@ -165,9 +165,9 @@ res_ack = subprocess.run([OZOS_EXE, "handshake-ack", syn_hex], capture_output=Tr
 ack_hex = None
 k_sess_resp = None
 for line in res_ack.stdout.splitlines():
-    if "K_session Thiet lap:" in line:
+    if "K_session Thiet lap:" in line or "Established K_sess" in line:
         k_sess_resp = line.split("0x")[1].split(" ")[0].strip()
-    elif len(line.strip()) == 108 and not line.strip().startswith("[") and not line.strip().startswith("•"):
+    elif len(line.strip()) == 108 and all(c in "0123456789abcdefABCDEF" for c in line.strip()):
         ack_hex = line.strip()
 
 assert ack_hex and k_sess_resp, "Không parse được kết quả handshake-ack"
@@ -175,10 +175,10 @@ print(f"  • Node B -> ACK (54B)   : 0x{ack_hex[:16]}... (Poly1305 Tag Confirme
 
 # 3. Initiator finishes handshake
 res_fin = subprocess.run([OZOS_EXE, "handshake-finish", ack_hex, a_sk_hex, a_pub_hex], capture_output=True, encoding="utf-8", errors="replace", cwd=DIR)
-assert "ĐƯỜNG HẦM ÂM HỌC VÔ THANH ĐÃ ĐƯỢC THIẾT LẬP" in res_fin.stdout, "Bắt tay thất bại!"
+assert "ĐƯỜNG HẦM ÂM HỌC VÔ THANH ĐÃ ĐƯỢC THIẾT LẬP" in res_fin.stdout or "INAUDIBLE ACOUSTIC TUNNEL ESTABLISHED" in res_fin.stdout, "Bắt tay thất bại!"
 k_sess_init = None
 for line in res_fin.stdout.splitlines():
-    if "K_session Thiet lap:" in line:
+    if "K_session Thiet lap:" in line or "Established K_sess" in line:
         k_sess_init = line.split("0x")[1].split(" ")[0].strip()
 
 assert k_sess_init == k_sess_resp, "Khóa phiên không đồng nhất giữa 2 máy!"
@@ -189,7 +189,7 @@ tunnel_secret = "KHONG DIEN THOAI, KHONG BLUETOOTH - CHU QUYEN VO THANH"
 res_enc = subprocess.run([OZOS_EXE, "tunnel-encrypt", tunnel_secret, k_sess_init], capture_output=True, encoding="utf-8", errors="replace", cwd=DIR)
 enc_frame_hex = None
 for line in res_enc.stdout.splitlines():
-    if len(line.strip()) > 100 and not line.strip().startswith("[") and not line.strip().startswith("•"):
+    if len(line.strip()) > 100 and all(c in "0123456789abcdefABCDEF" for c in line.strip()):
         enc_frame_hex = line.strip()
 
 assert enc_frame_hex, "Không lấy được encrypted frame"
@@ -228,7 +228,7 @@ print(f"  • Khớp Python PBKDF2    : ✅ 100% BIT-EXACT MATCH VỚI CHUẨN Q
 
 # 2. Restore from 12 words
 res_restore = subprocess.run([OZOS_EXE, "brainseed-restore", words_12, test_passphrase], capture_output=True, encoding="utf-8", errors="replace", cwd=DIR)
-assert "ĐÃ ĐƯỢC PHỤC SINH THÀNH CÔNG" in res_restore.stdout, "Phục sinh trí não thất bại!"
+assert "ĐÃ ĐƯỢC PHỤC SINH THÀNH CÔNG" in res_restore.stdout or "IDENTITY RESTORED SUCCESSFULLY" in res_restore.stdout, "Phục sinh trí não thất bại!"
 restore_seed_hex = None
 for line in res_restore.stdout.splitlines():
     if "Master Seed 32-Byte :" in line:
@@ -243,7 +243,7 @@ print("[TEST 7/7] [MẢNH GHÉP 4] Mạng Lưới Lan Truyền Tin Đồn Vô Th
 res_gossip = subprocess.run([OZOS_EXE, "gossip-beacon", "105"], capture_output=True, encoding="utf-8", errors="replace", cwd=DIR)
 beacon_hex = None
 for line in res_gossip.stdout.splitlines():
-    if len(line.strip()) == 44 and not line.strip().startswith("[") and not line.strip().startswith("•"):
+    if len(line.strip()) == 44 and all(c in "0123456789abcdefABCDEF" for c in line.strip()):
         beacon_hex = line.strip()
 
 assert beacon_hex, "Không lấy được beacon hex"

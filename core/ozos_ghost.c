@@ -2,7 +2,7 @@
  * ============================================================================
  * O.Z.O.S - GHOST MICRO-DAEMON MAIN RUNTIME (HEADLESS / INAUDIBLE / FORMLESS)
  * ============================================================================
- * Pure C99 • Zero Open Sockets • Zero Web GUI • Zero Browser • Zero Disk Leaks
+ * Pure C99 | Zero Open Sockets | Zero Web GUI | Zero Browser | Zero Disk Leaks
  * Standard: International Technical English + Universal Mathematical Glyphs
  * ============================================================================
  */
@@ -163,7 +163,7 @@ static void ozos_ghost_dispatch_packet(const uint8_t* rx_buffer, size_t rx_len, 
     /* 1. HANDSHAKE SYN PACKET (42 Bytes) -> Automatic inaudible ACK response */
     if (magic == OZOS_MAGIC_HANDSHAKE_SYN && rx_len >= sizeof(ozos_handshake_syn_t)) {
         const ozos_handshake_syn_t* syn = (const ozos_handshake_syn_t*)rx_buffer;
-        printf("[λ] INCOMING :: HANDSHAKE SYN (42 Bytes) detected from physical air-gap\n");
+        printf("[*] INCOMING :: HANDSHAKE SYN (42 Bytes) detected from physical air-gap\n");
         printf("[!] Acoustic Notice: SYN detected from unauthenticated physical air-gap broadcast.\n");
         printf("    Out-of-band verification required to bind peer identity.\n");
 
@@ -201,14 +201,14 @@ static void ozos_ghost_dispatch_packet(const uint8_t* rx_buffer, size_t rx_len, 
 
         if (ack_ok) {
             printf("-----------------------------------------------------------------\n");
-            printf("[λ] OUTGOING :: ACK (54 Bytes) transmitted via near-ultrasound carrier\n");
+            printf("[*] OUTGOING :: ACK (54 Bytes) transmitted via near-ultrasound carrier\n");
             printf("[#] PFS SESSION KEY  : 0x");
             for (int i = 0; i < 32; i++) printf("%02x", session_key[i]);
             printf("\n");
             printf("[#] POLY1305 AUTH TAG: 0x");
             for (int i = 0; i < 16; i++) printf("%02x", ack.auth_tag[i]);
             printf("\n");
-            printf("[🔒] STATUS :: MUTUAL CONFIDENTIAL AIR-GAP TUNNEL ESTABLISHED\n");
+            printf("[SECURE] STATUS :: MUTUAL CONFIDENTIAL AIR-GAP TUNNEL ESTABLISHED\n");
             printf("-----------------------------------------------------------------\n");
         }
         ozos_ghost_zeroize(session_key, sizeof(session_key));
@@ -216,7 +216,7 @@ static void ozos_ghost_dispatch_packet(const uint8_t* rx_buffer, size_t rx_len, 
     /* 2. GOSSIP BEACON PACKET (22 Bytes) -> Merkle consensus evaluation */
     else if (magic == OZOS_MAGIC_GOSSIP_BEACON && rx_len >= sizeof(ozos_gossip_beacon_t)) {
         const ozos_gossip_beacon_t* beacon = (const ozos_gossip_beacon_t*)rx_buffer;
-        printf("[λ] INCOMING :: GOSSIP BEACON (22 Bytes) from Peer 0x%08X\n", beacon->peer_id);
+        printf("[*] INCOMING :: GOSSIP BEACON (22 Bytes) from Peer 0x%08X\n", beacon->peer_id);
         printf("[!] [UNAUTHENTICATED CRC16 BEACON - INTEGRITY ONLY] Gossip beacon carries CRC-16 integrity only (no cryptographic peer signature).\n");
 
         if (!ozos_gossip_beacon_verify(beacon)) {
@@ -229,11 +229,11 @@ static void ozos_ghost_dispatch_packet(const uint8_t* rx_buffer, size_t rx_len, 
 
         ozos_gossip_action_t act = ozos_gossip_compare_state(my_merkle_root, my_epoch, beacon);
         if (act == OZOS_GOSSIP_PEER_AHEAD) {
-            printf("[Σ] CONSENSUS :: PEER_AHEAD detected. Emitting 10-byte pull request...\n");
+            printf("[+] CONSENSUS :: PEER_AHEAD detected. Emitting 10-byte pull request...\n");
         } else if (act == OZOS_GOSSIP_IN_SYNC) {
-            printf("[Σ] CONSENSUS :: IN_SYNC verified (Air-gap Merkle State Aligned)\n");
+            printf("[+] CONSENSUS :: IN_SYNC verified (Air-gap Merkle State Aligned)\n");
         } else if (act == OZOS_GOSSIP_FORK_DETECTED) {
-            printf("[🚨] CONSENSUS :: FORK_DETECTED! Conflicting Merkle roots in same epoch %u. State fork alert!\n", beacon->epoch_nonce);
+            printf("[ALERT] CONSENSUS :: FORK_DETECTED! Conflicting Merkle roots in same epoch %u. State fork alert!\n", beacon->epoch_nonce);
             FILE* qf = fopen(".ozos_fork_quarantine", "wb");
             if (qf) {
                 fprintf(qf, "FORK_DETECTED epoch=%u peer_id=0x%08X peer_root=0x%016llX local_root=0x%016llX\n",
@@ -242,12 +242,12 @@ static void ozos_ghost_dispatch_packet(const uint8_t* rx_buffer, size_t rx_len, 
                         (unsigned long long)my_merkle_root);
                 fclose(qf);
             }
-            printf("[🔒] QUARANTINE :: State sync halted (.ozos_fork_quarantine active).\n");
+            printf("[SECURE] QUARANTINE :: State sync halted (.ozos_fork_quarantine active).\n");
         }
     }
     /* 3. ALIGNED 80-BYTE GENESIS PACKET */
     else if (magic == OZOS_MAGIC_HEADER) {
-        printf("[Σ] INCOMING :: Aligned 80-Byte Genesis Frame detected\n");
+        printf("[+] INCOMING :: Aligned 80-Byte Genesis Frame detected\n");
     }
 }
 
@@ -270,10 +270,10 @@ static void run_acoustic_wake_daemon(uint32_t timeout_sec) {
 
     printf("=================================================================\n");
     printf("  O.Z.O.S DARK-FIELD ACOUSTIC DAEMON ACTIVE (NATIVE PHYSICAL MIC)\n");
-    printf("  • State      : DORMANT (Pinned RAM deep sleep, ~0%% CPU)\n");
-    printf("  • Sweep Band : 17.9 kHz - 19.9 kHz Preamble Dual-Tone\n");
-    printf("  • Channel    : INAUDIBLE NEAR-ULTRASOUND (100%% Silent to Humans)\n");
-    printf("  • Duration   : %s\n", (timeout_sec == 0) ? "Infinite (Press Ctrl+C to terminate)" : "Timed execution");
+    printf("  * State      : DORMANT (Pinned RAM deep sleep, ~0%% CPU)\n");
+    printf("  * Sweep Band : 17.9 kHz - 19.9 kHz Preamble Dual-Tone\n");
+    printf("  * Channel    : INAUDIBLE NEAR-ULTRASOUND (100%% Silent to Humans)\n");
+    printf("  * Duration   : %s\n", (timeout_sec == 0) ? "Infinite (Press Ctrl+C to terminate)" : "Timed execution");
     printf("=================================================================\n");
 
     float chunk[OZOS_CHUNK_SAMPLES];
@@ -311,7 +311,7 @@ static void run_acoustic_wake_daemon(uint32_t timeout_sec) {
                 state = OZOS_GHOST_PREAMBLE_SYNC;
             } else if (state == OZOS_GHOST_PREAMBLE_SYNC && preamble_hits >= 2) {
                 /* Preamble falling edge detected -> current chunk is Byte 0! */
-                printf("\n[⚡] ACOUSTIC WAKE :: 17.9 kHz + 19.9 kHz Preamble latched. Instant wake-up.\n");
+                printf("\n[*] ACOUSTIC WAKE :: 17.9 kHz + 19.9 kHz Preamble latched. Instant wake-up.\n");
                 state = OZOS_GHOST_RECEIVING;
                 rx_len = 0;
                 target_len = 0;
@@ -350,7 +350,7 @@ static void run_acoustic_wake_daemon(uint32_t timeout_sec) {
                 rx_len = 0;
                 target_len = 0;
                 state = OZOS_GHOST_DORMANT;
-                printf("[Ω] PURGED :: Volatile buffer sanitized. Re-entering DORMANT (~0%% CPU).\n");
+                printf("[-] PURGED :: Volatile buffer sanitized. Re-entering DORMANT (~0%% CPU).\n");
             }
             /* Abort if buffer exceeds 128 bytes without recognized magic */
             else if (rx_len > 128 && target_len == 0) {
@@ -462,13 +462,13 @@ static bool run_acoustic_loopback_test(void) {
     free(pcm16);
     ozos_ghost_zeroize(secret_a, sizeof(secret_a));
 
-    printf("  • SYN Origin Hex   : ");
+    printf("  * SYN Origin Hex   : ");
     hex_dump_compact((const uint8_t*)&syn, sizeof(syn));
-    printf("  • SYN Decoded Hex  : ");
+    printf("  * SYN Decoded Hex  : ");
     hex_dump_compact(rx_buffer, rx_len);
-    printf("  [λ] Acoustic Wake Event : %s\n", wake_event_triggered ? "PASS (17.9 kHz + 19.9 kHz Preamble Latch)" : "FAIL");
-    printf("  •   Frame Reception     : %s\n", (rx_len == 42) ? "PASS (42/42 Bytes Received)" : "FAIL");
-    printf("  •   Tripwire MAC16 Auth : %s\n", packet_verified ? "PASS (< 20ns Bit-Exact Proof)" : "FAIL");
+    printf("  [*] Acoustic Wake Event : %s\n", wake_event_triggered ? "PASS (17.9 kHz + 19.9 kHz Preamble Latch)" : "FAIL");
+    printf("  *   Frame Reception     : %s\n", (rx_len == 42) ? "PASS (42/42 Bytes Received)" : "FAIL");
+    printf("  *   Tripwire MAC16 Auth : %s\n", packet_verified ? "PASS (< 20ns Bit-Exact Proof)" : "FAIL");
 
     bool ok = wake_event_triggered && (rx_len == 42) && packet_verified;
     printf("=================================================================\n");
@@ -483,7 +483,7 @@ static bool run_acoustic_loopback_test(void) {
 static bool run_ephemeral_enclave_test(void) {
     printf("=================================================================\n");
     printf("  [AUDIT] PHYSICAL RAM ENCLAVE & NIST SP 800-88 3-PASS SANITIZATION\n");
-    printf("  Sovereignty: VirtualLock Pinning • < 1.5ms • Zero Disk Residue\n");
+    printf("  Sovereignty: VirtualLock Pinning | < 1.5ms | Zero Disk Residue\n");
     printf("=================================================================\n");
 
     const size_t ENCLAVE_SIZE = 4096; /* 1 Page 4KB */
@@ -493,8 +493,8 @@ static bool run_ephemeral_enclave_test(void) {
         printf("  [!] FAIL: Unable to allocate VirtualLock enclave memory.\n");
         return false;
     }
-    printf("  • Enclave Address : %p (4096 Bytes Locked in Physical RAM)\n", enclave);
-    printf("  • OS Disk Paging  : STRICTLY PROHIBITED (Pagefile/SSD Blocked)\n");
+    printf("  * Enclave Address : %p (4096 Bytes Locked in Physical RAM)\n", enclave);
+    printf("  * OS Disk Paging  : STRICTLY PROHIBITED (Pagefile/SSD Blocked)\n");
 
     uint8_t* seed32 = (uint8_t*)enclave;
     uint8_t* ed_sk  = seed32 + 32;
@@ -525,7 +525,7 @@ static bool run_ephemeral_enclave_test(void) {
 #if defined(_WIN32)
     QueryPerformanceCounter(&t1);
     double derive_ms = (double)(t1.QuadPart - t0.QuadPart) * 1000.0 / (double)freq.QuadPart;
-    printf("  [Φ] PBKDF2 Rounds   : 2048 Iterations (HMAC-SHA512) -> %.2f ms\n", derive_ms);
+    printf("  [*] PBKDF2 Rounds   : 2048 Iterations (HMAC-SHA512) -> %.2f ms\n", derive_ms);
 #endif
 
     printf("  [#] Sovereign PK    : 0x");
@@ -548,16 +548,16 @@ static bool run_ephemeral_enclave_test(void) {
 #if defined(_WIN32)
     QueryPerformanceCounter(&t2);
     double sign_us = (double)(t2.QuadPart - t1.QuadPart) * 1000000.0 / (double)freq.QuadPart;
-    printf("  [Δ] Signature Latency: %.2f us (%.4f ms)\n", sign_us, sign_us / 1000.0);
+    printf("  [+] Signature Latency: %.2f us (%.4f ms)\n", sign_us, sign_us / 1000.0);
 #else
-    printf("  [Δ] Signature Latency: < 1.0 ms\n");
+    printf("  [+] Signature Latency: < 1.0 ms\n");
 #endif
-    printf("  • Frame Size        : %zu bytes (Header 80B + Payload %zuB + PK 32B + Sig 64B)\n", 
+    printf("  * Frame Size        : %zu bytes (Header 80B + Payload %zuB + PK 32B + Sig 64B)\n", 
            signed_len, payload_len);
 
     uint8_t verified_pk[32];
     bool sig_ok = ozos_verify_packet_frame(signed_frame, signed_len, verified_pk);
-    printf("  • Ed25519 Verify    : %s\n", sig_ok ? "PASS (Bit-exact mathematical proof)" : "FAIL");
+    printf("  * Ed25519 Verify    : %s\n", sig_ok ? "PASS (Bit-exact mathematical proof)" : "FAIL");
     if (!sig_ok) {
         ozos_ghost_free_locked_enclave(enclave, ENCLAVE_SIZE);
         return false;
@@ -565,9 +565,9 @@ static bool run_ephemeral_enclave_test(void) {
 
     printf("[4/5] Executing 3-Pass NIST SP 800-88 & DoD 5220.22-M memory scrub...\n");
     ozos_ghost_secure_sanitize(enclave, ENCLAVE_SIZE);
-    printf("  • Pass 1: Overwrite 0x00 + Compiler MemoryBarrier()\n");
-    printf("  • Pass 2: Overwrite 0xFF + Compiler MemoryBarrier()\n");
-    printf("  • Pass 3: Overwrite 0x00 + SecureZeroMemory()\n");
+    printf("  * Pass 1: Overwrite 0x00 + Compiler MemoryBarrier()\n");
+    printf("  * Pass 2: Overwrite 0xFF + Compiler MemoryBarrier()\n");
+    printf("  * Pass 3: Overwrite 0x00 + SecureZeroMemory()\n");
 
     printf("[5/5] Forensic memory residual audit...\n");
     size_t nonzero_count = 0;
@@ -575,11 +575,11 @@ static bool run_ephemeral_enclave_test(void) {
     for (size_t i = 0; i < ENCLAVE_SIZE; i++) {
         if (check_ptr[i] != 0x00) nonzero_count++;
     }
-    printf("  [Ω] Residual Leak   : %zu / %zu bytes (100%% PURGED TO VOID)\n", nonzero_count, ENCLAVE_SIZE);
-    printf("  • Disk Writes       : 0 BYTES (Pure volatile memory lifecycle)\n");
+    printf("  [-] Residual Leak   : %zu / %zu bytes (100%% PURGED TO VOID)\n", nonzero_count, ENCLAVE_SIZE);
+    printf("  * Disk Writes       : 0 BYTES (Pure volatile memory lifecycle)\n");
 
     ozos_ghost_free_locked_enclave(enclave, ENCLAVE_SIZE);
-    printf("  • VirtualUnlock     : COMPLETE (Enclave released)\n");
+    printf("  * VirtualUnlock     : COMPLETE (Enclave released)\n");
 
     bool pass_all = (nonzero_count == 0) && sig_ok;
     printf("=================================================================\n");
@@ -627,7 +627,7 @@ static bool run_genesis_seal(void) {
         0x2b, 0xa8, 0xb1, 0x4e, 0x80, 0x78, 0x6e, 0xdd
     };
     if (memcmp(hash2, OZOS_EXPECTED_GENESIS_HASH, 32) != 0) {
-        printf("🚨 [GENESIS CORRUPTION] Hash mismatch against immutable constant!\n");
+        printf("[ERROR] [GENESIS CORRUPTION] Hash mismatch against immutable constant!\n");
         ozos_ghost_zeroize(full_block, sizeof(full_block));
         return false;
     }
@@ -642,20 +642,20 @@ static bool run_genesis_seal(void) {
     uint8_t gen_sig[64];
     ozos_ed25519_sign_detached(gen_sig, full_block, full_len, gen_sk);
 
-    printf("• BLOCK HEIGHT : #000000 (GENESIS)\n");
-    printf("• TIMESTAMP    : " OZOS_GENESIS_TIMESTAMP "\n");
-    printf("• WIRE FORMAT  : OZOS-80 Binary Aligned (Bare-Metal Invariant)\n");
-    printf("• INSCRIPTION  :\n");
+    printf("* BLOCK HEIGHT : #000000 (GENESIS)\n");
+    printf("* TIMESTAMP    : " OZOS_GENESIS_TIMESTAMP "\n");
+    printf("* WIRE FORMAT  : OZOS-80 Binary Aligned (Bare-Metal Invariant)\n");
+    printf("* INSCRIPTION  :\n");
     printf("  \"%s\"\n", inscription);
     printf("-----------------------------------------------------------------\n");
-    printf("• GENESIS HASH (Double SHA-256):\n  0x");
+    printf("* GENESIS HASH (Double SHA-256):\n  0x");
     for (int i = 0; i < 32; i++) printf("%02x", hash2[i]);
     printf("\n");
-    printf("• GENESIS PUBLIC KEY:\n  0x");
+    printf("* GENESIS PUBLIC KEY:\n  0x");
     for (int i = 0; i < 32; i++) printf("%02x", gen_pk[i]);
     printf("\n");
-    printf("• TRIPWIRE MAC16 : 0x%04X (O(1) Gatekeeper < 20ns)\n", genesis_header.header_mac16);
-    printf("• ED25519 SIG    : 0x");
+    printf("* TRIPWIRE MAC16 : 0x%04X (O(1) Gatekeeper < 20ns)\n", genesis_header.header_mac16);
+    printf("* ED25519 SIG    : 0x");
     for (int i = 0; i < 16; i++) printf("%02x", gen_sig[i]);
     printf("...\n");
     printf("=================================================================\n");
@@ -673,7 +673,7 @@ int main(int argc, char* argv[]) {
     if (argc < 2) {
         printf("=================================================================\n");
         printf("  O.Z.O.S GHOST MICRO-DAEMON // HEADLESS SOVEREIGN ENGINE (C99)\n");
-        printf("  [ INVISIBLE • INAUDIBLE • FORMLESS ]\n");
+        printf("  [ INVISIBLE | INAUDIBLE | FORMLESS ]\n");
         printf("=================================================================\n");
         printf("Commands:\n");
         printf("  genesis                 - Inspect & verify Genesis Block #000000 Inscription\n");
@@ -704,10 +704,10 @@ int main(int argc, char* argv[]) {
             return 1;
         }
         printf("O.Z.O.S Ghost Daemon v1.2.0 (Headless Sovereign Micro-Daemon)\n");
-        printf("• Target         : C99 Bare-Metal Ephemeral Enclave\n");
-        printf("• Git Commit     : %s\n", ozos_ghost_get_git_commit());
-        printf("• Pinned WASM SHA: %s\n", OZOS_WASM_PIN_SHA256);
-        printf("• Canonical Repo : https://github.com/LumenNull/OZOS.git\n");
+        printf("* Target         : C99 Bare-Metal Ephemeral Enclave\n");
+        printf("* Git Commit     : %s\n", ozos_ghost_get_git_commit());
+        printf("* Pinned WASM SHA: %s\n", OZOS_WASM_PIN_SHA256);
+        printf("* Canonical Repo : https://github.com/LumenNull/OZOS.git\n");
         return 0;
     }
 
@@ -719,7 +719,7 @@ int main(int argc, char* argv[]) {
         }
         printf("=================================================================\n");
         printf("  O.Z.O.S GHOST MICRO-DAEMON // HEADLESS SOVEREIGN ENGINE (C99)\n");
-        printf("  [ INVISIBLE • INAUDIBLE • FORMLESS ]\n");
+        printf("  [ INVISIBLE | INAUDIBLE | FORMLESS ]\n");
         printf("=================================================================\n");
         printf("Commands:\n");
         printf("  genesis                 - Inspect & verify Genesis Block #000000 Inscription\n");
@@ -878,10 +878,10 @@ int main(int argc, char* argv[]) {
         }
 
         printf("[!] [UNAUTHENTICATED CRC16 BEACON - INTEGRITY ONLY] Gossip beacons use CRC-16 integrity (no peer signature).\n");
-        printf("[λ] Transmitting inaudible Gossip Beacon (22 Bytes, 18.1 - 19.8 kHz)...\n");
+        printf("[*] Transmitting inaudible Gossip Beacon (22 Bytes, 18.1 - 19.8 kHz)...\n");
         bool ok = ozos_ghost_emit_stealth_beacon(epoch, root);
         if (ok) {
-            printf("[λ] TRANSMITTED :: Beacon propagated into physical space.\n");
+            printf("[*] TRANSMITTED :: Beacon propagated into physical space.\n");
         } else {
             printf("[!] Failed to play audio carrier.\n");
             return 1;
@@ -905,8 +905,8 @@ int main(int argc, char* argv[]) {
         }
         ozos_handshake_syn_t syn;
         uint8_t secret_a[32];
-        printf("[λ] Initializing Ephemeral Curve25519 handshake session...\n");
-        printf("[λ] Transmitting SYN offer (42 Bytes, 18.1 - 19.8 kHz, 1.05s)...\n");
+        printf("[*] Initializing Ephemeral Curve25519 handshake session...\n");
+        printf("[*] Transmitting SYN offer (42 Bytes, 18.1 - 19.8 kHz, 1.05s)...\n");
         
         bool ok = ozos_ghost_emit_stealth_syn(&syn, secret_a);
         if (!ok) {
@@ -937,10 +937,10 @@ int main(int argc, char* argv[]) {
         for (int i = 0; i < 32; i++) printf("%02x", syn.eph_pubkey[i]);
         printf("\n");
 
-        printf("[λ] SYN Frame Hex (42B): ");
+        printf("[*] SYN Frame Hex (42B): ");
         hex_dump_compact((const uint8_t*)&syn, sizeof(syn));
         printf("-----------------------------------------------------------------\n");
-        printf("[🔒] SYN transmitted. Awaiting mutual ACK response.\n");
+        printf("[SECURE] SYN transmitted. Awaiting mutual ACK response.\n");
 
         ozos_ghost_zeroize(secret_a, sizeof(secret_a));
         return 0;
@@ -1055,7 +1055,7 @@ int main(int argc, char* argv[]) {
 
         ozos_handshake_ack_t ack;
         uint8_t session_key[32];
-        printf("[λ] Computing Curve25519 ECDH & transmitting ACK (54 Bytes)...\n");
+        printf("[*] Computing Curve25519 ECDH & transmitting ACK (54 Bytes)...\n");
 
         bool ok = ozos_ghost_emit_stealth_ack(syn, &ack, session_key);
         if (!ok) {
@@ -1073,10 +1073,10 @@ int main(int argc, char* argv[]) {
         for (int i = 0; i < 16; i++) printf("%02x", ack.auth_tag[i]);
         printf("\n");
 
-        printf("[λ] ACK Frame Hex (54B): ");
+        printf("[*] ACK Frame Hex (54B): ");
         hex_dump_compact((const uint8_t*)&ack, sizeof(ack));
         printf("-----------------------------------------------------------------\n");
-        printf("[🔒] Handshake complete. Bidirectional acoustic tunnel established.\n");
+        printf("[SECURE] Handshake complete. Bidirectional acoustic tunnel established.\n");
 
         ozos_ghost_zeroize(session_key, sizeof(session_key));
         return 0;
@@ -1093,7 +1093,7 @@ int main(int argc, char* argv[]) {
         const char* pass  = argv[3];
         const char* payload = argv[4];
 
-        printf("[Φ] Restoring identity from mind-bound seed (BIP-39 + PBKDF2 2048)...\n");
+        printf("[*] Restoring identity from mind-bound seed (BIP-39 + PBKDF2 2048)...\n");
         uint8_t seed32[32];
         uint8_t ed_sk[64];
         uint8_t ed_pk[32];
@@ -1107,7 +1107,7 @@ int main(int argc, char* argv[]) {
 
         size_t payload_len = strlen(payload);
         if (payload_len == 0 || payload_len > 256) {
-            printf("[!] Payload khong hop le hoac vuot qua 256 bytes (Chong tran bo nho packet_buffer).\n");
+            printf("[!] Invalid payload or exceeds 256 bytes (Buffer overflow protection).\n");
             ozos_ghost_zeroize(seed32, sizeof(seed32));
             ozos_ghost_zeroize(ed_sk, sizeof(ed_sk));
             return 1;
@@ -1135,11 +1135,11 @@ int main(int argc, char* argv[]) {
         printf("[#] Sovereign Public Key: 0x");
         for (int i = 0; i < 32; i++) printf("%02x", ed_pk[i]);
         printf("\n");
-        printf("•   Frame Length        : %zu bytes\n", signed_len);
-        printf("•   Signed Frame Hex    : ");
+        printf("*   Frame Length        : %zu bytes\n", signed_len);
+        printf("*   Signed Frame Hex    : ");
         hex_dump_compact(final_frame, signed_len);
         printf("-----------------------------------------------------------------\n");
-        printf("[Ω] Ed25519 signed (< 0.5ms). Volatile stack RAM sanitized.\n");
+        printf("[-] Ed25519 signed (< 0.5ms). Volatile stack RAM sanitized.\n");
 
         ozos_ghost_zeroize(final_frame, sizeof(final_frame));
         return 0;
@@ -1158,7 +1158,7 @@ int main(int argc, char* argv[]) {
 
         printf("=================================================================\n");
         printf("  O.Z.O.S // EPHEMERAL SOVEREIGN EXECUTION\n");
-        printf("  Pinned Physical RAM • Zero Disk Writes • NIST SP 800-88 Purge\n");
+        printf("  Pinned Physical RAM | Zero Disk Writes | NIST SP 800-88 Purge\n");
         printf("=================================================================\n");
 
         const size_t ENCLAVE_SIZE = 4096;
@@ -1170,7 +1170,7 @@ int main(int argc, char* argv[]) {
 
         size_t payload_len = strlen(payload);
         if (payload_len == 0 || payload_len > 256) {
-            printf("[!] Payload khong hop le hoac vuot qua 256 bytes (Chong ghi de enclave RAM).\n");
+            printf("[!] Invalid payload or exceeds 256 bytes (Enclave RAM overwrite protection).\n");
             ozos_ghost_free_locked_enclave(enclave, ENCLAVE_SIZE);
             return 1;
         }
@@ -1225,11 +1225,11 @@ int main(int argc, char* argv[]) {
         printf("[#] Sovereign Public Key: 0x");
         for (int i = 0; i < 32; i++) printf("%02x", out_pk[i]);
         printf("\n");
-        printf("[Δ] Execution Latency   : %.2f us (%.4f ms)\n", elapsed_us, elapsed_us / 1000.0);
-        printf("[Ω] Enclave RAM Status  : 100%% SANITIZED (NIST SP 800-88 3-Pass)\n");
-        printf("•   Disk Footprint      : 0 BYTES (VirtualLock Pagefile Shield)\n");
-        printf("•   Frame Length        : %zu bytes\n", signed_len);
-        printf("•   Signed Frame Hex    : ");
+        printf("[+] Execution Latency   : %.2f us (%.4f ms)\n", elapsed_us, elapsed_us / 1000.0);
+        printf("[-] Enclave RAM Status  : 100%% SANITIZED (NIST SP 800-88 3-Pass)\n");
+        printf("*   Disk Footprint      : 0 BYTES (VirtualLock Pagefile Shield)\n");
+        printf("*   Frame Length        : %zu bytes\n", signed_len);
+        printf("*   Signed Frame Hex    : ");
         hex_dump_compact(out_frame, signed_len);
         printf("=================================================================\n");
         printf("[GHOST] Verified. Zero digital traces left on device.\n");
@@ -1256,7 +1256,7 @@ int main(int argc, char* argv[]) {
 
         printf("[*] NIST SP 800-88 3-Pass memory scrub: COMPLETE (0x00 -> 0xFF -> 0x00)\n");
         printf("[*] Process working set purged.\n");
-        printf("[Ω] All sovereign state returned to void.\n");
+        printf("[-] All sovereign state returned to void.\n");
         printf("=================================================================\n");
         return 0;
     }
@@ -1264,7 +1264,7 @@ int main(int argc, char* argv[]) {
     /* 6. TEST-AUDIO: Test physical audio output hardware */
     if (strcmp(cmd, "test-audio") == 0) {
         if (argc > 2) { printf("[!] Unexpected arguments for %s\n", cmd); return 1; }
-        printf("[λ] Emitting 18.5 kHz near-ultrasound pulse (0.5 seconds)...\n");
+        printf("[*] Emitting 18.5 kHz near-ultrasound pulse (0.5 seconds)...\n");
         size_t samples = (size_t)(44100 * 0.5f);
         short* buf = (short*)malloc(samples * sizeof(short));
         if (!buf) return 1;
@@ -1279,7 +1279,7 @@ int main(int argc, char* argv[]) {
 
         ozos_ghost_play_pcm16(buf, samples, 44100);
         free(buf);
-        printf("[λ] Carrier pulse complete (Inaudible to human ear).\n");
+        printf("[*] Carrier pulse complete (Inaudible to human ear).\n");
         return 0;
     }
 
@@ -1290,7 +1290,7 @@ int main(int argc, char* argv[]) {
             return 1;
         }
         const char* wav_path = argv[2];
-        printf("[λ] Reading and analyzing acoustic stream: %s\n", wav_path);
+        printf("[*] Reading and analyzing acoustic stream: %s\n", wav_path);
 
         FILE* f = fopen(wav_path, "rb");
         if (!f) {
@@ -1441,7 +1441,7 @@ int main(int argc, char* argv[]) {
         free(raw_samples);
 
         printf("-----------------------------------------------------------------\n");
-        printf("[λ] PACKET DETECTED :: Size: %zu bytes\n", rx_len);
+        printf("[*] PACKET DETECTED :: Size: %zu bytes\n", rx_len);
         printf("[#] Hex Data : ");
         hex_dump_compact(rx_buffer, rx_len);
 
@@ -1459,10 +1459,10 @@ int main(int argc, char* argv[]) {
             }
             ozos_gossip_beacon_t* b = (ozos_gossip_beacon_t*)rx_buffer;
             mac_verified = ozos_gossip_beacon_verify(b);
-            printf("[Σ] Type     : GOSSIP BEACON (22 Bytes) [%s]\n", mac_verified ? "MAC16 VERIFIED" : "MAC16 UNVERIFIED");
+            printf("[+] Type     : GOSSIP BEACON (22 Bytes) [%s]\n", mac_verified ? "MAC16 VERIFIED" : "MAC16 UNVERIFIED");
             printf("[#] Peer ID  : 0x%08X\n", b->peer_id);
-            printf("•   Epoch    : %u\n", b->epoch_nonce);
-            printf("[Σ] Merkle   : 0x%016llX\n", (unsigned long long)b->merkle_root);
+            printf("*   Epoch    : %u\n", b->epoch_nonce);
+            printf("[+] Merkle   : 0x%016llX\n", (unsigned long long)b->merkle_root);
         } else if (magic == OZOS_MAGIC_HANDSHAKE_SYN) {
             if (rx_len < sizeof(ozos_handshake_syn_t)) {
                 printf("[!] Packet truncated (< %zu bytes for HANDSHAKE SYN).\n", sizeof(ozos_handshake_syn_t));
@@ -1470,8 +1470,8 @@ int main(int argc, char* argv[]) {
             }
             ozos_handshake_syn_t* s = (ozos_handshake_syn_t*)rx_buffer;
             mac_verified = ozos_handshake_syn_verify(s);
-            printf("[🔒] Type    : HANDSHAKE SYN (42 Bytes, Ephemeral Curve25519 Offer) [%s]\n", mac_verified ? "MAC16 VERIFIED" : "MAC16 UNVERIFIED");
-            printf("•   Acoustic : ⚠️ SYN received over unauthenticated physical broadcast.\n");
+            printf("[SECURE] Type    : HANDSHAKE SYN (42 Bytes, Ephemeral Curve25519 Offer) [%s]\n", mac_verified ? "MAC16 VERIFIED" : "MAC16 UNVERIFIED");
+            printf("*   Acoustic : [WARN] SYN received over unauthenticated physical broadcast.\n");
             printf("               PFS provides secrecy; peer identity must be verified out-of-band.\n");
         } else if (magic == OZOS_MAGIC_HANDSHAKE_ACK) {
             if (rx_len < sizeof(ozos_handshake_ack_t)) {
@@ -1480,7 +1480,7 @@ int main(int argc, char* argv[]) {
             }
             ozos_handshake_ack_t* a = (ozos_handshake_ack_t*)rx_buffer;
             mac_verified = ozos_handshake_ack_verify(a);
-            printf("[🔒] Type    : HANDSHAKE ACK (54 Bytes, Poly1305 Mutual Auth) [%s]\n", mac_verified ? "MAC16 VERIFIED" : "MAC16 UNVERIFIED");
+            printf("[SECURE] Type    : HANDSHAKE ACK (54 Bytes, Poly1305 Mutual Auth) [%s]\n", mac_verified ? "MAC16 VERIFIED" : "MAC16 UNVERIFIED");
         } else if (magic == OZOS_MAGIC_HEADER) {
             if (rx_len < 80) {
                 printf("[!] Packet truncated (< %zu bytes for GENESIS PACKET).\n", sizeof(ozos_packet80_t));
@@ -1489,7 +1489,7 @@ int main(int argc, char* argv[]) {
             ozos_packet80_t* p = (ozos_packet80_t*)rx_buffer;
             uint16_t expected_mac = ozos_compute_mac16(p);
             mac_verified = (p->header_mac16 == expected_mac);
-            printf("[Σ] Type     : GENESIS PACKET (Aligned 80-Byte Frame) [%s]\n", mac_verified ? "MAC16 VERIFIED" : "MAC16 UNVERIFIED");
+            printf("[+] Type     : GENESIS PACKET (Aligned 80-Byte Frame) [%s]\n", mac_verified ? "MAC16 VERIFIED" : "MAC16 UNVERIFIED");
         } else {
             printf("[!] Unrecognized magic header: 0x%08X\n", magic);
             return 1;

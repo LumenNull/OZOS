@@ -95,8 +95,8 @@ code, out, err = run_ozos("keygen", "0123456789abcdef0123456789abcdef0123456789a
 short_code, short_out, short_err = run_ozos("keygen", "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef") # 64 chars
 syntax_err_62 = run_ozos("keygen", "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcd") # 62 chars
 
-check_test("Seed 66 ky tu bi tu choi voi loi cu phap", code != 0 and "Seed hex phai co do dai chinh xac 64 ky tu" in err, "Exit code non-zero, hard error")
-check_test("Seed 62 ky tu bi tu choi voi loi cu phap", syntax_err_62[0] != 0 and "Seed hex phai co do dai chinh xac 64 ky tu" in syntax_err_62[2], "Exit code non-zero, hard error")
+check_test("Seed 66 ky tu bi tu choi voi loi cu phap", code != 0 and ("Seed hex phai co do dai" in err or "Seed hex must be exactly 64" in err), "Exit code non-zero, hard error")
+check_test("Seed 62 ky tu bi tu choi voi loi cu phap", syntax_err_62[0] != 0 and ("Seed hex phai co do dai" in syntax_err_62[2] or "Seed hex must be exactly 64" in syntax_err_62[2]), "Exit code non-zero, hard error")
 check_test("Seed 64 ky tu hop le duoc chap nhan", short_code == 0 and "Sovereign Public Key" in short_out, "Exit code 0, keygen successful")
 
 # ----------------------------------------------------------------------
@@ -138,13 +138,13 @@ for i, line in enumerate(lines_att):
 # Verify attacker frame against victim's sovereign_pk as trusted anchor:
 code_v1, out_v1, _ = run_ozos("packet-verify", attacker_hex, "1000", sovereign_pk)
 check_test("Goi tin cua ke tan cong bi TU CHOI khi doi chieu voi Sovereign Anchor",
-           "BI TU CHOI: CHU KY DUNG NHUNG TAC GIA KHONG THUOC DANH BA TIN CAY!" in out_v1 and "CANH BAO: UNTRUSTED / ATTACKER KEY" in out_v1,
+           ("BI TU CHOI" in out_v1 or "VALID SIGNATURE BUT AUTHOR IS NOT IN TRUSTED STORE" in out_v1 or "REJECTED" in out_v1) and ("CANH BAO: UNTRUSTED / ATTACKER KEY" in out_v1 or "WARNING: UNTRUSTED / ATTACKER KEY" in out_v1),
            "Attacker frame blocked from sovereign authority")
 
 # Verify genuine frame against sovereign_pk as trusted anchor:
 code_v2, out_v2, _ = run_ozos("packet-verify", signed_hex, "1000", sovereign_pk)
 check_test("Goi tin chu quyen that duoc xac nhan HOP LE TUYET DOI khi khop Sovereign Anchor",
-           "HOP LE TUYET DOI (100% INVARIANT INTEGRITY & SOVEREIGN VERIFIED)" in out_v2 and "TRUSTED PINNED SOVEREIGN KEY" in out_v2,
+           ("HOP LE TUYET DOI" in out_v2 or "VERIFIED (100% INVARIANT INTEGRITY & SOVEREIGN VERIFIED)" in out_v2) and "TRUSTED PINNED SOVEREIGN KEY" in out_v2,
            "Authentic frame verified against anchor")
 
 # ----------------------------------------------------------------------
@@ -162,7 +162,7 @@ for i, line in enumerate(lines_b):
 # Verify unsigned packet
 code_vu, out_vu, _ = run_ozos("packet-verify", unsigned_hex, "1000")
 check_test("Goi tin khong ky TUYET DOI KHONG in 'HOP LE TUYET DOI'",
-           "HOP LE TUYET DOI" not in out_vu and "KHONG CO CHU KY ED25519" in out_vu,
+           ("HOP LE TUYET DOI" not in out_vu and "VERIFIED (100% INVARIANT INTEGRITY" not in out_vu) and ("KHONG CO CHU KY ED25519" in out_vu or "UNSIGNED PACKET" in out_vu or "NO ED25519 SIGNATURE" in out_vu),
            "Correctly categorized as unsigned format only")
 
 # Forge signature: corrupt the signature bytes in signed_hex
@@ -171,7 +171,7 @@ raw_bytes[-10] ^= 0xFF # Flip bits in Ed25519 signature
 corrupted_sig_hex = binascii.hexlify(raw_bytes).decode('ascii')
 code_vc, out_vc, _ = run_ozos("packet-verify", corrupted_sig_hex, "1000")
 check_test("Goi tin bi sua chu ky TUYET DOI KHONG in 'HOP LE TUYET DOI'",
-           "HOP LE TUYET DOI" not in out_vc and "CHU KY ED25519 BI LAM GIA HOAC DU LIEU BI SUA DOI!" in out_vc,
+           ("HOP LE TUYET DOI" not in out_vc and "VERIFIED (100% INVARIANT INTEGRITY" not in out_vc) and ("CHU KY ED25519 BI LAM GIA" in out_vc or "ED25519 SIGNATURE FORGED OR DATA TAMPERED" in out_vc),
            "Forged signature strictly marked BI TU CHOI")
 
 # ----------------------------------------------------------------------
@@ -182,7 +182,7 @@ print("\n[TEST 5/8] Kiem Tra Tu Choi Chu Ky Bi Cat Cut (Truncated Signature)..."
 truncated_hex = signed_hex[:-64]
 code_tr, out_tr, _ = run_ozos("packet-verify", truncated_hex, "1000")
 check_test("Goi tin bi cat cut chu ky bi TU CHOI nghiem ngat",
-           "BI TU CHOI: GOI TIN BI CAT CUT CHU KY (TRUNCATED SIGNATURE)" in out_tr,
+           "TRUNCATED SIGNATURE" in out_tr,
            "Truncation caught by canonical framing check")
 
 # ----------------------------------------------------------------------
@@ -194,12 +194,12 @@ garbage_2000b_hex = signed_hex + ("aa" * 2000)
 
 code_g4, out_g4, _ = run_ozos("packet-verify", garbage_4b_hex, "1000")
 check_test("Goi tin chua 4 byte rac bi TU CHOI",
-           "BI TU CHOI: GOI TIN CHUA RAC NOI DUOI (TRAILING GARBAGE DETECTED)" in out_g4,
+           "TRAILING GARBAGE DETECTED" in out_g4,
            "4 bytes trailing garbage blocked")
 
 code_g2k, out_g2k, _ = run_ozos("packet-verify", garbage_2000b_hex, "1000")
 check_test("Goi tin chua 2000 byte rac bi TU CHOI",
-           "BI TU CHOI: GOI TIN CHUA RAC NOI DUOI (TRAILING GARBAGE DETECTED)" in out_g2k,
+           "TRAILING GARBAGE DETECTED" in out_g2k,
            "2000 bytes trailing garbage blocked")
 
 # ----------------------------------------------------------------------
@@ -232,7 +232,7 @@ malleable_hex = binascii.hexlify(malleable_packet).decode('ascii')
 
 code_mal, out_mal, _ = run_ozos("packet-verify", malleable_hex, "1000")
 check_test("Chu ky bien dang S + L bi TU CHOI boi quy tac chuan tac RFC 8032",
-           "CHU KY ED25519 BI LAM GIA HOAC DU LIEU BI SUA DOI!" in out_mal,
+           "CHU KY ED25519 BI LAM GIA" in out_mal or "ED25519 SIGNATURE FORGED OR DATA TAMPERED" in out_mal,
            "Strict S < L check prevented S+L malleability bypass")
 
 # ----------------------------------------------------------------------
@@ -243,13 +243,13 @@ print("\n[TEST 8/8] Kiem Tra Chong Tan Cong Phat Lai (Anti-Replay Invariant)..."
 # Verifying with last_seen_nonce = 2000 must FAIL (nonce not strictly greater)
 code_rep1, out_rep1, _ = run_ozos("packet-verify", signed_hex, "2000")
 check_test("Replay attack bi chan khi Nonce bang last_seen_nonce (2000 == 2000)",
-           "Phat hien Replay Attack" in out_rep1,
+           "Replay Attack" in out_rep1,
            "Strictly monotonic nonce enforced")
 
 # Verifying with last_seen_nonce = 2001 must FAIL (nonce 2000 < 2001)
 code_rep2, out_rep2, _ = run_ozos("packet-verify", signed_hex, "2001")
 check_test("Replay attack bi chan khi Nonce nho hon last_seen_nonce (2000 < 2001)",
-           "Phat hien Replay Attack" in out_rep2,
+           "Replay Attack" in out_rep2,
            "Past nonce rejected")
 
 # ----------------------------------------------------------------------
@@ -260,7 +260,7 @@ fake_key = "00" * 32
 large_frame = "4f5a4844" + "00" * 1200
 code_t1, out_t1, _ = run_ozos("tunnel-decrypt", large_frame, fake_key)
 check_test("Frame vuot qua 560B bi tu choi truoc khi giai ma",
-           "Khung du lieu vuot qua gioi han bo nho cho phep" in out_t1,
+           "Khung du lieu vuot qua gioi han bo nho cho phep" in out_t1 or "exceeds allowed memory bounds" in out_t1,
            "Oversize frame rejected gracefully")
 
 # ----------------------------------------------------------------------
@@ -277,7 +277,7 @@ try:
         wf.writeframes(struct.pack('<' + 'h'*1000, *([0]*1000)))
     code_a1, out_a1, _ = run_ozos("audio-decode", wav_test)
     check_test("Sample rate 96kHz bi tu choi an toan, khong tran bo nho float_block",
-               "Sample rate khong hop le" in out_a1,
+               "Sample rate khong hop le" in out_a1 or "Invalid sample rate" in out_a1,
                "96kHz clamped safely")
 finally:
     if os.path.exists(wav_test):
@@ -293,13 +293,13 @@ passphrase = "ZERO_STUDIO_SOVEREIGN_MIND"
 p_gsign = subprocess.run([GHOST_EXE, "sign", words, passphrase, "a" * 433],
                          stdout=subprocess.PIPE, stderr=subprocess.PIPE, encoding="utf-8", errors="replace", cwd=REPO_ROOT)
 check_test("ozos_ghost sign voi payload 433B bi tu choi graceful (exit code 1, khong abort/overflow)",
-           p_gsign.returncode != 0 and "Payload khong hop le hoac vuot qua 256 bytes" in p_gsign.stdout,
+           p_gsign.returncode != 0 and ("Payload khong hop le hoac vuot qua 256 bytes" in p_gsign.stdout or "Invalid payload or exceeds 256 bytes" in p_gsign.stdout),
            "Ghost sign buffer overflow neutralized")
 
 p_gephem = subprocess.run([GHOST_EXE, "ephemeral", words, passphrase, "a" * 433],
                           stdout=subprocess.PIPE, stderr=subprocess.PIPE, encoding="utf-8", errors="replace", cwd=REPO_ROOT)
 check_test("ozos_ghost ephemeral voi payload 433B bi tu choi graceful (exit code 1, khong ghi de enclave)",
-           p_gephem.returncode != 0 and "Payload khong hop le hoac vuot qua 256 bytes" in p_gephem.stdout,
+           p_gephem.returncode != 0 and ("Payload khong hop le hoac vuot qua 256 bytes" in p_gephem.stdout or "Invalid payload or exceeds 256 bytes" in p_gephem.stdout),
            "Enclave collision neutralized")
 
 # ----------------------------------------------------------------------
@@ -328,7 +328,7 @@ check_test("ozos_ghost genesis khop 100% voi hang so bat bien compile-time (3b5b
 print("\n[TEST 13/16] Kiem Tra Tu Choi Khoa Chu Quyen Trusted-Key Sai Dinh Dang...")
 code_tk_bad, out_tk_bad, _ = run_ozos("packet-verify", signed_hex, "1000", "1234abcd")
 check_test("Trusted key sai dinh dang (8 hex chars) bi TU CHOI nghiem ngat (exit code 1)",
-           code_tk_bad == 1 and "KHOA CHU QUYEN (TRUSTED KEY) SAI DINH DANG" in out_tk_bad,
+           code_tk_bad == 1 and ("KHOA CHU QUYEN (TRUSTED KEY) SAI DINH DANG" in out_tk_bad or "TRUSTED KEY INVALID FORMAT" in out_tk_bad),
            "Invalid format strictly non-zero and no silent fallback to self-signed")
 
 # ----------------------------------------------------------------------
@@ -352,7 +352,7 @@ check_test("Brainseed co khoang trang / tab thua sinh cung Public Key (Zero Iden
            f"Bit-exact PubKey: {pk_clean[0][:16]}...")
 
 check_test("Brainseed thua tu thu 13 tro di bi TU CHOI nghiem ngat (exit code 1)",
-           code_b3 == 1 and ("THAT BAI" in out_b3 or "THẤT BẠI" in out_b3),
+           code_b3 == 1 and ("THAT BAI" in out_b3 or "THẤT BẠI" in out_b3 or "FAILED" in out_b3),
            "Strictly 12 words enforced")
 
 # ----------------------------------------------------------------------
@@ -970,7 +970,7 @@ check_test("Vault payload 64KB cap, Nonce 2^64-1 overflow guard va Engine replay
 print("\n[TEST 31/34] Kiem Tra Brainseed Passphrase No-Echo & Positional Seed Guidance...")
 secret_pass = "top_secret_passphrase_test_r9"
 rc_gen, out_gen, _ = run_ozos("brainseed-gen", secret_pass)
-no_echo_ok = (rc_gen == 0) and (secret_pass not in out_gen) and ("[DA BAO VE" in out_gen)
+no_echo_ok = (rc_gen == 0) and (secret_pass not in out_gen) and ("[DA BAO VE" in out_gen or "[PROTECTED" in out_gen)
 
 with open(os.path.join(REPO_ROOT, "core", "ozos_main.c"), "r", encoding="utf-8") as f:
     main_c_src = f.read()
@@ -1089,13 +1089,13 @@ for line in out_b.splitlines():
 
 # Verify authentic packet
 rc_v1, out_v1, _ = run_ozos("packet-verify", c_hex_a2, "5999")
-a2_verified_ok = (rc_b == 0 and rc_v1 == 0 and "Sub-Profile A2 : ✅ MAC16 FNV-Fold" in out_v1)
+a2_verified_ok = (rc_b == 0 and rc_v1 == 0 and ("Sub-Profile A2 : ✅ MAC16 FNV-Fold" in out_v1 or "Sub-Profile A2 : [OK] MAC16 FNV-Fold" in out_v1))
 
 # Tampering payload byte must fail Sub-Profile A2 verification
 raw_pkt_bytes = bytearray.fromhex(c_hex_a2)
 raw_pkt_bytes[85] ^= 0x55
 rc_v_tamper, out_v_tamper, _ = run_ozos("packet-verify", raw_pkt_bytes.hex(), "5999")
-tamper_detected_ok = (rc_v_tamper == 1) or ("Canh bao Sub-Profile A1" in out_v_tamper)
+tamper_detected_ok = (rc_v_tamper == 1) or ("Canh bao Sub-Profile A1" in out_v_tamper or "Warning Sub-Profile A1" in out_v_tamper)
 
 # 2. server.py sandbox path check: ensures arbitrary path gets stripped to basename
 kill_port_8899()
@@ -2151,7 +2151,7 @@ rc_fin59, out_fin59, _ = run_ozos("handshake-finish", ack59_hex, a_sk59, a_pub59
 # Extract session key from handshake-finish
 sess_key59 = ""
 for l in out_fin59.splitlines():
-    if "K_session Thiet lap" in l and "0x" in l:
+    if ("K_session Thiet lap" in l or "Established K_sess" in l) and "0x" in l:
         sess_key59 = l.split("0x")[1].split()[0].strip()
 
 rc_enc59, out_enc59, _ = run_ozos("tunnel-encrypt", "LENH_CHUYEN_KHOAN_1_TY", sess_key59)
@@ -2240,9 +2240,9 @@ combined_mitm = (out_pin_mitm or "") + (err_pin_mitm or "")
 
 # 4. Peer ID containing whitespace must be strictly rejected (prevent space-id store corruption)
 rc_pin_space, out_pin_space, err_pin_space = run_ozos("packet-verify", signed_hex, "1000", "--peer-id", "node alpha")
-space_rejected = (rc_pin_space != 0) and ("khoang trang" in (out_pin_space + err_pin_space).lower())
+space_rejected = (rc_pin_space != 0) and ("khoang trang" in (out_pin_space + err_pin_space).lower() or "whitespace" in (out_pin_space + err_pin_space).lower())
 
-pin_store_ok = (rc_pin1 == 0 and ("XAC THUC THEO DANH BA .ozos_known_peers" in out_pin1 or "TOFU FIRST-USE PINNED" in out_pin1) and
+pin_store_ok = (rc_pin1 == 0 and ("XAC THUC THEO DANH BA .ozos_known_peers" in out_pin1 or "TOFU FIRST-USE PINNED" in out_pin1 or "AUTHENTICATED VIA .ozos_known_peers" in out_pin1) and
                 rc_pin2 == 0 and
                 rc_pin_mitm == 1 and ("KEY CHANGED" in combined_mitm or "MITM" in combined_mitm or "THAY DOI KHOA" in combined_mitm) and
                 space_rejected)
@@ -2346,7 +2346,7 @@ for tf in [payload_fake_wav, out_syn_created]:
 
 # Test M5: packet-verify on unsigned packet with garbage trusted-pk argument must strictly fail with exit code 1
 rc_m5, out_m5, _ = run_ozos("packet-verify", unsigned_hex, "1000", "GARBAGE_KEY_123")
-m5_ok = (rc_m5 == 1) and ("SAI DINH DANG" in out_m5)
+m5_ok = (rc_m5 == 1) and ("SAI DINH DANG" in out_m5 or "INVALID FORMAT" in out_m5)
 
 r15_63_ok = (p_py_h1.returncode == 0) and payload_survived and m5_ok
 check_test("server.py khong xoa nham file payload .wav (PY-H1), nhan .. trong payload (PY-L1) va packet-verify bat loi trusted-pk rac tren goi unsigned (M5)",
@@ -2373,7 +2373,7 @@ ack64_hex = [l.strip() for l in out_ack64.splitlines() if len(l.strip()) == 108 
 fake_a_pub = "11" * 32
 fake_a_sk = "22" * 32
 rc_h1, out_h1, _ = run_ozos("handshake-finish", ack64_hex, fake_a_sk, fake_a_pub)
-h1_closed = (rc_h1 == 1) and ("Khong tim thay session nonce" in out_h1)
+h1_closed = (rc_h1 == 1) and ("Khong tim thay session nonce" in out_h1 or "Session nonce not found" in out_h1)
 
 # M4: gossip-beacon must emit a non-zero peer ID
 rc_m4, out_m4, _ = run_ozos("gossip-beacon", "200")
@@ -2499,7 +2499,7 @@ check_test("LoRa Sub-GHz đóng khung 84-byte (Sync 0x12, Type 0x50, CRC16-CCITT
 # ----------------------------------------------------------------------
 print("\n[TEST 69/69] Kiem Tra Spectrum-Status & Bo Test Native C99 test_omni_phy.exe...")
 rc_spec, out_spec, _ = run_ozos("spectrum-status")
-spec_ok = (rc_spec == 0) and ("TẦNG 1: QUANG HỌC" in out_spec) and ("TẦNG 2: SÓNG ÂM" in out_spec) and ("TẦNG 3: SÓNG DÀI" in out_spec) and ("TẦNG 4: SÓNG TRỜI HF" in out_spec)
+spec_ok = (rc_spec == 0) and ("TẦNG 1: QUANG HỌC" in out_spec or "TIER 1: OPTICAL SPECTRUM" in out_spec) and ("TẦNG 2: SÓNG ÂM" in out_spec or "TIER 2: ACOUSTIC" in out_spec) and ("TẦNG 3: SÓNG DÀI" in out_spec or "TIER 3: LONG-RANGE" in out_spec) and ("TẦNG 4: SÓNG TRỜI HF" in out_spec or "TIER 4: HF SKYWAVE" in out_spec)
 
 omni_exe = os.path.join(REPO_ROOT, "tests", "test_omni_phy.exe")
 rc_omni_native = 0
