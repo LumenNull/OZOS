@@ -257,7 +257,7 @@ Following exhaustive 10-round adversarial Red Team audits, the operational bound
 
 ### 4. Canonical Distribution, Upgrade Guidance & N-Day Advisory
 * **Authoritative Source & Provenance Disclosure:** The canonical repository for O.Z.O.S is strictly `https://github.com/LumenNull/OZOS.git`. All development commits on `main` and current repository states are distributed as standard unsigned git commits authored by `LumenNull <350623492+LumenNull@users.noreply.github.com>`. Formal detached Ed25519 signatures and cryptographic release manifests are planned for future milestone releases; consumers must not assume detached signatures are present on intermediate development commits.
-* **Binary Provenance & SHA-256 Pinning:** All shipped WebAssembly modules (`zero_dct.wasm`) must match the pinned SHA-256 hash `d7924fedcda753e0b9eefdaf779eb657f67fba50da96472dc98c92b393d7b4a3`. Verify locally via:
+* **Binary Provenance & SHA-256 Pinning:** All shipped WebAssembly modules (`zero_dct.wasm`) must match the pinned SHA-256 hash `ea26872f8c14523bb3d823c4eca16dcae96c6a11f1be24bea75081c75b5f7a4e`. Verify locally via:
   ```bash
   sha256sum contrib/web-cockpit/zero_dct.wasm core/zero_dct.wasm
   ```

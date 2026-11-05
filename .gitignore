@@ -79,3 +79,6 @@ $RECYCLE.BIN/
 100
 *.tmp
 *.log
+
+.ozos_syn_state
+**/.ozos_syn_state

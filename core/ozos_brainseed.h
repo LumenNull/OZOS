@@ -1,7 +1,9 @@
 #ifndef OZOS_BRAINSEED_H
 #define OZOS_BRAINSEED_H
 
+#ifndef _CRT_SECURE_NO_WARNINGS
 #define _CRT_SECURE_NO_WARNINGS
+#endif
 
 #define OZOS_MAX_PASSPHRASE_LEN 500
 
@@ -116,6 +118,12 @@ static inline void ozos_sha256_single_block(const uint8_t in16[16], uint8_t out3
 /*   HMAC-SHA512 & PBKDF2 (RFC 2898 / BIP-39) - 100% STACK MEMORY           */
 /* ========================================================================= */
 
+static inline void ozos_brainseed_zeroize(void* ptr, size_t len) {
+    if (!ptr || len == 0) return;
+    volatile uint8_t* p = (volatile uint8_t*)ptr;
+    for (size_t i = 0; i < len; ++i) p[i] = 0x00U;
+}
+
 static inline void ozos_hmac_sha512(
     uint8_t out[64],
     const uint8_t* key, size_t key_len,
@@ -150,6 +158,13 @@ static inline void ozos_hmac_sha512(
     memcpy(outer_buf + 128, inner_hash, 64);
 
     crypto_hash(out, outer_buf, 128 + 64);
+
+    ozos_brainseed_zeroize(k0, sizeof(k0));
+    ozos_brainseed_zeroize(ipad, sizeof(ipad));
+    ozos_brainseed_zeroize(opad, sizeof(opad));
+    ozos_brainseed_zeroize(inner_buf, 128 + copy_len);
+    ozos_brainseed_zeroize(inner_hash, sizeof(inner_hash));
+    ozos_brainseed_zeroize(outer_buf, sizeof(outer_buf));
 }
 
 static inline void ozos_pbkdf2_sha512_bip39(
@@ -182,8 +197,8 @@ static inline void ozos_pbkdf2_sha512_bip39(
     memcpy(t, u, 64);
 
     /* 2048 rounds of PBKDF2 */
+    uint8_t u_next[64];
     for (int iter = 1; iter < 2048; ++iter) {
-        uint8_t u_next[64];
         ozos_hmac_sha512(u_next, (const uint8_t*)mnemonic, pwd_len, u, 64);
         for (int i = 0; i < 64; ++i) {
             t[i] ^= u_next[i];
@@ -192,6 +207,12 @@ static inline void ozos_pbkdf2_sha512_bip39(
     }
 
     memcpy(out64, t, 64);
+
+    ozos_brainseed_zeroize(salt, sizeof(salt));
+    ozos_brainseed_zeroize(salt_block, salt_len + 4);
+    ozos_brainseed_zeroize(u, sizeof(u));
+    ozos_brainseed_zeroize(u_next, sizeof(u_next));
+    ozos_brainseed_zeroize(t, sizeof(t));
 }
 
 /* ========================================================================= */
@@ -240,7 +261,12 @@ static inline bool ozos_brainseed_generate_ex(
     mnemonic_out[0] = '\0';
     for (int i = 0; i < 12; ++i) {
         uint16_t idx = word_indices[i];
-        if (idx >= 2048) return false;
+        if (idx >= 2048) {
+            ozos_brainseed_zeroize(hash, sizeof(hash));
+            ozos_brainseed_zeroize(bits132, sizeof(bits132));
+            ozos_brainseed_zeroize(word_indices, sizeof(word_indices));
+            return false;
+        }
         strcat(mnemonic_out, ozos_bip39_wordlist[idx]);
         if (i < 11) strcat(mnemonic_out, " ");
     }
@@ -250,8 +276,12 @@ static inline bool ozos_brainseed_generate_ex(
         uint8_t seed64[64];
         ozos_pbkdf2_sha512_bip39(seed64, mnemonic_out, passphrase ? passphrase : "");
         memcpy(seed32_out, seed64, 32);
+        ozos_brainseed_zeroize(seed64, sizeof(seed64));
     }
 
+    ozos_brainseed_zeroize(hash, sizeof(hash));
+    ozos_brainseed_zeroize(bits132, sizeof(bits132));
+    ozos_brainseed_zeroize(word_indices, sizeof(word_indices));
     return true;
 }
 
@@ -275,20 +305,33 @@ static inline bool ozos_brainseed_restore(
     if (!seed32_out || !mnemonic_str) return false;
     if (passphrase && strlen(passphrase) > OZOS_MAX_PASSPHRASE_LEN) return false;
 
-    /* Tách 12 từ */
+    /* Tách 12 từ an toàn luồng (Reentrant, không dùng strtok static state) */
     char copy[512];
     strncpy(copy, mnemonic_str, sizeof(copy) - 1);
     copy[sizeof(copy) - 1] = '\0';
 
     char* words[12];
     int count = 0;
-    char* token = strtok(copy, " \t\r\n");
-    while (token && count < 12) {
-        words[count++] = token;
-        token = strtok(NULL, " \t\r\n");
+    char* p = copy;
+    while (*p != '\0') {
+        while (*p == ' ' || *p == '\t' || *p == '\r' || *p == '\n') {
+            *p++ = '\0';
+        }
+        if (*p == '\0') break;
+        if (count >= 12) {
+            /* Nghiêm ngặt: Thừa từ thứ 13 trở đi -> Bị từ chối và xóa sạch stack */
+            ozos_brainseed_zeroize(copy, sizeof(copy));
+            return false;
+        }
+        words[count++] = p;
+        while (*p != '\0' && *p != ' ' && *p != '\t' && *p != '\r' && *p != '\n') {
+            ++p;
+        }
     }
-    if (count != 12) return false; /* Bắt buộc đúng 12 từ */
-    if (token != NULL) return false; /* Nghiêm ngặt: Thừa từ thứ 13 trở đi -> Bị từ chối */
+    if (count != 12) {
+        ozos_brainseed_zeroize(copy, sizeof(copy));
+        return false; /* Bắt buộc đúng 12 từ */
+    }
 
     /* Tìm index của từng từ trong từ điển BIP-39 */
     uint16_t indices[12];
@@ -300,7 +343,11 @@ static inline bool ozos_brainseed_restore(
                 break;
             }
         }
-        if (found < 0) return false; /* Từ không thuộc chuẩn BIP-39 */
+        if (found < 0) {
+            ozos_brainseed_zeroize(copy, sizeof(copy));
+            ozos_brainseed_zeroize(indices, sizeof(indices));
+            return false; /* Từ không thuộc chuẩn BIP-39 */
+        }
         indices[i] = (uint16_t)found;
     }
 
@@ -329,6 +376,11 @@ static inline bool ozos_brainseed_restore(
     uint8_t expected_checksum = (hash[0] >> 4) & 0x0F;
 
     if (provided_checksum != expected_checksum) {
+        ozos_brainseed_zeroize(copy, sizeof(copy));
+        ozos_brainseed_zeroize(indices, sizeof(indices));
+        ozos_brainseed_zeroize(entropy, sizeof(entropy));
+        ozos_brainseed_zeroize(bits132, sizeof(bits132));
+        ozos_brainseed_zeroize(hash, sizeof(hash));
         return false; /* Sai checksum -> người dùng gõ nhầm từ */
     }
 
@@ -344,6 +396,13 @@ static inline bool ozos_brainseed_restore(
     ozos_pbkdf2_sha512_bip39(seed64, normalized_mnemonic, passphrase ? passphrase : "");
     memcpy(seed32_out, seed64, 32);
 
+    ozos_brainseed_zeroize(copy, sizeof(copy));
+    ozos_brainseed_zeroize(indices, sizeof(indices));
+    ozos_brainseed_zeroize(entropy, sizeof(entropy));
+    ozos_brainseed_zeroize(bits132, sizeof(bits132));
+    ozos_brainseed_zeroize(hash, sizeof(hash));
+    ozos_brainseed_zeroize(normalized_mnemonic, sizeof(normalized_mnemonic));
+    ozos_brainseed_zeroize(seed64, sizeof(seed64));
     return true;
 }
 

@@ -265,6 +265,8 @@ OZOS_INLINE void ozos_packet_seal_a2(
 
 /**
  * Dong goi hoan chinh khung du lieu bao gom ca Header lan Payload voi Sub-Profile A2 mac dinh.
+ * Invariant: Khi payload_len > 0, header_mac16 luon duoc niem phong bang Sub-Profile A2 (FNV-1a-64 Fold)
+ * voi secret_seed (hoac hang so cong khai OZOS_A2_DOMAIN_CONSTANT = 0xA5A5A5A5ULL neu secret_seed == 0).
  */
 OZOS_INLINE void ozos_packet_build_frame(
     uint8_t* frame_buffer,
@@ -277,8 +279,10 @@ OZOS_INLINE void ozos_packet_build_frame(
     if (!frame_buffer) return;
     ozos_packet80_t* pkt = (ozos_packet80_t*)frame_buffer;
     ozos_packet_build(pkt, nonce, coeffs, payload_len);
-    if (payload && payload_len > 0) {
-        memcpy(frame_buffer + OZOS_PACKET_HEADER_SIZE, payload, payload_len);
+    if (payload_len > 0) {
+        if (payload && payload != (frame_buffer + OZOS_PACKET_HEADER_SIZE)) {
+            memcpy(frame_buffer + OZOS_PACKET_HEADER_SIZE, payload, payload_len);
+        }
         ozos_packet_seal_a2(frame_buffer, payload_len, (secret_seed != 0) ? secret_seed : OZOS_A2_DOMAIN_CONSTANT);
     }
 }

@@ -128,10 +128,10 @@ def validate_aligned_packet(packet_bytes, last_seen_nonce=0, secret_seed=0xA5A5A
     if last_seen_nonce is None:
         return False, "last_seen_nonce không được là None", None
     if not isinstance(last_seen_nonce, int):
-        if isinstance(last_seen_nonce, str) and last_seen_nonce.isdigit():
+        if isinstance(last_seen_nonce, str) and len(last_seen_nonce) > 0 and all('0' <= c <= '9' for c in last_seen_nonce):
             last_seen_nonce = int(last_seen_nonce)
         else:
-            return False, f"last_seen_nonce không hợp lệ: {last_seen_nonce!r}", None
+            return False, f"last_seen_nonce không hợp lệ (chỉ chấp nhận chữ số ASCII 0-9): {last_seen_nonce!r}", None
     if last_seen_nonce < 0 or last_seen_nonce > 0xFFFFFFFFFFFFFFFF:
         return False, f"last_seen_nonce nằm ngoài phạm vi 64-bit [0, 2^64-1]: {last_seen_nonce}", None
 
@@ -240,64 +240,188 @@ def cmd_packet_verify(args):
         print(f"\n{C_RED}{C_BOLD}[XÁC THỰC THẤT BÀI]: {reason}{C_RESET}")
         sys.exit(1)
 
-def cmd_stego_extract(args):
-    if not os.path.exists(args.image):
-        print(f"{C_RED}Tệp không tồn tại: {args.image}{C_RESET}")
-        return
+def _build_dct_basis():
+    T = np.zeros((8, 8), dtype=np.float64)
+    for u in range(8):
+        cu = (1.0 / math.sqrt(8.0)) if u == 0 else math.sqrt(2.0 / 8.0)
+        for x in range(8):
+            T[u, x] = cu * math.cos(((2 * x + 1) * u * math.pi) / 16.0)
+    return T
 
-    print(f"\n{C_BOLD}[2D-DCT] ĐANG PHÂN TÍCH QUANG PHỔ TẦN SỐ ẢNH: {args.image}{C_RESET}")
-    im = Image.open(args.image).convert('RGB')
-    data = np.array(im).flatten()
+_DCT_T = _build_dct_basis()
+_DCT_TT = _DCT_T.T
 
+def embed_2d_dct_watermark(image_path, payload_str, output_path, strength=18.0):
+    payload_bytes = payload_str.encode('utf-8')
+    if len(payload_bytes) > 255:
+        raise ValueError("Payload thủy vân tối đa 255 bytes")
+    frame = bytes([0x5A, 0xA5, len(payload_bytes)]) + payload_bytes
     bits = []
-    for i in range(0, min(len(data), 32768), 16):
-        bits.append(data[i] & 1)
+    for byte_val in frame:
+        for b in range(7, -1, -1):
+            bits.append((byte_val >> b) & 1)
 
+    im = Image.open(image_path).convert('RGB')
+    arr = np.array(im, dtype=np.float64)
+    h, w, _ = arr.shape
+    bh, bw = h // 8, w // 8
+    if bh * bw < len(bits):
+        raise ValueError(f"Ảnh quá nhỏ để nhúng {len(bits)} bits (cần tối thiểu {len(bits)} khối 8x8)")
+
+    bit_idx = 0
+    for by in range(bh):
+        for bx in range(bw):
+            if bit_idx >= len(bits):
+                break
+            y0, x0 = by * 8, bx * 8
+            block_rgb = arr[y0:y0+8, x0:x0+8, :]
+            Y = 0.299 * block_rgb[:, :, 0] + 0.587 * block_rgb[:, :, 1] + 0.114 * block_rgb[:, :, 2] - 128.0
+            F = _DCT_T @ Y @ _DCT_TT
+            c1, c2 = F[3, 2], F[2, 3]
+            avg = 0.5 * (c1 + c2)
+            if bits[bit_idx] == 1:
+                if c1 - c2 < strength:
+                    F[3, 2] = avg + strength * 0.6
+                    F[2, 3] = avg - strength * 0.6
+            else:
+                if c2 - c1 < strength:
+                    F[3, 2] = avg - strength * 0.6
+                    F[2, 3] = avg + strength * 0.6
+            Y_mod = (_DCT_TT @ F @ _DCT_T) + 128.0
+            delta = Y_mod - (Y + 128.0)
+            for c in range(3):
+                arr[y0:y0+8, x0:x0+8, c] = np.clip(block_rgb[:, :, c] + delta, 0, 255)
+            bit_idx += 1
+        if bit_idx >= len(bits):
+            break
+
+    out_im = Image.fromarray(arr.astype(np.uint8), 'RGB')
+    out_im.save(output_path)
+
+def _bits_to_bytes(bits):
     raw_bytes = bytearray()
     for i in range(0, len(bits) - 7, 8):
         byte_val = 0
         for b in range(8):
             byte_val = (byte_val << 1) | bits[i + b]
         raw_bytes.append(byte_val)
+    return raw_bytes
 
-    if len(raw_bytes) > 3 and raw_bytes[0] == 0x5A and raw_bytes[1] == 0xA5:
-        p_len = raw_bytes[2]
-        payload = raw_bytes[3:3+p_len].decode('utf-8', errors='replace')
+def extract_2d_dct_watermark_bytes(im):
+    arr = np.array(im.convert('RGB'), dtype=np.float64)
+    h, w, _ = arr.shape
+    bh, bw = h // 8, w // 8
+    dct_bits = []
+    max_blocks = min(bh * bw, 2064)
+    count = 0
+    for by in range(bh):
+        for bx in range(bw):
+            if count >= max_blocks:
+                break
+            y0, x0 = by * 8, bx * 8
+            block_rgb = arr[y0:y0+8, x0:x0+8, :]
+            Y = 0.299 * block_rgb[:, :, 0] + 0.587 * block_rgb[:, :, 1] + 0.114 * block_rgb[:, :, 2] - 128.0
+            F = _DCT_T @ Y @ _DCT_TT
+            dct_bits.append(1 if F[3, 2] > F[2, 3] else 0)
+            count += 1
+        if count >= max_blocks:
+            break
+    dct_bytes = _bits_to_bytes(dct_bits)
+    if len(dct_bytes) >= 3 and dct_bytes[0] == 0x5A and dct_bytes[1] == 0xA5:
+        p_len = dct_bytes[2]
+        if 3 + p_len <= len(dct_bytes):
+            return bytes(dct_bytes[3:3+p_len])
+
+    # Fallback check for legacy LSB stride-16 test fixtures ONLY if 0x5A 0xA5 magic is present
+    flat = np.array(im.convert('RGB')).flatten()
+    lsb_bits = [int(flat[i] & 1) for i in range(0, min(len(flat), 32768), 16)]
+    lsb_bytes = _bits_to_bytes(lsb_bits)
+    if len(lsb_bytes) >= 3 and lsb_bytes[0] == 0x5A and lsb_bytes[1] == 0xA5:
+        p_len = lsb_bytes[2]
+        if 3 + p_len <= len(lsb_bytes):
+            return bytes(lsb_bytes[3:3+p_len])
+
+    return None
+
+def cmd_stego_embed(args):
+    if not os.path.exists(args.image):
+        print(f"{C_RED}Tệp không tồn tại: {args.image}{C_RESET}")
+        sys.exit(1)
+    embed_2d_dct_watermark(args.image, args.payload, args.output)
+    print(f"{C_GREEN}{C_BOLD}[2D-DCT STEGO EMBED THÀNH CÔNG]: {args.output}{C_RESET}")
+
+def cmd_stego_extract(args):
+    if not os.path.exists(args.image):
+        print(f"{C_RED}Tệp không tồn tại: {args.image}{C_RESET}")
+        sys.exit(1)
+
+    print(f"\n{C_BOLD}[2D-DCT] ĐANG PHÂN TÍCH QUANG PHỔ TẦN SỐ ẢNH: {args.image}{C_RESET}")
+    im = Image.open(args.image).convert('RGB')
+    extracted = extract_2d_dct_watermark_bytes(im)
+
+    if extracted is not None:
+        payload = extracted.decode('utf-8', errors='replace')
         print(f"{C_GREEN}{C_BOLD}[CHỨNG CỨ BÓC TÁCH THÀNH CÔNG]:{C_RESET}")
         print(f"  -> \"{C_AMBER}{payload}{C_RESET}\"")
     else:
-        # Fallback Q75 signature
-        print(f"{C_GREEN}{C_BOLD}[CHỨNG CỨ BÓC TÁCH THÀNH CÔNG (MA TRẬN Q75)]:{C_RESET}")
-        print(f"  -> \"{C_AMBER}SOVEREIGN HOLDER: LUMEN NULL | ID: 000000000000 | O.Z.O.S-SECURE{C_RESET}\"")
+        print(f"{C_RED}{C_BOLD}[KHÔNG TÌM THẤY THỦY VÂN HỢP LỆ]: Không phát hiện Magic Header 0x5AA5 trên phổ 2D-DCT 8x8.{C_RESET}")
+        sys.exit(1)
+
+def _hann_env(i, total, ramp):
+    if ramp <= 0:
+        return 1.0
+    if i < ramp:
+        return 0.5 * (1.0 - math.cos(math.pi * i / ramp))
+    if i >= total - ramp:
+        rem = total - 1 - i
+        return 0.5 * (1.0 - math.cos(math.pi * rem / ramp))
+    return 1.0
 
 def cmd_audio_synth(args):
     print(f"\n{C_BOLD}[AUDIO FSK] ĐANG TỔNG HỢP SÓNG ÂM VÀO TỆP: {args.output}{C_RESET}")
-    packet, _ = build_aligned_packet(args.payload)
+    text_bytes = args.payload.encode('utf-8')
+    if len(text_bytes) > 1024:
+        print(f"{C_RED}Lỗi: Dữ liệu âm thanh tối đa 1024 bytes.{C_RESET}")
+        sys.exit(1)
 
+    stealth = getattr(args, "mode", "stealth") != "audible"
     sample_rate = 44100
-    tone_dur = 0.045
-    preamble_dur = 0.12
+    tone_dur = 0.040
+    pre_dur = 0.040
+    samples_per_tone = int(sample_rate * tone_dur)
+    samples_pre = int(sample_rate * pre_dur)
+    ramp = int(sample_rate * 0.005)
+
+    pre_lo = 17900.0 if stealth else 1200.0
+    pre_hi = 19900.0 if stealth else 1400.0
 
     tones = []
-    # 1. Preamble 3400 Hz
-    num_samples = int(sample_rate * preamble_dur)
-    for i in range(num_samples):
-        val = math.sin(2 * math.pi * 3400 * (i / sample_rate)) * 0.5
-        tones.append(int(val * 32767))
+    # 1. Preamble (40ms dual-tone matching native C engine)
+    for i in range(samples_pre):
+        t = i / sample_rate
+        s = 0.4 * (math.sin(2.0 * math.pi * pre_lo * t) + math.sin(2.0 * math.pi * pre_hi * t)) * _hann_env(i, samples_pre, ramp)
+        tones.append(int(max(-32767, min(32767, s * 32767.0))))
 
-    # 2. Data bytes
-    for b in packet:
-        freq = 1000 + (b * 8)
-        num_samples = int(sample_rate * tone_dur)
-        for i in range(num_samples):
-            val = math.sin(2 * math.pi * freq * (i / sample_rate)) * 0.4
-            tones.append(int(val * 32767))
+    # 2. Data bytes (Dual-Nibble 16-FSK matching native C engine)
+    for b in text_bytes:
+        low_nib = b & 0x0F
+        high_nib = (b >> 4) & 0x0F
+        if stealth:
+            f_low = 18100.0 + low_nib * 50.0
+            f_high = 19000.0 + high_nib * 50.0
+        else:
+            f_low = 1600.0 + low_nib * 60.0
+            f_high = 2800.0 + high_nib * 60.0
+        for i in range(samples_per_tone):
+            t = i / sample_rate
+            s = 0.45 * (math.sin(2.0 * math.pi * f_low * t) + math.sin(2.0 * math.pi * f_high * t)) * _hann_env(i, samples_per_tone, ramp)
+            tones.append(int(max(-32767, min(32767, s * 32767.0))))
 
-    # 3. Postamble 3600 Hz
-    num_samples = int(sample_rate * preamble_dur)
-    for i in range(num_samples):
-        val = math.sin(2 * math.pi * 3600 * (i / sample_rate)) * 0.5
-        tones.append(int(val * 32767))
+    # 3. Postamble (40ms dual-tone matching native C engine)
+    for i in range(samples_pre):
+        t = i / sample_rate
+        s = 0.4 * (math.sin(2.0 * math.pi * pre_lo * t) + math.sin(2.0 * math.pi * pre_hi * t)) * _hann_env(i, samples_pre, ramp)
+        tones.append(int(max(-32767, min(32767, s * 32767.0))))
 
     with wave.open(args.output, 'w') as wf:
         wf.setnchannels(1)
@@ -306,7 +430,7 @@ def cmd_audio_synth(args):
         raw_audio = struct.pack(f"<{len(tones)}h", *tones)
         wf.writeframes(raw_audio)
 
-    print(f"{C_GREEN}  -> Đã ghi tệp WAV âm thanh FSK ({len(tones)/sample_rate:.2f} giây).{C_RESET}")
+    print(f"{C_GREEN}  -> Đã ghi tệp WAV âm thanh Dual-Nibble 16-FSK ({len(tones)/sample_rate:.2f} giây).{C_RESET}")
 
 def main():
     print_banner()
@@ -326,6 +450,12 @@ def main():
     p_ver.add_argument("--data", required=True, help="Chuỗi Base64 hoặc Hex")
     p_ver.add_argument("--last-nonce", type=int, default=0, help="Nonce ghi nhận gần nhất")
 
+    # stego embed
+    p_embed = subparsers.add_parser("stego-embed", help="Nhúng thủy vân 2D-DCT vào ảnh")
+    p_embed.add_argument("--image", required=True, help="Đường dẫn tệp ảnh gốc")
+    p_embed.add_argument("--payload", required=True, help="Nội dung thủy vân")
+    p_embed.add_argument("--output", required=True, help="Đường dẫn tệp ảnh đầu ra")
+
     # stego extract
     p_stego = subparsers.add_parser("stego-extract", help="Bóc tách thủy vân 2D-DCT từ ảnh")
     p_stego.add_argument("--image", required=True, help="Đường dẫn tệp ảnh")
@@ -334,6 +464,7 @@ def main():
     p_audio = subparsers.add_parser("audio-synth", help="Tổng hợp tệp sóng âm FSK")
     p_audio.add_argument("--payload", default="O.Z.O.S-DATA-AIR-GAP", help="Dữ liệu cần truyền")
     p_audio.add_argument("--output", default="ozos_fsk_transmission.wav", help="Tên tệp WAV đầu ra")
+    p_audio.add_argument("--mode", choices=["stealth", "audible"], default="stealth", help="Chế độ sóng âm")
 
     args = parser.parse_args()
 
@@ -343,6 +474,8 @@ def main():
         cmd_packet_build(args)
     elif args.command == "packet-verify":
         cmd_packet_verify(args)
+    elif args.command == "stego-embed":
+        cmd_stego_embed(args)
     elif args.command == "stego-extract":
         cmd_stego_extract(args)
     elif args.command == "audio-synth":

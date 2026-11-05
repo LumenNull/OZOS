@@ -12,6 +12,7 @@
 #include <string.h>
 #include <stdint.h>
 #include <stdbool.h>
+#include <errno.h>
 
 #include "libozos.h"
 #include "ozos_crypto.h"
@@ -29,8 +30,15 @@ static void hex_dump_compact(const uint8_t* data, size_t len) {
 }
 
 static bool parse_hex_to_bytes(const char* hex, uint8_t* out, size_t max_len, size_t* out_len) {
+    if (!hex) return false;
     size_t hex_len = strlen(hex);
-    if (hex_len % 2 != 0 || (hex_len / 2) > max_len) return false;
+    if (hex_len == 0 || hex_len % 2 != 0 || (hex_len / 2) > max_len) return false;
+    for (size_t i = 0; i < hex_len; i++) {
+        char c = hex[i];
+        if (!((c >= '0' && c <= '9') || (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F'))) {
+            return false;
+        }
+    }
     *out_len = hex_len / 2;
     for (size_t i = 0; i < *out_len; i++) {
         unsigned int b;
@@ -40,9 +48,85 @@ static bool parse_hex_to_bytes(const char* hex, uint8_t* out, size_t max_len, si
     return true;
 }
 
+static bool ghost_parse_strict_u32(const char* str, uint32_t* out) {
+    if (!str || *str == '\0') return false;
+    for (const char* p = str; *p != '\0'; ++p) {
+        if (*p < '0' || *p > '9') return false;
+    }
+    errno = 0;
+    char* endptr = NULL;
+    unsigned long long v = strtoull(str, &endptr, 10);
+    if (errno == ERANGE || !endptr || *endptr != '\0' || v > 0xFFFFFFFFULL) return false;
+    *out = (uint32_t)v;
+    return true;
+}
+
+static bool ghost_parse_strict_hex_u64(const char* str, uint64_t* out) {
+    if (!str || *str == '\0') return false;
+    const char* s = str;
+    if (s[0] == '0' && (s[1] == 'x' || s[1] == 'X')) s += 2;
+    if (*s == '\0' || strlen(s) > 16) return false;
+    for (const char* p = s; *p != '\0'; ++p) {
+        char c = *p;
+        if (!((c >= '0' && c <= '9') || (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F'))) return false;
+    }
+    errno = 0;
+    char* endptr = NULL;
+    unsigned long long v = strtoull(s, &endptr, 16);
+    if (errno == ERANGE || !endptr || *endptr != '\0') return false;
+    *out = (uint64_t)v;
+    return true;
+}
+
 #ifndef OZOS_GIT_COMMIT_HASH
-#define OZOS_GIT_COMMIT_HASH "b517dc5"
+#define OZOS_GIT_COMMIT_HASH "0ff9186"
 #endif
+#ifndef OZOS_WASM_PIN_SHA256
+#define OZOS_WASM_PIN_SHA256 "ea26872f8c14523bb3d823c4eca16dcae96c6a11f1be24bea75081c75b5f7a4e"
+#endif
+
+static const char* ozos_ghost_get_git_commit(void) {
+    static char commit_buf[16] = {0};
+    if (commit_buf[0] != '\0') return commit_buf;
+    const char* git_dirs[] = { ".git", "../.git", "../../.git" };
+    for (int d = 0; d < 3; ++d) {
+        char head_path[256];
+        snprintf(head_path, sizeof(head_path), "%s/HEAD", git_dirs[d]);
+        FILE* fh = fopen(head_path, "r");
+        if (!fh) continue;
+        char line[256] = {0};
+        if (fgets(line, sizeof(line), fh)) {
+            fclose(fh);
+            size_t l = strlen(line);
+            while (l > 0 && (line[l - 1] == '\n' || line[l - 1] == '\r' || line[l - 1] == ' ')) line[--l] = '\0';
+            if (strncmp(line, "ref: ", 5) == 0) {
+                char ref_path[512];
+                snprintf(ref_path, sizeof(ref_path), "%s/%s", git_dirs[d], line + 5);
+                FILE* fr = fopen(ref_path, "r");
+                if (fr) {
+                    char ref_hash[128] = {0};
+                    if (fgets(ref_hash, sizeof(ref_hash), fr)) {
+                        fclose(fr);
+                        if (strlen(ref_hash) >= 7) {
+                            memcpy(commit_buf, ref_hash, 7);
+                            commit_buf[7] = '\0';
+                            return commit_buf;
+                        }
+                    } else {
+                        fclose(fr);
+                    }
+                }
+            } else if (l >= 7) {
+                memcpy(commit_buf, line, 7);
+                commit_buf[7] = '\0';
+                return commit_buf;
+            }
+        } else {
+            fclose(fh);
+        }
+    }
+    return OZOS_GIT_COMMIT_HASH;
+}
 
 static bool g_ghost_allow_unpinned = false;
 static bool g_ghost_pinned_peer_set = false;
@@ -585,16 +669,24 @@ int main(int argc, char* argv[]) {
 
     /* VERSION: Output identity, release tag, and WASM pin */
     if (strcmp(cmd, "--version") == 0 || strcmp(cmd, "-v") == 0 || strcmp(cmd, "-V") == 0 || strcmp(cmd, "version") == 0) {
+        if (argc > 2) {
+            printf("[!] Unknown extra arguments for %s\n", cmd);
+            return 1;
+        }
         printf("O.Z.O.S Ghost Daemon v1.2.0 (Headless Sovereign Micro-Daemon)\n");
         printf("• Target         : C99 Bare-Metal Ephemeral Enclave\n");
-        printf("• Git Commit     : %s\n", OZOS_GIT_COMMIT_HASH);
-        printf("• Pinned WASM SHA: d7924fedcda753e0b9eefdaf779eb657f67fba50da96472dc98c92b393d7b4a3\n");
+        printf("• Git Commit     : %s\n", ozos_ghost_get_git_commit());
+        printf("• Pinned WASM SHA: %s\n", OZOS_WASM_PIN_SHA256);
         printf("• Canonical Repo : https://github.com/LumenNull/OZOS.git\n");
         return 0;
     }
 
     /* HELP: Output commands banner */
     if (strcmp(cmd, "--help") == 0 || strcmp(cmd, "-h") == 0 || strcmp(cmd, "help") == 0) {
+        if (argc > 2) {
+            printf("[!] Unknown extra arguments for %s\n", cmd);
+            return 1;
+        }
         printf("=================================================================\n");
         printf("  O.Z.O.S GHOST MICRO-DAEMON // HEADLESS SOVEREIGN ENGINE (C99)\n");
         printf("  [ INVISIBLE • INAUDIBLE • FORMLESS ]\n");
@@ -621,50 +713,61 @@ int main(int argc, char* argv[]) {
 
     /* GENESIS BLOCK: Inspect & Verify Immutable Historical Inscription */
     if (strcmp(cmd, "genesis") == 0 || strcmp(cmd, "genesis-block") == 0) {
+        if (argc > 2) { printf("[!] Unexpected arguments for %s\n", cmd); return 1; }
         bool ok = run_genesis_seal();
         return ok ? 0 : 1;
     }
 
     /* TORTURE TESTS: 4-Pillar Hardware, Silicon & Mathematical Torture Suite */
     if (strcmp(cmd, "torture") == 0 || strcmp(cmd, "torture-test") == 0) {
+        if (argc > 2) { printf("[!] Unexpected arguments for %s\n", cmd); return 1; }
         bool ok = ozos_torture_run_all();
         return ok ? 0 : 1;
     }
     if (strcmp(cmd, "torture-coldboot") == 0) {
+        if (argc > 2) { printf("[!] Unexpected arguments for %s\n", cmd); return 1; }
         bool ok = ozos_torture_cold_boot_test();
         return ok ? 0 : 1;
     }
     if (strcmp(cmd, "torture-dpa") == 0) {
+        if (argc > 2) { printf("[!] Unexpected arguments for %s\n", cmd); return 1; }
         bool ok = ozos_torture_dpa_test();
         return ok ? 0 : 1;
     }
     if (strcmp(cmd, "torture-intent") == 0) {
+        if (argc > 2) { printf("[!] Unexpected arguments for %s\n", cmd); return 1; }
         bool ok = ozos_torture_intent_injection_test();
         return ok ? 0 : 1;
     }
     if (strcmp(cmd, "torture-decap") == 0) {
+        if (argc > 2) { printf("[!] Unexpected arguments for %s\n", cmd); return 1; }
         bool ok = ozos_torture_decapitation_test();
         return ok ? 0 : 1;
     }
 
     /* COSMIC TESTS: 4 Cosmic & Existential Paradox Tests */
     if (strcmp(cmd, "cosmic") == 0 || strcmp(cmd, "cosmic-test") == 0) {
+        if (argc > 2) { printf("[!] Unexpected arguments for %s\n", cmd); return 1; }
         bool ok = ozos_cosmic_run_all();
         return ok ? 0 : 1;
     }
     if (strcmp(cmd, "cosmic-cage") == 0) {
+        if (argc > 2) { printf("[!] Unexpected arguments for %s\n", cmd); return 1; }
         bool ok = ozos_cosmic_matrix_cage_test();
         return ok ? 0 : 1;
     }
     if (strcmp(cmd, "cosmic-kelvin") == 0) {
+        if (argc > 2) { printf("[!] Unexpected arguments for %s\n", cmd); return 1; }
         bool ok = ozos_cosmic_zero_kelvin_puf_test();
         return ok ? 0 : 1;
     }
     if (strcmp(cmd, "cosmic-ray") == 0) {
+        if (argc > 2) { printf("[!] Unexpected arguments for %s\n", cmd); return 1; }
         bool ok = ozos_cosmic_ray_bitflip_test();
         return ok ? 0 : 1;
     }
     if (strcmp(cmd, "cosmic-creator") == 0) {
+        if (argc > 2) { printf("[!] Unexpected arguments for %s\n", cmd); return 1; }
         bool ok = ozos_cosmic_creator_paradox_test();
         return ok ? 0 : 1;
     }
@@ -672,10 +775,15 @@ int main(int argc, char* argv[]) {
     /* 0. DAEMON: Start background acoustic listener via native physical mic */
     if (strcmp(cmd, "daemon") == 0) {
         uint32_t timeout_sec = 0;
+        bool has_timeout = false;
         for (int i = 2; i < argc; ++i) {
             if (strcmp(argv[i], "--allow-unpinned") == 0) {
                 g_ghost_allow_unpinned = true;
             } else if (strcmp(argv[i], "--pinned-peer-pubkey") == 0) {
+                if (g_ghost_pinned_peer_set) {
+                    printf("[!] Duplicate --pinned-peer-pubkey flag.\n");
+                    return 1;
+                }
                 if (i + 1 < argc) {
                     const char* pk_hex = argv[++i];
                     size_t pk_len = 0;
@@ -689,10 +797,14 @@ int main(int argc, char* argv[]) {
                     printf("[!] Missing argument for --pinned-peer-pubkey\n");
                     return 1;
                 }
-            } else if (argv[i][0] != '-') {
-                timeout_sec = (uint32_t)strtoul(argv[i], NULL, 10);
+            } else if (argv[i][0] != '-' && !has_timeout) {
+                if (!ghost_parse_strict_u32(argv[i], &timeout_sec)) {
+                    printf("[!] Invalid daemon timeout_sec: '%s' (must be non-negative integer).\n", argv[i]);
+                    return 1;
+                }
+                has_timeout = true;
             } else {
-                printf("[!] Unknown argument or flag: %s\n", argv[i]);
+                printf("[!] Unknown or duplicate argument: %s\n", argv[i]);
                 return 1;
             }
         }
@@ -702,20 +814,38 @@ int main(int argc, char* argv[]) {
 
     /* 1. TEST-LOOPBACK: Automated in-RAM acoustic loopback test */
     if (strcmp(cmd, "test-loopback") == 0) {
+        if (argc > 2) { printf("[!] Unexpected arguments for %s\n", cmd); return 1; }
         bool ok = run_acoustic_loopback_test();
         return ok ? 0 : 1;
     }
 
     /* 1B. TEST-EPHEMERAL-LOCK: Audit locked RAM enclave & NIST SP 800-88 */
     if (strcmp(cmd, "test-ephemeral-lock") == 0) {
+        if (argc > 2) { printf("[!] Unexpected arguments for %s\n", cmd); return 1; }
         bool ok = run_ephemeral_enclave_test();
         return ok ? 0 : 1;
     }
 
     /* 2. BEACON: Emit inaudible 22-byte gossip beacon via speaker */
     if (strcmp(cmd, "beacon") == 0) {
-        uint32_t epoch = (argc >= 3) ? (uint32_t)strtoul(argv[2], NULL, 10) : 1;
-        uint64_t root  = (argc >= 4) ? (uint64_t)strtoull(argv[3], NULL, 16) : 0xA425E094C37260B6ULL;
+        if (argc > 4) {
+            printf("[!] Too many arguments for beacon.\n");
+            return 1;
+        }
+        uint32_t epoch = 1;
+        uint64_t root  = 0xA425E094C37260B6ULL;
+        if (argc >= 3) {
+            if (!ghost_parse_strict_u32(argv[2], &epoch) || epoch == 0) {
+                printf("[!] Invalid epoch '%s' (must be positive integer).\n", argv[2]);
+                return 1;
+            }
+        }
+        if (argc == 4) {
+            if (!ghost_parse_strict_hex_u64(argv[3], &root)) {
+                printf("[!] Invalid merkle root hex '%s'.\n", argv[3]);
+                return 1;
+            }
+        }
 
         printf("[λ] Transmitting inaudible Gossip Beacon (22 Bytes, 18.1 - 19.8 kHz)...\n");
         bool ok = ozos_ghost_emit_stealth_beacon(epoch, root);
@@ -730,6 +860,10 @@ int main(int argc, char* argv[]) {
 
     /* 3. SYN: Emit inaudible 42-byte handshake SYN offer */
     if (strcmp(cmd, "syn") == 0) {
+        if (argc > 2) {
+            printf("[!] Unexpected arguments for syn.\n");
+            return 1;
+        }
         ozos_handshake_syn_t syn;
         uint8_t secret_a[32];
         printf("[λ] Initializing Ephemeral Curve25519 handshake session...\n");
@@ -771,6 +905,10 @@ int main(int argc, char* argv[]) {
         const char* pinned_peer_pk_hex = NULL;
         for (int i = 3; i < argc; ++i) {
             if (strcmp(argv[i], "--pinned-peer-pubkey") == 0 && i + 1 < argc) {
+                if (pinned_peer_pk_hex != NULL) {
+                    printf("[!] Duplicate --pinned-peer-pubkey flag.\n");
+                    return 1;
+                }
                 pinned_peer_pk_hex = argv[++i];
             } else {
                 printf("[!] Unknown argument or malformed flag: %s\n", argv[i]);
@@ -787,7 +925,7 @@ int main(int argc, char* argv[]) {
 
         ozos_handshake_syn_t* syn = (ozos_handshake_syn_t*)syn_bytes;
         if (!ozos_handshake_syn_verify(syn)) {
-            printf("[!] Handshake SYN verification failed: MAC16 or magic mismatch!\n");
+            printf("[!] Handshake SYN verification failed: MAC16, magic, or low-order curve point!\n");
             return 1;
         }
 
@@ -805,9 +943,12 @@ int main(int argc, char* argv[]) {
                        syn_pk_hex, pinned_peer_pk_hex);
                 return 1;
             }
-            printf("[#] Pinned Peer PubKey verified: 0x%s\n", pinned_peer_pk_hex);
+            printf("[#] Pinned Peer PubKey verified (Full Fingerprint: 0x%s)\n", pinned_peer_pk_hex);
         } else {
+            char syn_pk_hex[65];
+            for (int p = 0; p < 32; p++) sprintf(&syn_pk_hex[p * 2], "%02x", syn->eph_pubkey[p]);
             printf("[!] Acoustic Notice: SYN received over physical channel without pinned peer identity.\n");
+            printf("    Peer PubKey Fingerprint: 0x%s\n", syn_pk_hex);
             printf("    PFS ensures tunnel secrecy, but peer identity must be verified out-of-band.\n");
         }
 
@@ -842,7 +983,7 @@ int main(int argc, char* argv[]) {
 
     /* 5. SIGN: Sign payload from mind-bound mnemonic (Zero disk, Auto-Zeroize) */
     if (strcmp(cmd, "sign") == 0) {
-        if (argc < 5) {
+        if (argc != 5) {
             printf("Usage: ozos_ghost.exe sign \"<12 words>\" \"<passphrase>\" \"<payload>\"\n");
             return 1;
         }
@@ -872,10 +1013,8 @@ int main(int argc, char* argv[]) {
         }
 
         uint8_t packet_buffer[1024];
-        ozos_packet80_t* hdr = (ozos_packet80_t*)packet_buffer;
         float zero_coeffs[16] = {0};
-        ozos_packet_build(hdr, 1001, zero_coeffs, (uint16_t)payload_len);
-        memcpy(packet_buffer + sizeof(ozos_packet80_t), payload, payload_len);
+        ozos_packet_build_frame(packet_buffer, 1001, zero_coeffs, (const uint8_t*)payload, (uint16_t)payload_len, 0);
 
         size_t header_plus_payload_len = sizeof(ozos_packet80_t) + payload_len;
 
@@ -907,7 +1046,7 @@ int main(int argc, char* argv[]) {
 
     /* 5B. EPHEMERAL: Pure in-memory signing inside VirtualLock enclave (0B disk) */
     if (strcmp(cmd, "ephemeral") == 0) {
-        if (argc < 5) {
+        if (argc != 5) {
             printf("Usage: ozos_ghost.exe ephemeral \"<12 words>\" \"<passphrase>\" \"<payload>\"\n");
             return 1;
         }
@@ -955,10 +1094,8 @@ int main(int argc, char* argv[]) {
 
         ozos_ed25519_seed_keypair(ed_pk, ed_sk, seed32);
 
-        ozos_packet80_t* hdr = (ozos_packet80_t*)packet_buffer;
         float zero_coeffs[16] = {0};
-        ozos_packet_build(hdr, 8888, zero_coeffs, (uint16_t)payload_len);
-        memcpy(packet_buffer + sizeof(ozos_packet80_t), payload, payload_len);
+        ozos_packet_build_frame(packet_buffer, 8888, zero_coeffs, (const uint8_t*)payload, (uint16_t)payload_len, 0);
 
         size_t header_plus_payload_len = sizeof(ozos_packet80_t) + payload_len;
         size_t signed_len = ozos_sign_packet_frame(signed_frame, 1024, packet_buffer, header_plus_payload_len, ed_pk, ed_sk);
@@ -1003,6 +1140,7 @@ int main(int argc, char* argv[]) {
 
     /* 5C. PANIC-WIPE: Emergency volatile state purge */
     if (strcmp(cmd, "panic-wipe") == 0) {
+        if (argc > 2) { printf("[!] Unexpected arguments for %s\n", cmd); return 1; }
         printf("=================================================================\n");
         printf("  [!] O.Z.O.S // EMERGENCY PANIC WIPE PURGE PROTOCOL\n");
         printf("=================================================================\n");
@@ -1024,6 +1162,7 @@ int main(int argc, char* argv[]) {
 
     /* 6. TEST-AUDIO: Test physical audio output hardware */
     if (strcmp(cmd, "test-audio") == 0) {
+        if (argc > 2) { printf("[!] Unexpected arguments for %s\n", cmd); return 1; }
         printf("[λ] Emitting 18.5 kHz near-ultrasound pulse (0.5 seconds)...\n");
         size_t samples = (size_t)(44100 * 0.5f);
         short* buf = (short*)malloc(samples * sizeof(short));
@@ -1045,7 +1184,7 @@ int main(int argc, char* argv[]) {
 
     /* 7. LISTEN: Decode inaudible acoustic carrier from WAV file */
     if (strcmp(cmd, "listen") == 0) {
-        if (argc < 3) {
+        if (argc != 3) {
             printf("Usage: ozos_ghost.exe listen <wav_file>\n");
             return 1;
         }
@@ -1059,33 +1198,86 @@ int main(int argc, char* argv[]) {
         }
         fseek(f, 0, SEEK_END);
         long sz = ftell(f);
-        fseek(f, 44, SEEK_SET);
+        if (sz < 44) {
+            printf("[!] File too small to be a valid WAV container.\n");
+            fclose(f);
+            return 1;
+        }
+        fseek(f, 0, SEEK_SET);
+        uint8_t riff_hdr[12];
+        if (fread(riff_hdr, 1, 12, f) != 12 || memcmp(riff_hdr, "RIFF", 4) != 0 || memcmp(riff_hdr + 8, "WAVE", 4) != 0) {
+            printf("[!] Invalid RIFF/WAVE header.\n");
+            fclose(f);
+            return 1;
+        }
 
-        long data_bytes = sz - 44;
-        if (data_bytes <= 0 || data_bytes > 50 * 1024 * 1024) { fclose(f); return 1; }
+        uint32_t sample_rate = 44100;
+        long data_offset = -1;
+        long data_bytes = 0;
+        while (ftell(f) + 8 <= sz) {
+            char chunk_id[4];
+            uint32_t chunk_sz = 0;
+            if (fread(chunk_id, 1, 4, f) != 4 || fread(&chunk_sz, 4, 1, f) != 1) break;
+            long chunk_pos = ftell(f);
+            if (memcmp(chunk_id, "fmt ", 4) == 0 && chunk_sz >= 16) {
+                uint8_t fmt_buf[16];
+                if (fread(fmt_buf, 1, 16, f) == 16) {
+                    memcpy(&sample_rate, fmt_buf + 4, 4);
+                }
+            } else if (memcmp(chunk_id, "data", 4) == 0) {
+                data_offset = chunk_pos;
+                data_bytes = (long)chunk_sz;
+                break;
+            }
+            long next_pos = chunk_pos + (long)chunk_sz + (chunk_sz & 1);
+            if (next_pos <= chunk_pos || next_pos > sz) break;
+            fseek(f, next_pos, SEEK_SET);
+        }
 
-        size_t num_samples = data_bytes / 2;
+        if (data_offset < 0) {
+            data_offset = 44;
+            data_bytes = sz - 44;
+        }
+        if (data_offset + data_bytes > sz) {
+            data_bytes = sz - data_offset;
+        }
+        if (sample_rate < 8000 || sample_rate > 48000) {
+            printf("[!] Invalid WAV sample rate (%u Hz).\n", sample_rate);
+            fclose(f);
+            return 1;
+        }
+        if (data_bytes <= 0 || data_bytes > 50 * 1024 * 1024) {
+            fclose(f);
+            return 1;
+        }
+
+        fseek(f, data_offset, SEEK_SET);
+        size_t num_samples = (size_t)data_bytes / 2;
         short* raw_samples = (short*)malloc(num_samples * sizeof(short));
         if (!raw_samples) { fclose(f); return 1; }
         size_t read_bytes = fread(raw_samples, 2, num_samples, f);
         fclose(f);
         if (read_bytes < num_samples) { free(raw_samples); return 1; }
 
-        uint32_t sample_rate = 44100;
         float tone_dur = 0.040f;
         float pre_dur  = 0.080f; /* 80ms preamble (2 chunks) bit-exact matching ozos_ghost.h */
         size_t samples_per_tone = (size_t)(sample_rate * tone_dur);
         size_t samples_pre = (size_t)(sample_rate * pre_dur);
 
         if (num_samples < samples_pre * 2 + samples_per_tone) {
-            printf("[!] Audio file too short.\n");
-            free(raw_samples);
-            return 1;
+            /* Check if 40ms preamble (ozos.exe audio-synth) fits */
+            size_t samples_pre_40 = (size_t)(sample_rate * 0.040f);
+            if (num_samples < samples_pre_40 * 2 + samples_per_tone) {
+                printf("[!] Audio file too short.\n");
+                free(raw_samples);
+                return 1;
+            }
+            samples_pre = samples_pre_40;
         }
 
         size_t num_tones = (num_samples - samples_pre * 2) / samples_per_tone;
-        if (num_tones > 512) {
-            printf("[!] Packet exceeds maximum acoustic frame size (512 bytes).\n");
+        if (num_tones > 1024) {
+            printf("[!] Packet exceeds maximum acoustic frame size.\n");
             free(raw_samples);
             return 1;
         }
@@ -1101,6 +1293,50 @@ int main(int argc, char* argv[]) {
             uint8_t b = ozos_decode_fsk_byte_ex(tone_buf, samples_per_tone, (float)sample_rate, OZOS_AUDIO_MODE_STEALTH);
             rx_buffer[rx_len++] = b;
         }
+
+        /* F8 Cross-CLI Compatibility: If 80ms preamble did not yield a recognized binary magic,
+           try 40ms preamble (used by ozos.exe handshake-syn / gossip-beacon / audio-synth) and
+           auto-convert Hex-ASCII payload into raw binary frame if applicable. */
+        uint32_t magic_candidate = 0;
+        if (rx_len >= 4) memcpy(&magic_candidate, rx_buffer, 4);
+        bool known_magic = (magic_candidate == OZOS_MAGIC_GOSSIP_BEACON ||
+                            magic_candidate == OZOS_MAGIC_HANDSHAKE_SYN ||
+                            magic_candidate == OZOS_MAGIC_HANDSHAKE_ACK ||
+                            magic_candidate == OZOS_MAGIC_HEADER);
+        if (!known_magic) {
+            size_t samples_pre_40 = (size_t)(sample_rate * 0.040f);
+            if (num_samples >= samples_pre_40 * 2 + samples_per_tone) {
+                size_t tones_40 = (num_samples - samples_pre_40 * 2) / samples_per_tone;
+                if (tones_40 <= 1024) {
+                    char ascii_buf[1025] = {0};
+                    size_t a_len = 0;
+                    for (size_t t = 0; t < tones_40 && a_len < 1024; ++t) {
+                        size_t tone_offset = samples_pre_40 + t * samples_per_tone;
+                        float tone_buf[2048];
+                        for (size_t s = 0; s < samples_per_tone && s < 2048; ++s) {
+                            tone_buf[s] = (float)raw_samples[tone_offset + s] / 32767.0f;
+                        }
+                        ascii_buf[a_len++] = (char)ozos_decode_fsk_byte_ex(tone_buf, samples_per_tone, (float)sample_rate, OZOS_AUDIO_MODE_STEALTH);
+                    }
+                    ascii_buf[a_len] = '\0';
+                    uint8_t parsed_bin[512] = {0};
+                    size_t parsed_len = 0;
+                    if (parse_hex_to_bytes(ascii_buf, parsed_bin, sizeof(parsed_bin), &parsed_len) && parsed_len >= 4) {
+                        memcpy(rx_buffer, parsed_bin, parsed_len);
+                        rx_len = parsed_len;
+                    } else if (a_len >= 4 && a_len <= sizeof(rx_buffer)) {
+                        uint32_t m40 = 0;
+                        memcpy(&m40, ascii_buf, 4);
+                        if (m40 == OZOS_MAGIC_GOSSIP_BEACON || m40 == OZOS_MAGIC_HANDSHAKE_SYN ||
+                            m40 == OZOS_MAGIC_HANDSHAKE_ACK || m40 == OZOS_MAGIC_HEADER) {
+                            memcpy(rx_buffer, ascii_buf, a_len);
+                            rx_len = a_len;
+                        }
+                    }
+                }
+            }
+        }
+
         free(raw_samples);
 
         printf("-----------------------------------------------------------------\n");
@@ -1114,14 +1350,15 @@ int main(int argc, char* argv[]) {
         }
         uint32_t magic;
         memcpy(&magic, rx_buffer, 4);
+        bool mac_verified = false;
         if (magic == OZOS_MAGIC_GOSSIP_BEACON) {
             if (rx_len < sizeof(ozos_gossip_beacon_t)) {
                 printf("[!] Packet truncated (< %zu bytes for GOSSIP BEACON).\n", sizeof(ozos_gossip_beacon_t));
                 return 1;
             }
             ozos_gossip_beacon_t* b = (ozos_gossip_beacon_t*)rx_buffer;
-            bool mac_ok = ozos_gossip_beacon_verify(b);
-            printf("[Σ] Type     : GOSSIP BEACON (22 Bytes) [%s]\n", mac_ok ? "MAC16 VERIFIED" : "MAC16 UNVERIFIED");
+            mac_verified = ozos_gossip_beacon_verify(b);
+            printf("[Σ] Type     : GOSSIP BEACON (22 Bytes) [%s]\n", mac_verified ? "MAC16 VERIFIED" : "MAC16 UNVERIFIED");
             printf("[#] Peer ID  : 0x%08X\n", b->peer_id);
             printf("•   Epoch    : %u\n", b->epoch_nonce);
             printf("[Σ] Merkle   : 0x%016llX\n", (unsigned long long)b->merkle_root);
@@ -1131,8 +1368,8 @@ int main(int argc, char* argv[]) {
                 return 1;
             }
             ozos_handshake_syn_t* s = (ozos_handshake_syn_t*)rx_buffer;
-            bool mac_ok = ozos_handshake_syn_verify(s);
-            printf("[🔒] Type    : HANDSHAKE SYN (42 Bytes, Ephemeral Curve25519 Offer) [%s]\n", mac_ok ? "MAC16 VERIFIED" : "MAC16 UNVERIFIED");
+            mac_verified = ozos_handshake_syn_verify(s);
+            printf("[🔒] Type    : HANDSHAKE SYN (42 Bytes, Ephemeral Curve25519 Offer) [%s]\n", mac_verified ? "MAC16 VERIFIED" : "MAC16 UNVERIFIED");
             printf("•   Acoustic : ⚠️ SYN received over unauthenticated physical broadcast.\n");
             printf("               PFS provides secrecy; peer identity must be verified out-of-band.\n");
         } else if (magic == OZOS_MAGIC_HANDSHAKE_ACK) {
@@ -1141,8 +1378,8 @@ int main(int argc, char* argv[]) {
                 return 1;
             }
             ozos_handshake_ack_t* a = (ozos_handshake_ack_t*)rx_buffer;
-            bool mac_ok = ozos_handshake_ack_verify(a);
-            printf("[🔒] Type    : HANDSHAKE ACK (54 Bytes, Poly1305 Mutual Auth) [%s]\n", mac_ok ? "MAC16 VERIFIED" : "MAC16 UNVERIFIED");
+            mac_verified = ozos_handshake_ack_verify(a);
+            printf("[🔒] Type    : HANDSHAKE ACK (54 Bytes, Poly1305 Mutual Auth) [%s]\n", mac_verified ? "MAC16 VERIFIED" : "MAC16 UNVERIFIED");
         } else if (magic == OZOS_MAGIC_HEADER) {
             if (rx_len < 80) {
                 printf("[!] Packet truncated (< %zu bytes for GENESIS PACKET).\n", sizeof(ozos_packet80_t));
@@ -1150,15 +1387,15 @@ int main(int argc, char* argv[]) {
             }
             ozos_packet80_t* p = (ozos_packet80_t*)rx_buffer;
             uint16_t expected_mac = ozos_compute_mac16(p);
-            bool mac_ok = (p->header_mac16 == expected_mac);
-            printf("[Σ] Type     : GENESIS PACKET (Aligned 80-Byte Frame) [%s]\n", mac_ok ? "MAC16 VERIFIED" : "MAC16 UNVERIFIED");
+            mac_verified = (p->header_mac16 == expected_mac);
+            printf("[Σ] Type     : GENESIS PACKET (Aligned 80-Byte Frame) [%s]\n", mac_verified ? "MAC16 VERIFIED" : "MAC16 UNVERIFIED");
         } else {
             printf("[!] Unrecognized magic header: 0x%08X\n", magic);
             return 1;
         }
         printf("-----------------------------------------------------------------\n");
         printf("[#] Decoded via 32 physical Goertzel filter banks.\n");
-        return 0;
+        return mac_verified ? 0 : 1;
     }
 
     printf("Invalid command: '%s'\n", cmd);

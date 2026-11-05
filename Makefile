@@ -4,7 +4,8 @@
 # ==============================================================================
 
 CC ?= gcc
-CFLAGS ?= -O3 -Wall -Wextra -std=c99 -D_POSIX_C_SOURCE=200809L -Icore -I. -fstack-protector-strong -D_FORTIFY_SOURCE=2 -fPIE
+GIT_COMMIT_HASH := $(shell git rev-parse --short HEAD 2>/dev/null || echo 0ff9186)
+CFLAGS ?= -O3 -Wall -Wextra -std=c99 -D_POSIX_C_SOURCE=200809L -DOZOS_GIT_COMMIT_HASH=\"$(GIT_COMMIT_HASH)\" -Icore -I. -fstack-protector-strong -D_FORTIFY_SOURCE=2 -fPIE
 HARDENING_LDFLAGS ?= -pie -Wl,-z,relro,-z,now
 SRC = core/ozos_ghost.c core/tweetnacl.c
 TARGET = ozos_ghost
@@ -46,7 +47,8 @@ $(TEST_TARGET): tests/test_libozos.c core/tweetnacl.c
 	@echo "  [O.Z.O.S] COMPILING NATIVE LIBOZOS VERIFICATION TEST SUITE"
 	@echo "================================================================="
 	$(CC) $(CFLAGS) -o $(TEST_TARGET) tests/test_libozos.c core/tweetnacl.c $(LDFLAGS) $(HARDENING_LDFLAGS)
-	@echo "  [SUCCESS] BUILT: $(TEST_TARGET)"
+	cp -f $(TEST_TARGET) tests/$(TEST_TARGET)
+	@echo "  [SUCCESS] BUILT: $(TEST_TARGET) & tests/$(TEST_TARGET)"
 
 test: $(TARGET) $(CLI_TARGET) $(TEST_TARGET)
 	@echo "================================================================="
@@ -68,7 +70,7 @@ test: $(TARGET) $(CLI_TARGET) $(TEST_TARGET)
 	@echo "================================================================="
 	@echo "  [TEST 5/5] SUPPLY CHAIN WASM INTEGRITY & PIN AUDIT"
 	@echo "================================================================="
-	@$(PYTHON) contrib/dev-scripts/check_wasm_staleness.py
+	@$(PYTHON) contrib/dev-scripts/check_wasm_staleness.py --fail-on-drift
 
 wasm:
 	@echo "================================================================="
@@ -83,11 +85,11 @@ wasm:
 		$(PYTHON) contrib/web-cockpit/embed_wasm.py && \
 		echo "  [SUCCESS] zero_dct.wasm compiled and embedded successfully."; \
 	else \
-		echo "  [NOTICE] emcc not found in PATH; using pre-built bit-exact zero_dct.wasm (15,885 bytes, SHA256: d7924fedcda753e0b9eefdaf779eb657f67fba50da96472dc98c92b393d7b4a3)."; \
+		echo "  [NOTICE] emcc not found in PATH; using pre-built bit-exact zero_dct.wasm (16,054 bytes, SHA256: ea26872f8c14523bb3d823c4eca16dcae96c6a11f1be24bea75081c75b5f7a4e)."; \
 	fi
 
 check_wasm:
-	@$(PYTHON) contrib/dev-scripts/check_wasm_staleness.py
+	@$(PYTHON) contrib/dev-scripts/check_wasm_staleness.py --fail-on-drift
 
 test_wasm:
 	@echo "================================================================="

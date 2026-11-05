@@ -294,10 +294,14 @@ int main(void) {
     }
 
     uint8_t session_key_b[32];
-    ozos_kdf_session_key(session_key_b, shared_secret_b);
+    if (ozos_kdf_session_key_ex(session_key_b, shared_secret_b, syn_pkt.session_nonce) != 0) {
+        TEST_FAIL("KDF Session Key B", "Node B KDF Session Key that bai");
+    }
 
     uint8_t auth_tag_b[16];
-    ozos_compute_handshake_auth_tag(auth_tag_b, session_key_b, syn_pkt.eph_pubkey, b_pub);
+    if (ozos_compute_handshake_auth_tag(auth_tag_b, session_key_b, syn_pkt.eph_pubkey, b_pub) != 0) {
+        TEST_FAIL("Compute Auth Tag B", "Node B compute handshake auth tag that bai");
+    }
 
     /* Node B dong goi ACK packet (54 Bytes) */
     ozos_handshake_ack_t ack_pkt;
@@ -314,7 +318,9 @@ int main(void) {
     }
 
     uint8_t session_key_a[32];
-    ozos_kdf_session_key(session_key_a, shared_secret_a);
+    if (ozos_kdf_session_key_ex(session_key_a, shared_secret_a, syn_pkt.session_nonce) != 0) {
+        TEST_FAIL("KDF Session Key A", "Node A KDF Session Key that bai");
+    }
 
     /* Kiem tra 2 khoa phien tinh doc lap phai khop nhau 100% bit-exact */
     if (memcmp(shared_secret_a, shared_secret_b, 32) != 0) {
@@ -368,7 +374,38 @@ int main(void) {
     }
     printf("  • Giai ma thanh cong    : \"%s\" (100%% Toan ven)\n", decrypted_msg);
 
-    /* 5. Thu nghiem gia mao Ciphertext -> Poly1305 phai chan dung ngay */
+    /* 5. Chong phat lai (Anti-Replay): Phat lai cung encrypted_frame voi cung 24B nonce phai bi tu choi */
+    bool replay_rejected = !ozos_tunnel_decrypt(
+        decrypted_msg, &dec_len,
+        encrypted_frame, enc_len,
+        session_key_b
+    );
+    if (!replay_rejected) {
+        TEST_FAIL("Tunnel Anti-Replay", "Duong ham khong chan goi tin phat lai cung nonce 24-byte");
+    }
+
+    /* 6. Kiem tra RFC 7748 Section 6.1 Low-Order Point Rejection & KDF Nonce Binding */
+    uint8_t zero_pk[32] = {0};
+    uint8_t order2_pk[32] = {0};
+    order2_pk[0] = 1;
+    uint8_t dummy_shared[32] = {0};
+    uint8_t dummy_sess[32] = {0};
+    ozos_handshake_syn_t bad_syn;
+    ozos_handshake_syn_build(&bad_syn, zero_pk, 12345U);
+    if (ozos_ecdh_shared_secret(dummy_shared, zero_pk, b_sk) == 0 ||
+        ozos_ecdh_shared_secret(dummy_shared, order2_pk, b_sk) == 0 ||
+        ozos_kdf_session_key(dummy_sess, zero_pk) == 0 ||
+        ozos_handshake_syn_verify(&bad_syn)) {
+        TEST_FAIL("RFC 7748 Low-Order Guard", "Khong chan duoc diem bac thap Curve25519 hoac shared secret toan 0");
+    }
+
+    /* 7. Thu nghiem gia mao Ciphertext -> Poly1305 phai chan dung ngay */
+    test_nonce[0] ^= 0x01;
+    enc_len = ozos_tunnel_encrypt(
+        encrypted_frame, sizeof(encrypted_frame),
+        (const uint8_t*)tunnel_secret_msg, msg_len,
+        session_key_a, test_nonce
+    );
     encrypted_frame[enc_len - 1] ^= 0xFF; /* Pha huy 1 byte cuoi ciphertext */
     bool tamper_tunnel = !ozos_tunnel_decrypt(
         decrypted_msg, &dec_len,
@@ -378,7 +415,7 @@ int main(void) {
     if (!tamper_tunnel) {
         TEST_FAIL("Tamper Tunnel", "Duong ham khong phat hien goi tin bi pha hoai");
     }
-    printf("  • Chong nghe len & pha  : ✅ PHÁT HIỆN CAN THIỆP VÀ TỰ ĐỘNG TỪ CHỐI GÓI TIN\n");
+    printf("  • Chong nghe len & pha  : ✅ PHÁT HIỆN CAN THIỆP, CHẶN REPLAY & LOW-ORDER POINT\n");
     TEST_PASS("Pillar 2: Two-Way Inaudible Handshake & Acoustic Tunnel operational 100%");
 
     /* TEST 11: [MẢNH GHÉP 3] Hạt Giống Phục Sinh Trong Trí Não (12-Word Brainseed) */

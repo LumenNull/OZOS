@@ -14,6 +14,7 @@ set "LIBS=advapi32.lib winmm.lib"
 if "%1"=="clean" goto do_clean
 if "%1"=="test" (
     call :do_build
+    if !errorlevel! neq 0 exit /b !errorlevel!
     goto do_test
 )
 
@@ -43,8 +44,16 @@ where gcc >nul 2>nul
 if %errorlevel% equ 0 (
     echo [BUILD] Using GCC...
     gcc -O3 -Wall -Icore -o %TARGET% core/ozos_ghost.c core/tweetnacl.c -ladvapi32 -lwinmm
-    if exist core\ozos_main.c gcc -O3 -Wall -Icore -o ozos.exe core/ozos_main.c core/tweetnacl.c -ladvapi32 -lwinmm
-    if exist tests\test_libozos.c gcc -O3 -Wall -Icore -o tests/test_libozos.exe tests/test_libozos.c core/tweetnacl.c -ladvapi32
+    if !errorlevel! neq 0 exit /b !errorlevel!
+    if exist core\ozos_main.c (
+        gcc -O3 -Wall -Icore -o ozos.exe core/ozos_main.c core/tweetnacl.c -ladvapi32 -lwinmm -lncrypt
+        if !errorlevel! neq 0 exit /b !errorlevel!
+    )
+    if exist tests\test_libozos.c (
+        gcc -O3 -Wall -Icore -o tests/test_libozos.exe tests/test_libozos.c core/tweetnacl.c -ladvapi32
+        if !errorlevel! neq 0 exit /b !errorlevel!
+        copy /y tests\test_libozos.exe test_libozos.exe >nul
+    )
     goto build_done
 )
 
@@ -52,8 +61,16 @@ where clang >nul 2>nul
 if %errorlevel% equ 0 (
     echo [BUILD] Using Clang...
     clang -O3 -Wall -Icore -o %TARGET% core/ozos_ghost.c core/tweetnacl.c -ladvapi32 -lwinmm
-    if exist core\ozos_main.c clang -O3 -Wall -Icore -o ozos.exe core/ozos_main.c core/tweetnacl.c -ladvapi32 -lwinmm
-    if exist tests\test_libozos.c clang -O3 -Wall -Icore -o tests/test_libozos.exe tests/test_libozos.c core/tweetnacl.c -ladvapi32
+    if !errorlevel! neq 0 exit /b !errorlevel!
+    if exist core\ozos_main.c (
+        clang -O3 -Wall -Icore -o ozos.exe core/ozos_main.c core/tweetnacl.c -ladvapi32 -lwinmm -lncrypt
+        if !errorlevel! neq 0 exit /b !errorlevel!
+    )
+    if exist tests\test_libozos.c (
+        clang -O3 -Wall -Icore -o tests/test_libozos.exe tests/test_libozos.c core/tweetnacl.c -ladvapi32
+        if !errorlevel! neq 0 exit /b !errorlevel!
+        copy /y tests\test_libozos.exe test_libozos.exe >nul
+    )
     goto build_done
 )
 
@@ -68,14 +85,26 @@ if %errorlevel% neq 0 (
     exit /b %errorlevel%
 )
 if exist "core\ozos_main.c" (
-    cl.exe %CFLAGS% /Fe:ozos.exe core\ozos_main.c core\tweetnacl.c /link advapi32.lib winmm.lib >nul 2>nul
+    cl.exe %CFLAGS% /Fe:ozos.exe core\ozos_main.c core\tweetnacl.c /link advapi32.lib winmm.lib ncrypt.lib
+    if !errorlevel! neq 0 (
+        echo [FAIL] Compilation of ozos.exe failed.
+        exit /b !errorlevel!
+    )
 )
 if exist "tests\test_libozos.c" (
-    cl.exe %CFLAGS% /Fe:tests\test_libozos.exe tests\test_libozos.c core\tweetnacl.c /link advapi32.lib >nul 2>nul
+    cl.exe %CFLAGS% /Fe:tests\test_libozos.exe tests\test_libozos.c core\tweetnacl.c /link advapi32.lib
+    if !errorlevel! neq 0 (
+        echo [FAIL] Compilation of tests\test_libozos.exe failed.
+        exit /b !errorlevel!
+    )
+    copy /y tests\test_libozos.exe test_libozos.exe >nul
 )
 del *.obj core\*.obj tests\*.obj >nul 2>nul
 
 :build_done
+if exist "ozos.exe" (
+    copy /y ozos.exe contrib\web-cockpit\ozos.exe >nul
+)
 echo =================================================================
 echo   [SUCCESS] BUILT: %TARGET%
 echo =================================================================
@@ -85,24 +114,32 @@ goto :eof
 :do_test
 if not exist "%TARGET%" call :do_build
 echo.
-echo [TEST 1/4] Running Hardware Torture Verification Suite...
+echo [TEST 1/5] Running Hardware Torture Verification Suite...
 %TARGET% torture
+if !errorlevel! neq 0 exit /b !errorlevel!
 echo.
-echo [TEST 2/4] Running Cosmic & Existential Paradox Suite...
+echo [TEST 2/5] Running Cosmic ^& Existential Paradox Suite...
 %TARGET% cosmic
+if !errorlevel! neq 0 exit /b !errorlevel!
 echo.
-echo [TEST 3/4] Verifying Genesis Inscription #000000...
+echo [TEST 3/5] Verifying Genesis Inscription #000000...
 %TARGET% genesis
+if !errorlevel! neq 0 exit /b !errorlevel!
 if exist "tests\test_libozos.exe" (
     echo.
-    echo [TEST 4/4] Running 15-Tier Native libozos Suite...
+    echo [TEST 4/5] Running 15-Tier Native libozos Suite...
     tests\test_libozos.exe
+    if !errorlevel! neq 0 exit /b !errorlevel!
 )
+echo.
+echo [TEST 5/5] Running Supply Chain WASM Integrity ^& Pin Audit...
+python contrib\dev-scripts\check_wasm_staleness.py --fail-on-drift
+if !errorlevel! neq 0 exit /b !errorlevel!
 goto :eof
 
 :do_clean
 echo [CLEAN] Removing build artifacts...
-del /q *.exe *.obj *.ilk *.pdb *.wasm *.wav 2>nul
+del /q *.exe *.obj *.ilk *.pdb *.wav 2>nul
 del /q tests\*.exe tests\*.obj 2>nul
 echo [CLEAN] Clean complete.
 goto :eof

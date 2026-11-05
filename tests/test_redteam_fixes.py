@@ -1437,17 +1437,20 @@ check_test("Genesis validators tu choi he so float NaN / Infinity trong fingerpr
            "Genesis float finiteness loop operational across Engine and Shield")
 
 # ----------------------------------------------------------------------
-# 46. TEST ROUND 12: CLI & Ghost --version Command & Stderr Secret Isolation
+# 46. TEST ROUND 12/14: CLI & Ghost --version Exact HEAD Commit & Stderr Secret Isolation
 # ----------------------------------------------------------------------
-print("\n[TEST 46/52] Kiem Tra CLI & Ghost --version, --help & Tach Secret Ra Stderr...")
+print("\n[TEST 46/58] Kiem Tra CLI & Ghost --version (Khop Exact HEAD Commit), --help & Tach Secret Ra Stderr...")
 rc_ver, out_ver, _ = run_ozos("--version")
 proc_gh_ver = subprocess.run([GHOST_EXE, "--version"], capture_output=True, text=True, encoding="utf-8", errors="replace", cwd=REPO_ROOT)
 
 rc_help, out_help, _ = run_ozos("--help")
 proc_gh_help = subprocess.run([GHOST_EXE, "--help"], capture_output=True, text=True, encoding="utf-8", errors="replace", cwd=REPO_ROOT)
 
-version_ok = (rc_ver == 0 and ("b517dc5" in out_ver or "Git Commit" in out_ver) and "d7924fedcda753e0" in out_ver) and \
-             (proc_gh_ver.returncode == 0 and "d7924fedcda753e0" in proc_gh_ver.stdout and ("b517dc5" in proc_gh_ver.stdout or "Git Commit" in proc_gh_ver.stdout)) and \
+actual_head = subprocess.run(["git", "rev-parse", "--short", "HEAD"], capture_output=True, text=True, cwd=REPO_ROOT).stdout.strip()
+expected_wasm_prefix = "ea26872f8c14523b"
+
+version_ok = (rc_ver == 0 and actual_head in out_ver and expected_wasm_prefix in out_ver) and \
+             (proc_gh_ver.returncode == 0 and expected_wasm_prefix in proc_gh_ver.stdout and actual_head in proc_gh_ver.stdout) and \
              (rc_help == 0 and "Protocol: OZOS-80" in out_help) and \
              (proc_gh_help.returncode == 0 and "O.Z.O.S GHOST MICRO-DAEMON" in proc_gh_help.stdout)
 
@@ -1763,9 +1766,346 @@ check_test("Vault, Shield 200KB stack safety, payload cap 65535B va Python bool 
            vault_shield_py_ok,
            "Vault integrity, Shield call stack safety & Python type invariant enforced")
 
+# ----------------------------------------------------------------------
+# 53. TEST ROUND 14 (F1, F2): X25519 Low-Order Point Rejection, KDF Nonce Binding & Tunnel Anti-Replay
+# ----------------------------------------------------------------------
+print("\n[TEST 53/58] Kiem Tra Chan X25519 Low-Order Point (F1), KDF Nonce Binding & Tunnel Anti-Replay (F2)...")
+# Build a SYN frame with all-zero ephemeral pubkey (42 bytes)
+syn_zero_buf = bytearray(42)
+struct.pack_into("<I", syn_zero_buf, 0, 0x4F5A4831) # OZH1 magic
+# eph_pubkey [4..36] = all zeros
+struct.pack_into("<I", syn_zero_buf, 36, 12345)
+crc_syn = 0xFFFF
+for b in syn_zero_buf[:40]:
+    crc_syn ^= (b << 8)
+    for _ in range(8):
+        crc_syn = ((crc_syn << 1) ^ 0x1021) & 0xFFFF if (crc_syn & 0x8000) else (crc_syn << 1) & 0xFFFF
+struct.pack_into("<H", syn_zero_buf, 40, crc_syn)
+syn_zero_hex = syn_zero_buf.hex()
+
+rc_ack_zero, _, _ = run_ozos("handshake-ack", syn_zero_hex)
+rc_gh_ack_zero = subprocess.run([GHOST_EXE, "ack", syn_zero_hex], capture_output=True, text=True, cwd=REPO_ROOT).returncode
+f1_f2_ok = (rc_ack_zero != 0) and (rc_gh_ack_zero != 0)
+check_test("Chan tuyet doi X25519 Low-Order Point (PK=0x00..00) tren ca CLI handshake-ack va Ghost ack (F1/F2)",
+           f1_f2_ok,
+           f"Low-order SYN rejected (cli_rc={rc_ack_zero}, ghost_rc={rc_gh_ack_zero})")
+
+# ----------------------------------------------------------------------
+# 54. TEST ROUND 14 (F5): 2D-DCT Watermark Authentic Verification (No Fake Fallback)
+# ----------------------------------------------------------------------
+print("\n[TEST 54/58] Kiem Tra 2D-DCT Watermark Khong Nguy Tao Ket Qua Tren Anh Trang (F5)...")
+test_js_f5 = """
+const OZOSEngine = require('./contrib/web-cockpit/ozos-engine.js');
+const engine = new OZOSEngine();
+
+function makeMockCanvas(w, h) {
+    const pixels = new Uint8ClampedArray(w * h * 4);
+    for (let i = 0; i < pixels.length; i += 4) {
+        pixels[i] = 200; pixels[i+1] = 200; pixels[i+2] = 200; pixels[i+3] = 255;
+    }
+    return {
+        width: w,
+        height: h,
+        getContext: () => ({
+            getImageData: () => ({ data: pixels, width: w, height: h }),
+            putImageData: (img) => { pixels.set(img.data); }
+        })
+    };
+}
+
+const blankCanvas = makeMockCanvas(128, 128);
+const resBlank = engine.extractWatermark2DDCT(blankCanvas);
+if (resBlank.success !== false) {
+    console.error("Blank canvas falsely succeeded:", resBlank);
+    process.exit(1);
+}
+
+const wmCanvas = makeMockCanvas(128, 128);
+const okEmbed = engine.embedWatermark2DDCT(wmCanvas, "OZOS-REAL-DCT-SEAL-2026");
+const resWm = engine.extractWatermark2DDCT(wmCanvas);
+if (!okEmbed || !resWm.success || resWm.text !== "OZOS-REAL-DCT-SEAL-2026") {
+    console.error("Embedded watermark failed round-trip:", resWm);
+    process.exit(2);
+}
+process.exit(0);
+"""
+p_js_f5 = subprocess.run(["node", "-e", test_js_f5], cwd=REPO_ROOT, capture_output=True, text=True, encoding="utf-8", errors="replace")
+
+# Also verify ozos-cli.py stego-extract fails on unwatermarked image and succeeds on watermarked image
+from PIL import Image
+tmp_blank_img = os.path.join(REPO_ROOT, "_test_blank_f5.png")
+tmp_wm_img = os.path.join(REPO_ROOT, "_test_wm_f5.png")
+Image.new("RGB", (256, 256), (180, 180, 180)).save(tmp_blank_img)
+p_cli_blank = subprocess.run([sys.executable, ozos_cli_path, "stego-extract", "--image", tmp_blank_img],
+                             capture_output=True, text=True, encoding="utf-8", errors="replace", cwd=REPO_ROOT)
+p_cli_embed = subprocess.run([sys.executable, ozos_cli_path, "stego-embed", "--image", tmp_blank_img, "--output", tmp_wm_img, "--payload", "CLI-DCT-2026"],
+                             capture_output=True, text=True, encoding="utf-8", errors="replace", cwd=REPO_ROOT)
+p_cli_wm = subprocess.run([sys.executable, ozos_cli_path, "stego-extract", "--image", tmp_wm_img],
+                          capture_output=True, text=True, encoding="utf-8", errors="replace", cwd=REPO_ROOT)
+for tf in [tmp_blank_img, tmp_wm_img]:
+    if os.path.exists(tf): os.remove(tf)
+
+f5_ok = (p_js_f5.returncode == 0) and (p_cli_blank.returncode != 0) and (p_cli_embed.returncode == 0) and (p_cli_wm.returncode == 0 and "CLI-DCT-2026" in (p_cli_wm.stdout or ""))
+check_test("2D-DCT Watermark tu choi anh trang fail-closed va khoi phuc dung thuy van that tren JS & CLI (F5)",
+           f5_ok,
+           "2D-DCT authentic extraction verified across JS engine and Python CLI")
+
+# ----------------------------------------------------------------------
+# 55. TEST ROUND 14 (R14-H1): Direct-Call WASM _parse_and_validate_packet Corpus & Default Strictness
+# ----------------------------------------------------------------------
+print("\n[TEST 55/58] Kiem Tra Direct-Call WASM _parse_and_validate_packet Corpus & Default Strictness (R14-H1)...")
+test_wasm_direct = """
+const fs = require('fs');
+const wasmBuf = fs.readFileSync('core/zero_dct.wasm');
+(async () => {
+    const { instance } = await WebAssembly.instantiate(wasmBuf, {
+        a: { a: () => {}, b: () => 0 }
+    });
+    const ex = instance.exports;
+    const parse = ex.l;
+    const mem = new Uint8Array(ex.b.buffer);
+
+    function makeValid(payloadStr, nonceBig) {
+        const pay = Buffer.from(payloadStr, 'utf8');
+        const buf = new Uint8Array(80 + pay.length);
+        const dv = new DataView(buf.buffer);
+        dv.setUint32(0, 0x47454E01, true);
+        dv.setBigUint64(4, nonceBig, true);
+        for (let i = 0; i < 15; i++) dv.setFloat32(12 + i * 4, 1.0 + i * 0.1, true);
+        let h = 0x811C9DC5;
+        for (let i = 0; i < pay.length; i++) h = Math.imul(h ^ pay[i], 0x01000193) >>> 0;
+        dv.setUint32(72, h, true);
+        dv.setUint32(76, pay.length, true);
+        buf.set(pay, 80);
+        return buf;
+    }
+
+    function callWasm(buf, lastNonce = 0n) {
+        const ptr = 1024;
+        mem.set(buf, ptr);
+        return parse(ptr, buf.length, lastNonce);
+    }
+
+    const v0 = makeValid('HELLO_WASM', 100n);
+    if (callWasm(v0, 50n) !== 0) process.exit(1);
+
+    const vTrail = new Uint8Array(v0.length + 4);
+    vTrail.set(v0);
+    if (callWasm(vTrail, 50n) !== 4) process.exit(2);
+
+    const vFlip = new Uint8Array(v0);
+    vFlip[80] ^= 0xFF;
+    if (callWasm(vFlip, 50n) !== 5) process.exit(3);
+
+    const vZeroSlot = new Uint8Array(v0);
+    new DataView(vZeroSlot.buffer).setUint32(72, 0, true);
+    if (callWasm(vZeroSlot, 50n) !== 5) process.exit(4);
+
+    const vNaN = new Uint8Array(v0);
+    new DataView(vNaN.buffer).setFloat32(12, NaN, true);
+    if (callWasm(vNaN, 50n) !== 7) process.exit(5);
+
+    const vInf = new Uint8Array(v0);
+    new DataView(vInf.buffer).setFloat32(16, Infinity, true);
+    if (callWasm(vInf, 50n) !== 7) process.exit(6);
+
+    const vBigLen = new Uint8Array(v0);
+    new DataView(vBigLen.buffer).setUint32(76, 70000, true);
+    if (callWasm(vBigLen, 50n) !== 2) process.exit(7);
+
+    if (callWasm(v0, 100n) !== 3) process.exit(8);
+    process.exit(0);
+})();
+"""
+p_wasm_direct = subprocess.run(["node", "-e", test_wasm_direct], cwd=REPO_ROOT, capture_output=True, text=True, encoding="utf-8", errors="replace")
+p_wasm_audit = subprocess.run([sys.executable, os.path.join(REPO_ROOT, "contrib", "dev-scripts", "check_wasm_staleness.py")],
+                              cwd=REPO_ROOT, capture_output=True, text=True, encoding="utf-8", errors="replace")
+r14_h1_ok = (p_wasm_direct.returncode == 0) and (p_wasm_audit.returncode == 0)
+check_test("Direct-call WASM _parse_and_validate_packet chan day du 8 vector doi khang (0,4,5,5,7,7,2,3) (R14-H1)",
+           r14_h1_ok,
+           "WASM bytecode direct-call invariants and default-strict supply-chain check verified")
+
+# ----------------------------------------------------------------------
+# 56. TEST ROUND 14 (R14-H2, R14-H3, F7, G1, G2): Live Bridge End-to-End Execution & Input File Protection
+# ----------------------------------------------------------------------
+print("\n[TEST 56/58] Kiem Tra Live Bridge /api/cmd Success (H2), Bao Ve Input WAV (H3), Giu Slash (F7) & GET G1/G2...")
+test_live_bridge = """
+import os, sys, json, time, subprocess, urllib.request, urllib.error, http.client
+
+repo = sys.argv[1]
+cockpit_dir = os.path.join(repo, "contrib", "web-cockpit")
+precious_wav = os.path.join(cockpit_dir, "_precious_input_r14.wav")
+noext_file = os.path.join(cockpit_dir, "_secret_noext_r14")
+
+with open(precious_wav, "wb") as f:
+    f.write(b"RIFF____WAVEfmt ")
+with open(noext_file, "w") as f:
+    f.write("TOP_SECRET_NO_EXT")
+
+srv = subprocess.Popen([sys.executable, "contrib/web-cockpit/server.py"], cwd=repo, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+time.sleep(1.2)
+
+try:
+    # 1. H2: Live POST /api/cmd ["status"] must return success: True
+    req_status = urllib.request.Request(
+        "http://127.0.0.1:8899/api/cmd",
+        data=json.dumps({"args": ["status"]}).encode(),
+        headers={"Content-Type": "application/json", "Origin": "http://127.0.0.1:8899"}
+    )
+    with urllib.request.urlopen(req_status) as resp:
+        res_status = json.loads(resp.read().decode())
+    if not res_status.get("success"):
+        print("H2 status failed:", res_status)
+        sys.exit(1)
+
+    # 2. F7: Slash in non-file argument (e.g. packet-build message "CONTRACT/2026/11/05") must NOT be stripped
+    req_slash = urllib.request.Request(
+        "http://127.0.0.1:8899/api/cmd",
+        data=json.dumps({"args": ["packet-build", "CONTRACT/2026/11/05", "500"]}).encode(),
+        headers={"Content-Type": "application/json", "Origin": "http://127.0.0.1:8899"}
+    )
+    with urllib.request.urlopen(req_slash) as resp:
+        res_slash = json.loads(resp.read().decode())
+    if not res_slash.get("success") or "434f4e54524143542f323032362f31312f3035" not in res_slash.get("stdout", ""):
+        print("F7 slash stripped:", res_slash)
+        sys.exit(2)
+
+    # 3. H3: Input WAV on audio-decode must NOT be deleted before or after execution
+    req_dec = urllib.request.Request(
+        "http://127.0.0.1:8899/api/cmd",
+        data=json.dumps({"args": ["audio-decode", "_precious_input_r14.wav"]}).encode(),
+        headers={"Content-Type": "application/json", "Origin": "http://127.0.0.1:8899"}
+    )
+    with urllib.request.urlopen(req_dec) as resp:
+        _ = json.loads(resp.read().decode())
+    if not os.path.exists(precious_wav):
+        print("H3 deleted input wav!")
+        sys.exit(3)
+
+    # 4. G1: Extensionless file GET must return 404
+    g1_code = 200
+    try:
+        urllib.request.urlopen("http://127.0.0.1:8899/_secret_noext_r14")
+    except urllib.error.HTTPError as e:
+        g1_code = e.code
+    if g1_code != 404:
+        print("G1 extensionless served:", g1_code)
+        sys.exit(4)
+
+    # 5. G2: Null-byte path GET /server.py%00 must return clean 404 HTTP response without dropping connection
+    conn = http.client.HTTPConnection("127.0.0.1", 8899, timeout=5)
+    conn.request("GET", "/server.py%00")
+    r_g2 = conn.getresponse()
+    if r_g2.status != 404:
+        print("G2 null-byte status:", r_g2.status)
+        sys.exit(5)
+    conn.close()
+
+    sys.exit(0)
+finally:
+    srv.terminate()
+    srv.wait()
+    for p in [precious_wav, noext_file]:
+        if os.path.exists(p):
+            try: os.remove(p)
+            except: pass
+"""
+p_live_bridge = subprocess.run([sys.executable, "-c", test_live_bridge, REPO_ROOT], capture_output=True, text=True, encoding="utf-8", errors="replace", cwd=REPO_ROOT)
+check_test("Bridge /api/cmd thuc thi live thanh cong (H2), bao ve file WAV dau vao (H3), giu dau '/' (F7) va chan G1/G2",
+           p_live_bridge.returncode == 0,
+           f"Bridge live verification passed (stdout={(p_live_bridge.stdout or '').strip()})")
+
+# ----------------------------------------------------------------------
+# 57. TEST ROUND 14 (F8, R14-M1, P1, P2): Acoustic Cross-Binary WAV, C Strict Floor & Python Unicode Digits
+# ----------------------------------------------------------------------
+print("\n[TEST 57/58] Kiem Tra Giao Thuc Song Am Lien Binary (F8), C Strict Floor (M1) & Python Digit Guard (P1/P2)...")
+tmp_syn_wav = os.path.join(REPO_ROOT, "_test_f8_syn.wav")
+rc_f8_syn, out_f8_syn, _ = run_ozos("handshake-syn", tmp_syn_wav, "77777")
+proc_f8_listen = subprocess.run([GHOST_EXE, "listen", tmp_syn_wav], capture_output=True, text=True, encoding="utf-8", errors="replace", cwd=REPO_ROOT)
+if os.path.exists(tmp_syn_wav):
+    os.remove(tmp_syn_wav)
+f8_ok = (rc_f8_syn == 0) and (proc_f8_listen.returncode == 0) and ("HANDSHAKE SYN" in proc_f8_listen.stdout) and ("[MAC16 VERIFIED]" in proc_f8_listen.stdout)
+
+# R14-M1: packet-verify must reject garbage replay floor "abc" and extra positionals
+rc_m1_build, out_m1_build, _ = run_ozos("packet-build", "M1_TEST", "900")
+m1_hex = [l.strip() for l in out_m1_build.splitlines() if len(l.strip()) >= 160 and all(c in "0123456789abcdefABCDEF" for c in l.strip())][0]
+rc_m1_badfloor, _, _ = run_ozos("packet-verify", m1_hex, "abc")
+rc_m1_extra, _, _ = run_ozos("packet-verify", m1_hex, "100", "a"*64, "extra_arg")
+m1_ok = (rc_m1_badfloor != 0) and (rc_m1_extra != 0)
+
+# P1 & P2: Python validate_aligned_packet rejects superscript '²' and fullwidth '１０００' cleanly without crash
+p1_p2_ok = True
+for bad_nonce in ["²", "¹", "12³", "１０００", "١٢٣"]:
+    try:
+        v_ok, _, _ = ozos_cli_mod.validate_aligned_packet(valid_pkt_py, last_seen_nonce=bad_nonce)
+        if v_ok is not False:
+            p1_p2_ok = False
+    except Exception:
+        p1_p2_ok = False
+
+check_test("ozos_ghost listen giai ma WAV cua ozos handshake-syn (F8), packet-verify chan floor rac (M1) va Python chan Unicode digit (P1/P2)",
+           f8_ok and m1_ok and p1_p2_ok,
+           f"Cross-binary WAV (f8={f8_ok}), C strict floor (m1={m1_ok}), Python digit gate (p1_p2={p1_p2_ok})")
+
+# ----------------------------------------------------------------------
+# 58. TEST ROUND 14 (F14-A, F14-B, F14-C): JS Shield Uint8Array Vault, Check-Before-Mutate Nonce & Unified Seed Parser
+# ----------------------------------------------------------------------
+print("\n[TEST 58/58] Kiem Tra JS Shield Uint8Array Vault (F14-A), Check-Before-Mutate Nonce (F14-B) & Unified Seed (F14-C)...")
+test_js_r14_lows = """
+const OZOSEngine = require('./contrib/web-cockpit/ozos-engine.js');
+const GenesisShield = require('./contrib/web-cockpit/genesis-shield.js');
+
+global.localStorage = {
+    _store: {},
+    setItem(k, v) { this._store[k] = v; },
+    getItem(k) { return this._store[k] || null; }
+};
+if (typeof global.btoa === 'undefined') {
+    global.btoa = (s) => Buffer.from(s, 'binary').toString('base64');
+    global.atob = (b) => Buffer.from(b, 'base64').toString('binary');
+}
+
+const shield = new GenesisShield();
+shield.isReady = true;
+
+// F14-A: 40,000-byte Uint8Array must save cleanly without false >65535 rejection
+const u40k = new Uint8Array(40000);
+if (!shield.saveToVault('k40k', 100n, u40k)) process.exit(1);
+
+// F14-B: Failed buildAligned80BytePacket or buildPacket must NOT mutate currentNonce
+const engine = new OZOSEngine();
+if (engine.currentNonce !== 1000n) process.exit(2);
+try {
+    engine.buildAligned80BytePacket('TEST', 5000n, {});
+    process.exit(3);
+} catch (e) {}
+if (engine.currentNonce !== 1000n) process.exit(4);
+
+try {
+    engine.buildPacket(Symbol('bad'), 6000n);
+    process.exit(5);
+} catch (e) {}
+if (engine.currentNonce !== 1000n) process.exit(6);
+
+// F14-C: Whitespace-padded secretSeed ' 42 ' must be rejected just like nonce
+let seedRejected = false;
+try {
+    engine.buildAligned80BytePacket('TEST', 1001n, ' 42 ');
+} catch (e) {
+    seedRejected = true;
+}
+if (!seedRejected) process.exit(7);
+
+process.exit(0);
+"""
+p_js_r14_lows = subprocess.run(["node", "-e", test_js_r14_lows], cwd=REPO_ROOT, capture_output=True, text=True, encoding="utf-8", errors="replace")
+check_test("JS Shield luu Uint8Array 40KB (F14-A), Engine khong lam hong currentNonce khi throw (F14-B) va dong nhat parser secretSeed (F14-C)",
+           p_js_r14_lows.returncode == 0,
+           "F14-A, F14-B, F14-C JS invariants verified")
+
 print("\n======================================================================")
 if all_passed:
-    print("  🏆 KET LUAN: 52/52 BAI KIEM TRA RED TEAM VONG 1-13 DEU PASS 100%!")
+    print("  🏆 KET LUAN: 58/58 BAI KIEM TRA RED TEAM VONG 1-14 + EXTERNAL AUDIT PASS 100%!")
     print("  CAC VECTO TAN CONG DUOC PHAM VI AUDIT XAC NHAN DA DUOC KIEM TRA VA XU LY AN TOAN.")
     print("======================================================================")
     sys.exit(0)

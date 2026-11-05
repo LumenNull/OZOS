@@ -127,16 +127,27 @@ class OZOSEngine {
     }
 
     buildPacket(payloadStr, customNonce = null, magic = 0x47454E01) {
+        if (typeof payloadStr === 'symbol') {
+            throw new TypeError("Payload không được phép là kiểu Symbol.");
+        }
+        const payloadBytes = (payloadStr instanceof Uint8Array)
+            ? payloadStr
+            : new TextEncoder().encode(payloadStr === undefined || payloadStr === null ? "" : String(payloadStr));
+        if (payloadBytes.length > 65535) {
+            throw new RangeError(`Payload vượt quá giới hạn tối đa của khung dữ liệu 16-bit (${payloadBytes.length} > 65535 bytes).`);
+        }
+
+        let nextNonce;
         if (customNonce !== null && customNonce !== undefined) {
-            const parsed = OZOSEngine._parseStrictNonce(customNonce, "Nonce tùy chỉnh");
-            this.currentNonce = parsed;
+            nextNonce = OZOSEngine._parseStrictNonce(customNonce, "Nonce tùy chỉnh");
         } else {
             if (this.currentNonce >= 0xFFFFFFFFFFFFFFFFn) {
                 throw new Error("Tràn bộ đếm Nonce (Nonce đạt cực đại 2^64-1). Yêu cầu thiết lập lại Nonce chủ quyền.");
             }
-            this.currentNonce = this.currentNonce + 1n;
+            nextNonce = this.currentNonce + 1n;
         }
-        const payloadBytes = new TextEncoder().encode(payloadStr);
+        this.currentNonce = nextNonce;
+
         const headerSize = 80; // 4 (magic) + 8 (nonce) + 64 (fingerprint 16 float32) + 4 (payload_len)
         const totalSize = headerSize + payloadBytes.length;
         
@@ -572,19 +583,36 @@ class OZOSEngine {
             if (rawBytes[i] === 0x5A && rawBytes[i + 1] === 0xA5) {
                 const len = rawBytes[i + 2];
                 if (len > 0 && len <= 128 && (i + 3 + len) <= rawBytes.length) {
-                    const payloadBytes = new Uint8Array(rawBytes.slice(i + 3, i + 3 + len));
+                    const totalMsgBits = (3 + len) * 8;
+                    const bitOffset = i * 8;
+                    const votedBytes = new Uint8Array(len);
+                    for (let bIdx = 0; bIdx < len; bIdx++) {
+                        let byteVal = 0;
+                        for (let bitPos = 0; bitPos < 8; bitPos++) {
+                            const targetBit = (3 + bIdx) * 8 + bitPos;
+                            let ones = 0, count = 0;
+                            for (let k = bitOffset + targetBit; k < rawBits.length; k += totalMsgBits) {
+                                ones += rawBits[k];
+                                count++;
+                            }
+                            const majorityBit = (count > 0 && ones * 2 >= count) ? 1 : rawBits[bitOffset + targetBit];
+                            byteVal = (byteVal << 1) | majorityBit;
+                        }
+                        votedBytes[bIdx] = byteVal;
+                    }
                     try {
-                        const text = new TextDecoder().decode(payloadBytes);
-                        return { success: true, text: text, method: "2D-DCT Mid-Frequency Symmetry (Exact Q75 Recovery)" };
+                        const text = new TextDecoder('utf-8', { fatal: true }).decode(votedBytes);
+                        return { success: true, text: text, method: "2D-DCT Mid-Frequency Symmetry (Majority Voting Q75 Recovery)" };
                     } catch (e) {}
                 }
             }
         }
 
         return {
-            success: true,
-            text: "SOVEREIGN HOLDER: LUMEN NULL | ID: 000000000000 | O.Z.O.S-SOVEREIGN",
-            method: "2D-DCT Deep Inversion (Majority Voting Preserved)"
+            success: false,
+            text: null,
+            error: "Không tìm thấy thủy vân số 2D-DCT hợp lệ (Thiếu Magic 0x5AA5).",
+            method: "2D-DCT Mid-Frequency Symmetry"
         };
     }
 
@@ -850,33 +878,30 @@ class OZOSEngine {
      * MAC16 bao phủ toàn vẹn cả Header (0..77) VÀ Payload (80..80+len)
      */
     buildAligned80BytePacket(payloadStr, customNonce = null, secretSeed = 0xA5A5A5A5n) {
+        if (typeof payloadStr === 'symbol') {
+            throw new TypeError("Payload không được phép là kiểu Symbol.");
+        }
+        let safeSeed = 0xA5A5A5A5n;
+        if (secretSeed !== null && secretSeed !== undefined) {
+            safeSeed = OZOSEngine._parseStrictNonce(secretSeed, "Khóa secretSeed");
+        }
+        const payloadBytes = (payloadStr instanceof Uint8Array)
+            ? payloadStr
+            : new TextEncoder().encode(payloadStr === undefined || payloadStr === null ? "" : String(payloadStr));
+        if (payloadBytes.length > 65535) {
+            throw new Error(`Payload vượt quá giới hạn tối đa của khung dữ liệu 16-bit (${payloadBytes.length} > 65535 bytes).`);
+        }
+
+        let nextNonce;
         if (customNonce !== null && customNonce !== undefined) {
-            const parsed = OZOSEngine._parseStrictNonce(customNonce, "Nonce tùy chỉnh");
-            this.currentNonce = parsed;
+            nextNonce = OZOSEngine._parseStrictNonce(customNonce, "Nonce tùy chỉnh");
         } else {
             if (this.currentNonce >= 0xFFFFFFFFFFFFFFFFn) {
                 throw new Error("Tràn bộ đếm Nonce (Nonce đạt cực đại 2^64-1). Yêu cầu thiết lập lại Nonce chủ quyền.");
             }
-            this.currentNonce = this.currentNonce + 1n;
+            nextNonce = this.currentNonce + 1n;
         }
-        let safeSeed = 0xA5A5A5A5n;
-        if (secretSeed !== null && secretSeed !== undefined) {
-            if (typeof secretSeed === 'bigint') {
-                safeSeed = secretSeed;
-            } else if (typeof secretSeed === 'number' || typeof secretSeed === 'string') {
-                try {
-                    safeSeed = BigInt(secretSeed);
-                } catch (e) {
-                    throw new Error("Khóa secretSeed không hợp lệ: " + e.message);
-                }
-            } else {
-                throw new Error("Khóa secretSeed không hợp lệ (yêu cầu BigInt, số hoặc chuỗi hex/số).");
-            }
-        }
-        const payloadBytes = new TextEncoder().encode(payloadStr);
-        if (payloadBytes.length > 65535) {
-            throw new Error(`Payload vượt quá giới hạn tối đa của khung dữ liệu 16-bit (${payloadBytes.length} > 65535 bytes).`);
-        }
+        this.currentNonce = nextNonce;
         const totalSize = 80 + payloadBytes.length;
         const packet = new Uint8Array(totalSize);
         const view = new DataView(packet.buffer);
@@ -953,16 +978,10 @@ class OZOSEngine {
         // 2. Kiểm tra Tripwire MAC 16-bit (Offset 78) bao phủ Header (0..77) VÀ Payload (80..80+len)
         let safeSeed = 0xA5A5A5A5n;
         if (secretSeed !== null && secretSeed !== undefined) {
-            if (typeof secretSeed === 'bigint') {
-                safeSeed = secretSeed;
-            } else if (typeof secretSeed === 'number' || typeof secretSeed === 'string') {
-                try {
-                    safeSeed = BigInt(secretSeed);
-                } catch (e) {
-                    return { valid: false, code: -1, reason: "Khóa secretSeed không hợp lệ: " + e.message };
-                }
-            } else {
-                return { valid: false, code: -1, reason: "Khóa secretSeed không hợp lệ (yêu cầu BigInt, số hoặc chuỗi hex/số)." };
+            try {
+                safeSeed = OZOSEngine._parseStrictNonce(secretSeed, "Khóa secretSeed");
+            } catch (e) {
+                return { valid: false, code: -1, reason: e.message };
             }
         }
         const incomingMac = view.getUint16(78, true);

@@ -270,7 +270,11 @@ static inline bool ozos_ghost_emit_stealth_ack(const ozos_handshake_syn_t* syn, 
         return false;
     }
 
-    ozos_kdf_session_key(out_session_key, shared_secret);
+    if (ozos_kdf_session_key_ex(out_session_key, shared_secret, syn->session_nonce) != 0) {
+        ozos_ghost_zeroize(eph_sk_b, sizeof(eph_sk_b));
+        ozos_ghost_zeroize(shared_secret, sizeof(shared_secret));
+        return false;
+    }
 
     uint8_t auth_tag[16];
     ozos_compute_handshake_auth_tag(auth_tag, out_session_key, syn->eph_pubkey, eph_pk_b);

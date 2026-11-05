@@ -1,87 +1,88 @@
-#include <cstdint>
-#include <cstring>
-#include <emscripten/emscripten.h>
+#include <stdint.h>
+#include <stddef.h>
+#include <string.h>
 
-#ifdef __cplusplus
-extern "C" {
+#ifdef __EMSCRIPTEN__
+#include <emscripten.h>
+#else
+#define EMSCRIPTEN_KEEPALIVE
 #endif
 
-// Định danh chuẩn cho hệ thống Genesis Blueprint (GENS v1)
-const uint32_t GENESIS_MAGIC_HEADER = 0x47454E01; 
+extern "C" {
 
-// Cấu trúc gói tin nhị phân chuẩn hóa (Binary Layout)
-#pragma pack(push, 1)
-struct PacketHeader {
-    uint32_t magic;              // 4 bytes: Nhận diện hệ thống
-    uint64_t nonce;              // 8 bytes: Chống Replay Attack (Sequence/Timestamp)
-    float fingerprint[16];       // 64 bytes: 16 hệ số vân tay nhận thức 4x4 (Tầng 1)
-    uint32_t payload_length;     // 4 bytes: Độ dài phần dữ liệu thực tế
-};
-#pragma pack(pop)
+#define GENESIS_MAGIC 0x47454E01 // "GEN\x01"
+#define HEADER_SIZE 80 // 4 (magic) + 8 (nonce) + 60 (15 floats) + 4 (slot 15 FNV-1a) + 4 (payload_len)
 
 /**
- * Kiểm tra nhanh gói tin nhị phân khi vừa cập bến Tầng 2
- * @param buffer: Con trỏ trỏ trực tiếp đến vùng nhớ chứa gói tin trong WASM Heap
- * @param buffer_size: Tổng số bytes nhận được từ mạng
- * @param last_seen_nonce: Nonce lớn nhất đã ghi nhận trước đó để chống Replay Attack
- * @return Mã trạng thái:
- *         0: Hợp lệ tuyệt đối
- *         1: Sai Magic Header (Gói tin rác / Giả mạo)
- *         2: Lỗi kích thước gói tin (Buffer quá ngắn)
- *         3: Phát hiện Replay Attack (Nonce cũ hoặc trùng lặp)
+ * Validates and parses a raw binary packet directly in WASM memory.
+ * Returns:
+ *   0 = Valid packet
+ *   1 = Invalid Magic Header
+ *   2 = Packet too short, truncated, or payload_len > 65535
+ *   3 = Replay Attack Detected (nonce <= last_seen_nonce)
+ *   4 = Trailing garbage detected (buffer_size > 80 + payload_len)
+ *   5 = Payload FNV-1a checksum mismatch (or zeroed slot 15)
+ *   7 = Poisoned float (NaN / Infinity) in fingerprint slots 0..14
  */
 EMSCRIPTEN_KEEPALIVE
-int parse_and_validate_packet(const uint8_t* buffer, size_t buffer_size, uint64_t last_seen_nonce) {
-    // 1. Kiểm tra kích thước tối thiểu của Header
-    if (buffer_size < sizeof(PacketHeader)) {
-        return 2; 
+int parse_and_validate_packet(
+    const uint8_t* buffer,
+    size_t buffer_size,
+    uint64_t last_seen_nonce
+) {
+    if (!buffer || buffer_size < HEADER_SIZE) {
+        return 2; // Too short
     }
 
-    PacketHeader header;
-    std::memcpy(&header, buffer, sizeof(PacketHeader));
-
-    // 2. Kiểm tra Magic Header
-    if (header.magic != GENESIS_MAGIC_HEADER) {
-        return 1; 
+    // 1. Check Magic (Offset 0..3)
+    uint32_t magic = 0;
+    memcpy(&magic, buffer, 4);
+    if (magic != GENESIS_MAGIC) {
+        return 1; // Invalid magic
     }
 
-    // 3. Chống tràn số học (WASM32 integer overflow)
-    if (header.payload_length > 65535 || (sizeof(PacketHeader) + header.payload_length) < sizeof(PacketHeader)) {
-        return 2;
+    // 2. Check Nonce (Offset 4..11) for Replay Protection
+    uint64_t nonce = 0;
+    memcpy(&nonce, buffer + 4, 8);
+    if (nonce <= last_seen_nonce) {
+        return 3; // Replay attack detected!
     }
 
-    // 4. Kiểm tra tính tuần tự & chống Replay Attack
-    if (header.nonce <= last_seen_nonce) {
-        return 3; 
-    }
-
-    // 5. Kiểm tra tính toàn vẹn kích thước: Chống cắt ngắn payload
-    if (buffer_size < sizeof(PacketHeader) + header.payload_length) {
-        return 2; // Payload bị cụt / thiếu dữ liệu
-    }
-
-    // 6. Chống rác nối đuôi (Trailing garbage)
-    if (buffer_size > sizeof(PacketHeader) + header.payload_length) {
-        return 4; // Rác nối đuôi
-    }
-
-    // 7. Kiểm tra tính toàn vẹn Payload (Chống sửa đổi 1 byte)
-    if (header.payload_length > 0) {
-        const uint8_t* payload_ptr = buffer + sizeof(PacketHeader);
-        uint32_t calc_sum = 0x811C9DC5U;
-        for (uint32_t i = 0; i < header.payload_length; ++i) {
-            calc_sum = (calc_sum ^ payload_ptr[i]) * 0x01000193U;
-        }
-        union { float f; uint32_t u; } pun;
-        pun.f = header.fingerprint[15];
-        if (pun.u != calc_sum) {
-            return 5; // Dữ liệu payload bị sửa đổi
+    // 3. Check Float Finiteness in fingerprint slots 0..14 (Offset 12..71)
+    for (size_t i = 0; i < 15; ++i) {
+        uint32_t bits = 0;
+        memcpy(&bits, buffer + 12 + i * 4, 4);
+        if (((bits >> 23) & 0xFFU) == 0xFFU) {
+            return 7; // NaN or Infinity poison detected!
         }
     }
 
-    return 0; // Gói tin vượt qua mọi vòng kiểm duyệt của Tầng 2!
+    // 4. Check Payload Length (Offset 76..79)
+    uint32_t payload_len = 0;
+    memcpy(&payload_len, buffer + 76, 4);
+
+    if (payload_len > 65535U || buffer_size < HEADER_SIZE + (size_t)payload_len) {
+        return 2; // Truncated packet or overflow
+    }
+    if (buffer_size > HEADER_SIZE + (size_t)payload_len) {
+        return 4; // Trailing garbage detected!
+    }
+
+    // 5. Check Slot 15 FNV-1a 32-bit Payload Checksum (Offset 72..75)
+    uint32_t expected_fnv = 0;
+    memcpy(&expected_fnv, buffer + 72, 4);
+    if (payload_len > 0U || expected_fnv == 0U) {
+        uint32_t fnv = 0x811C9DC5U;
+        for (uint32_t i = 0; i < payload_len; ++i) {
+            fnv ^= (uint32_t)buffer[HEADER_SIZE + i];
+            fnv *= 0x01000193U;
+        }
+        if (fnv != expected_fnv) {
+            return 5; // Payload tampered or zero-slot bypass attempt!
+        }
+    }
+
+    return 0; // Valid
 }
 
-#ifdef __cplusplus
-}
-#endif
+} // extern "C"

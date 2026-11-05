@@ -121,10 +121,22 @@ static inline size_t ozos_sign_packet_frame(
     if (total > max_out) return 0;
 
     memcpy(out_buffer, header_and_payload, header_plus_payload_len);
+    if (header_plus_payload_len > 80) {
+        uint64_t h = 0xA5A5A5A5ULL;
+        for (size_t i = 0; i < 78; ++i) {
+            h = ((h ^ (uint64_t)out_buffer[i]) * 0x100000001B3ULL);
+        }
+        for (size_t i = 80; i < header_plus_payload_len; ++i) {
+            h = ((h ^ (uint64_t)out_buffer[i]) * 0x100000001B3ULL);
+        }
+        uint16_t fnv_mac = (uint16_t)((h ^ (h >> 16) ^ (h >> 32)) & 0xFFFFU);
+        out_buffer[78] = (uint8_t)(fnv_mac & 0xFFU);
+        out_buffer[79] = (uint8_t)((fnv_mac >> 8) & 0xFFU);
+    }
     memcpy(out_buffer + header_plus_payload_len, pk, OZOS_ED25519_PK_BYTES);
 
     uint8_t sig[OZOS_ED25519_SIG_BYTES];
-    if (ozos_ed25519_sign_detached(sig, header_and_payload, header_plus_payload_len, sk) != 0) {
+    if (ozos_ed25519_sign_detached(sig, out_buffer, header_plus_payload_len, sk) != 0) {
         return 0;
     }
 
@@ -201,8 +213,61 @@ static inline int ozos_ecdh_keypair(
     return crypto_box_keypair(pk, sk);
 }
 
+static inline void ozos_crypto_zeroize(void* ptr, size_t len) {
+    if (!ptr || len == 0) return;
+    volatile uint8_t* p = (volatile uint8_t*)ptr;
+    for (size_t i = 0; i < len; ++i) p[i] = 0x00U;
+}
+
+/**
+ * Kiểm tra thời gian hằng định (constant-time) các điểm bậc thấp trên đường cong Curve25519
+ * (RFC 7748 Section 6.1 / Bernstein 2006 - 8 canonical low-order points).
+ */
+static inline bool ozos_is_low_order_curve25519_point(const uint8_t pk[32]) {
+    if (!pk) return true;
+    static const uint8_t low_order_points[8][32] = {
+        /* 0 (Order 1) */
+        {0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,
+         0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00},
+        /* 1 (Order 4) */
+        {0x01,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,
+         0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00},
+        /* 325606250916557431795983626356110631294008115727848805560023387167927233504 (Order 8) */
+        {0xe0,0xeb,0x7a,0x7c,0x3b,0x41,0xb8,0xae,0x16,0x56,0xe3,0xfa,0xf1,0x9f,0xc4,0x6a,
+         0xda,0x09,0x8d,0xeb,0x9c,0x32,0xb1,0xfd,0x86,0x62,0x05,0x16,0x5f,0x49,0xb8,0x00},
+        /* 39382357235489614581723060781553021112529911719440698176882885853963445705823 (Order 8) */
+        {0x5f,0x9c,0x95,0xbc,0xa3,0x50,0x8c,0x24,0xb1,0xd0,0xb1,0x55,0x9c,0x83,0xef,0x5b,
+         0x04,0x44,0x5c,0xc4,0x58,0x1c,0x8e,0x86,0xd8,0x22,0x4e,0xdd,0xd0,0x9f,0x11,0x57},
+        /* p - 1 (Order 2) */
+        {0xec,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,
+         0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0x7f},
+        /* p (Order 1, non-canonical) */
+        {0xed,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,
+         0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0x7f},
+        /* p + 1 (Order 4, non-canonical) */
+        {0xee,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,
+         0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0x7f},
+        /* 0 with MSB set */
+        {0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,
+         0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x80}
+    };
+    uint8_t canonical_pk[32];
+    memcpy(canonical_pk, pk, 32);
+    canonical_pk[31] &= 0x7FU;
+    int match = 0;
+    for (int i = 0; i < 8; ++i) {
+        if (crypto_verify_32(canonical_pk, low_order_points[i]) == 0 ||
+            crypto_verify_32(pk, low_order_points[i]) == 0) {
+            match = 1;
+        }
+    }
+    return (match != 0);
+}
+
 /**
  * Tính toán Điểm bí mật chung ECDH: Shared = Peer_PK ^ My_SK (mod 2^255 - 19)
+ * Bắt buộc: Từ chối điểm bậc thấp (Small-Subgroup Confinement Attack RFC 7748 Section 6.1)
+ * và từ chối tuyệt đối khi kết quả X25519 suy biến về toàn số 0 (all-zero output).
  */
 static inline int ozos_ecdh_shared_secret(
     uint8_t shared_out[OZOS_ECDH_SHARED_BYTES],
@@ -210,32 +275,93 @@ static inline int ozos_ecdh_shared_secret(
     const uint8_t my_sk[OZOS_ECDH_SK_BYTES]
 ) {
     if (!shared_out || !peer_pk || !my_sk) return -1;
-    return crypto_scalarmult_curve25519(shared_out, my_sk, peer_pk);
-}
-
-/**
- * Hàm phân rã khóa KDF (Key Derivation Function) qua SHA-512:
- * K_session (32B) = SHA-512(Shared_Secret || "OZOS_ACOUSTIC_TUNNEL_V1")[0:32]
- */
-static inline int ozos_kdf_session_key(
-    uint8_t session_key_out[OZOS_SESSION_KEY_BYTES],
-    const uint8_t shared_secret[OZOS_ECDH_SHARED_BYTES]
-) {
-    if (!session_key_out || !shared_secret) return -1;
-    const char salt[] = "OZOS_ACOUSTIC_TUNNEL_V1";
-    uint8_t kdf_input[32 + sizeof(salt)];
-    memcpy(kdf_input, shared_secret, 32);
-    memcpy(kdf_input + 32, salt, sizeof(salt));
-
-    uint8_t hash_out[64];
-    crypto_hash(hash_out, kdf_input, sizeof(kdf_input));
-    memcpy(session_key_out, hash_out, OZOS_SESSION_KEY_BYTES);
+    if (ozos_is_low_order_curve25519_point(peer_pk)) {
+        ozos_crypto_zeroize(shared_out, OZOS_ECDH_SHARED_BYTES);
+        return -1;
+    }
+    if (crypto_scalarmult_curve25519(shared_out, my_sk, peer_pk) != 0) {
+        ozos_crypto_zeroize(shared_out, OZOS_ECDH_SHARED_BYTES);
+        return -1;
+    }
+    /* Kiểm tra thời gian hằng định (constant-time) chống khóa chung toàn 0 */
+    static const uint8_t zero32[32] = {0};
+    if (crypto_verify_32(shared_out, zero32) == 0) {
+        ozos_crypto_zeroize(shared_out, OZOS_ECDH_SHARED_BYTES);
+        return -1;
+    }
     return 0;
 }
 
 /**
+ * Hàm phân rã khóa KDF (Key Derivation Function) qua SHA-512 có gắn kết Session Nonce:
+ * K_session (32B) = SHA-512(Shared_Secret || "OZOS_ACOUSTIC_TUNNEL_V1" || session_nonce_le)[0:32]
+ */
+static inline int ozos_kdf_session_key_ex(
+    uint8_t session_key_out[OZOS_SESSION_KEY_BYTES],
+    const uint8_t shared_secret[OZOS_ECDH_SHARED_BYTES],
+    uint32_t session_nonce
+) {
+    if (!session_key_out || !shared_secret) return -1;
+    static const uint8_t zero32[32] = {0};
+    if (crypto_verify_32(shared_secret, zero32) == 0) {
+        ozos_crypto_zeroize(session_key_out, OZOS_SESSION_KEY_BYTES);
+        return -1;
+    }
+    const char salt[] = "OZOS_ACOUSTIC_TUNNEL_V1";
+    uint8_t kdf_input[32 + sizeof(salt) + 4];
+    memcpy(kdf_input, shared_secret, 32);
+    memcpy(kdf_input + 32, salt, sizeof(salt));
+    kdf_input[32 + sizeof(salt) + 0] = (uint8_t)(session_nonce & 0xFFU);
+    kdf_input[32 + sizeof(salt) + 1] = (uint8_t)((session_nonce >> 8) & 0xFFU);
+    kdf_input[32 + sizeof(salt) + 2] = (uint8_t)((session_nonce >> 16) & 0xFFU);
+    kdf_input[32 + sizeof(salt) + 3] = (uint8_t)((session_nonce >> 24) & 0xFFU);
+
+    size_t kdf_len = (session_nonce != 0U) ? (32 + sizeof(salt) + 4) : (32 + sizeof(salt));
+    uint8_t hash_out[64];
+    crypto_hash(hash_out, kdf_input, kdf_len);
+    memcpy(session_key_out, hash_out, OZOS_SESSION_KEY_BYTES);
+
+    ozos_crypto_zeroize(kdf_input, sizeof(kdf_input));
+    ozos_crypto_zeroize(hash_out, sizeof(hash_out));
+    return 0;
+}
+
+static inline int ozos_kdf_session_key(
+    uint8_t session_key_out[OZOS_SESSION_KEY_BYTES],
+    const uint8_t shared_secret[OZOS_ECDH_SHARED_BYTES]
+) {
+    return ozos_kdf_session_key_ex(session_key_out, shared_secret, 0U);
+}
+
+/**
+ * Dẫn xuất khóa con một lần (One-Time Auth Subkey) tách biệt miền (Domain-Separated)
+ * dành riêng cho bước xác thực bắt tay Poly1305, tuyệt đối không tái sử dụng trực tiếp
+ * khóa phiên K_session của đường hầm XSalsa20.
+ */
+static inline void ozos_derive_handshake_poly1305_subkey(
+    uint8_t subkey_out[32],
+    const uint8_t session_key[32],
+    const uint8_t a_pub[32],
+    const uint8_t b_pub[32]
+) {
+    const char domain_label[] = "OZOS_POLY1305_HANDSHAKE_SUBKEY_V1";
+    uint8_t buf[32 + 32 + 32 + sizeof(domain_label)];
+    memcpy(buf, session_key, 32);
+    memcpy(buf + 32, a_pub, 32);
+    memcpy(buf + 64, b_pub, 32);
+    memcpy(buf + 96, domain_label, sizeof(domain_label));
+
+    uint8_t digest[64];
+    crypto_hash(digest, buf, sizeof(buf));
+    memcpy(subkey_out, digest, 32);
+
+    ozos_crypto_zeroize(buf, sizeof(buf));
+    ozos_crypto_zeroize(digest, sizeof(digest));
+}
+
+/**
  * Tính toán Thẻ xác nhận bắt tay Auth Tag (16 Bytes Poly1305):
- * AuthTag = Poly1305(K_session, A_pub || B_pub)
+ * AuthTag = Poly1305(SubKey_Handshake, A_pub || B_pub)
  */
 static inline int ozos_compute_handshake_auth_tag(
     uint8_t tag_out[16],
@@ -247,7 +373,12 @@ static inline int ozos_compute_handshake_auth_tag(
     uint8_t transcript[64];
     memcpy(transcript, a_pub, 32);
     memcpy(transcript + 32, b_pub, 32);
-    return crypto_onetimeauth_poly1305(tag_out, transcript, 64, session_key);
+
+    uint8_t poly_subkey[32];
+    ozos_derive_handshake_poly1305_subkey(poly_subkey, session_key, a_pub, b_pub);
+    int rc = crypto_onetimeauth_poly1305(tag_out, transcript, 64, poly_subkey);
+    ozos_crypto_zeroize(poly_subkey, sizeof(poly_subkey));
+    return rc;
 }
 
 /**
@@ -263,7 +394,12 @@ static inline bool ozos_verify_handshake_auth_tag(
     uint8_t transcript[64];
     memcpy(transcript, a_pub, 32);
     memcpy(transcript + 32, b_pub, 32);
-    return (crypto_onetimeauth_poly1305_verify(expected_tag, transcript, 64, session_key) == 0);
+
+    uint8_t poly_subkey[32];
+    ozos_derive_handshake_poly1305_subkey(poly_subkey, session_key, a_pub, b_pub);
+    int rc = crypto_onetimeauth_poly1305_verify(expected_tag, transcript, 64, poly_subkey);
+    ozos_crypto_zeroize(poly_subkey, sizeof(poly_subkey));
+    return (rc == 0);
 }
 
 /**
@@ -297,6 +433,7 @@ static inline void ozos_handshake_syn_build(
 static inline bool ozos_handshake_syn_verify(const ozos_handshake_syn_t* syn) {
     if (!syn) return false;
     if (syn->magic != OZOS_MAGIC_HANDSHAKE_SYN) return false;
+    if (ozos_is_low_order_curve25519_point(syn->eph_pubkey)) return false;
 
     uint16_t crc = 0xFFFF;
     const uint8_t* p = (const uint8_t*)syn;
@@ -339,6 +476,7 @@ static inline void ozos_handshake_ack_build(
 static inline bool ozos_handshake_ack_verify(const ozos_handshake_ack_t* ack) {
     if (!ack) return false;
     if (ack->magic != OZOS_MAGIC_HANDSHAKE_ACK) return false;
+    if (ozos_is_low_order_curve25519_point(ack->eph_pubkey)) return false;
 
     uint16_t crc = 0xFFFF;
     const uint8_t* p = (const uint8_t*)ack;
@@ -389,17 +527,27 @@ static inline size_t ozos_tunnel_encrypt(
     memcpy(pad_m + 32, plaintext, plaintext_len);
 
     if (crypto_secretbox(pad_c, pad_m, 32 + plaintext_len, nonce24, session_key) != 0) {
+        ozos_crypto_zeroize(pad_m, sizeof(pad_m));
+        ozos_crypto_zeroize(pad_c, sizeof(pad_c));
         return 0;
     }
 
     /* pad_c + 16 chứa: 16 bytes Poly1305 MAC + plaintext_len bytes Ciphertext */
     memcpy(out_frame + sizeof(ozos_tunnel_data_hdr_t), pad_c + 16, 16 + plaintext_len);
 
+    ozos_crypto_zeroize(pad_m, sizeof(pad_m));
+    ozos_crypto_zeroize(pad_c, sizeof(pad_c));
     return total_frame_len;
 }
 
+#define OZOS_TUNNEL_REPLAY_WINDOW 64U
+static uint8_t g_ozos_tunnel_seen_nonces[OZOS_TUNNEL_REPLAY_WINDOW][24];
+static size_t  g_ozos_tunnel_seen_count = 0;
+static size_t  g_ozos_tunnel_seen_pos   = 0;
+
 /**
  * Giải mã dữ liệu nhận được từ Đường hầm Âm học (Acoustic Tunnel Decryption)
+ * Tích hợp bộ nhớ đệm chống phát lại (Anti-Replay 24-Byte Nonce Ring Window)
  */
 static inline bool ozos_tunnel_decrypt(
     uint8_t* out_plaintext,
@@ -427,17 +575,43 @@ static inline bool ozos_tunnel_decrypt(
     size_t expected_total = sizeof(ozos_tunnel_data_hdr_t) + 16 + (size_t)hdr->payload_len;
     if (frame_len != expected_total) return false;
 
+    /* Anti-replay check over seen 24-byte nonces (constant-time scan) */
+    int replay_match = 0;
+    for (size_t i = 0; i < g_ozos_tunnel_seen_count; ++i) {
+        uint32_t diff = 0;
+        for (size_t k = 0; k < 24; ++k) {
+            diff |= (uint32_t)(g_ozos_tunnel_seen_nonces[i][k] ^ hdr->nonce[k]);
+        }
+        if (diff == 0U) {
+            replay_match = 1;
+        }
+    }
+    if (replay_match != 0) {
+        return false; /* Replay of previously decrypted tunnel frame rejected! */
+    }
+
     /* Decrypt with crypto_secretbox_open */
     uint8_t pad_c[32 + OZOS_TUNNEL_MAX_PAYLOAD] = {0};
     uint8_t pad_m[32 + OZOS_TUNNEL_MAX_PAYLOAD] = {0};
     memcpy(pad_c + 16, in_frame + sizeof(ozos_tunnel_data_hdr_t), 16 + hdr->payload_len);
 
     if (crypto_secretbox_open(pad_m, pad_c, 32 + hdr->payload_len, hdr->nonce, session_key) != 0) {
+        ozos_crypto_zeroize(pad_c, sizeof(pad_c));
+        ozos_crypto_zeroize(pad_m, sizeof(pad_m));
         return false; /* Poly1305 MAC failure or key mismatch! */
+    }
+
+    /* Record seen nonce after successful authentication */
+    memcpy(g_ozos_tunnel_seen_nonces[g_ozos_tunnel_seen_pos], hdr->nonce, 24);
+    g_ozos_tunnel_seen_pos = (g_ozos_tunnel_seen_pos + 1U) % OZOS_TUNNEL_REPLAY_WINDOW;
+    if (g_ozos_tunnel_seen_count < OZOS_TUNNEL_REPLAY_WINDOW) {
+        g_ozos_tunnel_seen_count++;
     }
 
     memcpy(out_plaintext, pad_m + 32, hdr->payload_len);
     *out_len = hdr->payload_len;
+    ozos_crypto_zeroize(pad_c, sizeof(pad_c));
+    ozos_crypto_zeroize(pad_m, sizeof(pad_m));
     return true;
 }
 

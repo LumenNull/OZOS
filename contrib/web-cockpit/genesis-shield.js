@@ -238,11 +238,13 @@ class GenesisShield {
     }
 
     saveToVault(key, nonce, payloadStr, magicHeader = 0x47454E01) {
-        const payloadBytes = new TextEncoder().encode(payloadStr);
+        const payloadBytes = (payloadStr instanceof Uint8Array)
+            ? payloadStr
+            : new TextEncoder().encode(typeof payloadStr === 'string' ? payloadStr : String(payloadStr ?? ''));
         if (payloadBytes.length > 65535) {
             throw new Error(`Dữ liệu Vault vượt quá giới hạn kích thước tối đa (${payloadBytes.length} > 65535 bytes).`);
         }
-        const packetBytes = this.buildPacket(magicHeader, nonce, payloadStr);
+        const packetBytes = this.buildPacket(magicHeader, nonce, payloadBytes);
         const b64 = this.bytesToBase64(packetBytes);
         localStorage.setItem(key, b64);
         return true;

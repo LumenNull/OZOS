@@ -18,6 +18,8 @@ import os
 import sys
 import json
 import subprocess
+import time
+import urllib.parse
 import webbrowser
 
 if hasattr(sys.stdout, 'reconfigure'):
@@ -25,7 +27,20 @@ if hasattr(sys.stdout, 'reconfigure'):
 
 PORT = 8899
 DIRECTORY = os.path.dirname(os.path.abspath(__file__))
-OZOS_EXE = os.path.join(DIRECTORY, "ozos.exe")
+REPO_ROOT = os.path.abspath(os.path.join(DIRECTORY, "..", ".."))
+
+
+def resolve_ozos_exe():
+    candidates = ["ozos.exe", "ozos"] if os.name == "nt" else ["ozos", "ozos.exe"]
+    for base_dir in (DIRECTORY, REPO_ROOT):
+        for name in candidates:
+            p = os.path.join(base_dir, name)
+            if os.path.isfile(p):
+                return p
+    return os.path.join(DIRECTORY, "ozos.exe" if os.name == "nt" else "ozos")
+
+
+OZOS_EXE = resolve_ozos_exe()
 
 class ThreadedTCPServer(socketserver.ThreadingMixIn, socketserver.TCPServer):
     daemon_threads = True
@@ -42,11 +57,29 @@ class OZOSRequestHandler(http.server.SimpleHTTPRequestHandler):
         return None
 
     def do_GET(self):
-        fs_path = os.path.realpath(self.translate_path(self.path))
-        real_dir = os.path.realpath(DIRECTORY)
+        try:
+            if "\x00" in self.path:
+                self.send_error(404, "File not found")
+                return
+            clean_url_path = urllib.parse.unquote(self.path.split('?', 1)[0].split('#', 1)[0])
+            if "\x00" in clean_url_path or ".." in clean_url_path:
+                self.send_error(404, "File not found")
+                return
+            if clean_url_path in ("", "/"):
+                self.path = "/index.html"
+
+            translated = self.translate_path(self.path)
+            if os.path.islink(translated):
+                self.send_error(404, "File not found")
+                return
+            fs_path = os.path.realpath(translated)
+            real_dir = os.path.realpath(DIRECTORY)
+        except (ValueError, OSError):
+            self.send_error(404, "File not found")
+            return
         
         # 1. Directory containment
-        if not fs_path.startswith(real_dir):
+        if not (fs_path == real_dir or fs_path.startswith(real_dir + os.sep)):
             self.send_error(404, "File not found")
             return
             
@@ -58,10 +91,10 @@ class OZOSRequestHandler(http.server.SimpleHTTPRequestHandler):
                 self.send_error(404, "File not found")
                 return
         
-        # 3. Allow only safe web cockpit static extensions
-        ALLOWED_EXTS = {'.html', '.js', '.wasm', '.css', '.wav', '.png', '.jpg', '.svg', '.json', '.ico', ''}
+        # 3. Allow only safe web cockpit static extensions (strictly no extensionless files)
+        ALLOWED_EXTS = {'.html', '.js', '.wasm', '.css', '.wav', '.png', '.jpg', '.jpeg', '.svg', '.json', '.ico'}
         ext = os.path.splitext(fs_path)[1].lower()
-        if os.path.isfile(fs_path) and ext not in ALLOWED_EXTS:
+        if not os.path.isfile(fs_path) or ext not in ALLOWED_EXTS:
             self.send_error(404, "File not found")
             return
             
@@ -127,33 +160,55 @@ class OZOSRequestHandler(http.server.SimpleHTTPRequestHandler):
                     raise ValueError(f"Command not permitted by sovereign allowlist: {cmd_name}")
 
                 safe_args = []
-                for a in args:
+                real_dir = os.path.realpath(DIRECTORY)
+                for idx, a in enumerate(args):
                     if not isinstance(a, str):
                         raise ValueError("Command arguments must be strings")
-                    a_base = os.path.basename(a)
-                    target = os.path.realpath(os.path.join(DIRECTORY, a_base))
-                    if not target.startswith(DIRECTORY) or os.path.islink(os.path.join(DIRECTORY, a_base)):
-                        raise ValueError(f"Invalid path traversal or symlink detected: {a}")
-                    safe_args.append(a_base)
+                    if "\x00" in a or ".." in a:
+                        raise ValueError(f"Invalid path traversal or NUL byte detected: {a}")
+
+                    is_file_arg = (
+                        a.lower().endswith(".wav")
+                        or (cmd_name == "audio-decode" and idx == 1)
+                        or (cmd_name == "audio-synth" and idx == 2)
+                        or (cmd_name == "handshake-syn" and idx == 1)
+                        or (cmd_name == "gossip-beacon" and idx == 2)
+                        or (cmd_name == "handshake-ack" and idx == 2 and not a.startswith("-"))
+                    )
+                    if is_file_arg:
+                        if "/" in a or "\\" in a or a != os.path.basename(a) or not a.lower().endswith(".wav"):
+                            raise ValueError(f"Invalid WAV filename argument: {a}")
+                        raw_join = os.path.join(DIRECTORY, a)
+                        target = os.path.realpath(raw_join)
+                        if os.path.islink(raw_join) or not target.startswith(real_dir + os.sep):
+                            raise ValueError(f"Invalid path traversal or symlink detected: {a}")
+                        safe_args.append(a)
+                    else:
+                        a_base = os.path.basename(a)
+                        if a_base and os.path.islink(os.path.join(DIRECTORY, a_base)):
+                            raise ValueError(f"Symlink argument rejected: {a}")
+                        safe_args.append(a)
                 
                 wav_targets = []
-                for a in safe_args:
-                    if a.endswith(".wav"):
-                        target_wav = os.path.realpath(os.path.join(DIRECTORY, a))
-                        wav_targets.append(target_wav)
-                        if os.path.exists(target_wav):
-                            try:
-                                os.remove(target_wav)
-                            except OSError:
-                                pass
+                if cmd_name in {"audio-synth", "handshake-syn", "gossip-beacon", "handshake-ack"}:
+                    for a in safe_args[1:]:
+                        if a.lower().endswith(".wav"):
+                            target_wav = os.path.realpath(os.path.join(DIRECTORY, a))
+                            wav_targets.append(target_wav)
+                            if os.path.exists(target_wav):
+                                try:
+                                    os.remove(target_wav)
+                                except OSError:
+                                    pass
 
                 start_time = time.time()
-                cmd = [OZOS_EXE] + safe_args
+                exe_path = resolve_ozos_exe()
+                cmd = [exe_path] + safe_args
                 res = subprocess.run(cmd, capture_output=True, encoding='utf-8', errors='replace', cwd=DIRECTORY, timeout=15)
                 
                 is_success = (res.returncode == 0)
                 for target_wav in wav_targets:
-                    if not os.path.exists(target_wav) or os.path.getsize(target_wav) == 0:
+                    if not os.path.exists(target_wav) or os.path.getsize(target_wav) <= 44:
                         is_success = False
                     elif os.path.getmtime(target_wav) < start_time - 0.5:
                         is_success = False
