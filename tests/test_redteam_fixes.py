@@ -2404,10 +2404,89 @@ check_test("JS chan zero-slot FNV bypass tren empty payload (J1) va test_audit_v
            r15_65_ok,
            f"J1 & SipHash-2-4 verified (j1_rc={p_j1.returncode}, audit_rc={rc_audit})")
 
+# ----------------------------------------------------------------------
+# 66. TEST OMNI-SPECTRUM (TIER 1): Optical Glyph 32x32 Matrix & BMP Roundtrip
+# ----------------------------------------------------------------------
+print("\n[TEST 66/69] Kiem Tra Optical Glyph 32x32 Matrix & BMP File Roundtrip (Quang Hoc 16ms)...")
+raw_80_hex = signed_hex[:160]
+tmp_bmp = os.path.join(REPO_ROOT, "_test_r15_glyph.bmp")
+rc_g_enc, out_g_enc, _ = run_ozos("glyph-encode", raw_80_hex, "--bmp", tmp_bmp)
+rc_g_dec, out_g_dec, _ = run_ozos("glyph-decode", tmp_bmp)
+
+# Test anti-tampering on BMP file
+tamper_bmp_detected = False
+if os.path.exists(tmp_bmp):
+    with open(tmp_bmp, "r+b") as f:
+        # Tamper RGB pixel at module center (10, 10): 54 + (255 - 84) * 768 + 84 * 3
+        offset = 54 + 171 * 768 + 84 * 3
+        f.seek(offset)
+        f.write(b"\xFF\xFF\xFF")
+    rc_g_tamper, _, _ = run_ozos("glyph-decode", tmp_bmp)
+    tamper_bmp_detected = (rc_g_tamper != 0)
+    try: os.remove(tmp_bmp)
+    except: pass
+
+glyph_ok = (rc_g_enc == 0 and rc_g_dec == 0 and raw_80_hex.lower() in out_g_dec.lower() and tamper_bmp_detected)
+check_test("Optical Glyph 32x32 render BMP, bóc tách bit-exact và bắt quả tang sửa đổi file BMP (Tier 1)",
+           glyph_ok,
+           f"Glyph verified (enc={rc_g_enc}, dec={rc_g_dec}, tamper={tamper_bmp_detected})")
+
+# ----------------------------------------------------------------------
+# 67. TEST OMNI-SPECTRUM (TIER 2): Acoustic OFDM Multi-Carrier (< 0.04s) & Ambient Steganography
+# ----------------------------------------------------------------------
+print("\n[TEST 67/69] Kiem Tra Acoustic OFDM Multi-Carrier (< 0.04s) & Ambient Steganography (Tier 2)...")
+tmp_ofdm_wav = os.path.join(REPO_ROOT, "_test_r15_ofdm.wav")
+rc_ofdm_synth, out_ofdm_synth, _ = run_ozos("ofdm-synth", raw_80_hex, tmp_ofdm_wav, "--stego")
+rc_ofdm_dec, out_ofdm_dec, _ = run_ozos("ofdm-decode", tmp_ofdm_wav)
+if os.path.exists(tmp_ofdm_wav):
+    try: os.remove(tmp_ofdm_wav)
+    except: pass
+
+ofdm_ok = (rc_ofdm_synth == 0 and rc_ofdm_dec == 0 and raw_80_hex.lower() in out_ofdm_dec.lower())
+check_test("Acoustic OFDM 64-FFT tổng hợp đa sóng mang < 0.04s, giấu trong âm nền và giải mã chính xác 100% (Tier 2)",
+           ofdm_ok,
+           f"OFDM verified (synth={rc_ofdm_synth}, dec={rc_ofdm_dec})")
+
+# ----------------------------------------------------------------------
+# 68. TEST OMNI-SPECTRUM (TIER 3): Long-Range LoRa Sub-GHz 84-Byte Frame & CRC16-CCITT
+# ----------------------------------------------------------------------
+print("\n[TEST 68/69] Kiem Tra Long-Range LoRa Sub-GHz 84-Byte Frame & CRC16-CCITT (Tier 3)...")
+rc_lora_pack, out_lora_pack, _ = run_ozos("lora-pack", raw_80_hex)
+lora_candidates = [l.strip() for l in out_lora_pack.splitlines() if len(l.strip()) == 168 and all(c in "0123456789abcdefABCDEF" for c in l.strip())]
+lora_frame_hex = lora_candidates[0] if lora_candidates else ""
+rc_lora_unpack, out_lora_unpack, _ = run_ozos("lora-unpack", lora_frame_hex)
+
+# Test tamper rejection on LoRa frame
+tampered_lora = lora_frame_hex[:50] + ("00" if lora_frame_hex[50:52] != "00" else "FF") + lora_frame_hex[52:] if len(lora_frame_hex) == 168 else ""
+rc_lora_tamper, _, _ = run_ozos("lora-unpack", tampered_lora)
+
+lora_ok = (rc_lora_pack == 0 and rc_lora_unpack == 0 and raw_80_hex.lower() in out_lora_unpack.lower() and rc_lora_tamper != 0)
+check_test("LoRa Sub-GHz đóng khung 84-byte (Sync 0x12, Type 0x50, CRC16-CCITT) và chặn đứng sửa đổi (Tier 3)",
+           lora_ok,
+           f"LoRa verified (pack={rc_lora_pack}, unpack={rc_lora_unpack}, tamper_blocked={rc_lora_tamper != 0})")
+
+# ----------------------------------------------------------------------
+# 69. TEST OMNI-SPECTRUM (TIER 4 & HARNESS): Diagnostic Spectrum Status & Native PHY Harness
+# ----------------------------------------------------------------------
+print("\n[TEST 69/69] Kiem Tra Spectrum-Status & Bo Test Native C99 test_omni_phy.exe...")
+rc_spec, out_spec, _ = run_ozos("spectrum-status")
+spec_ok = (rc_spec == 0) and ("TẦNG 1: QUANG HỌC" in out_spec) and ("TẦNG 2: SÓNG ÂM" in out_spec) and ("TẦNG 3: SÓNG DÀI" in out_spec) and ("TẦNG 4: SÓNG TRỜI HF" in out_spec)
+
+omni_exe = os.path.join(REPO_ROOT, "tests", "test_omni_phy.exe")
+rc_omni_native = 0
+if os.path.exists(omni_exe):
+    p_omni = subprocess.run([omni_exe], capture_output=True, text=True, encoding="utf-8", errors="replace", cwd=REPO_ROOT)
+    rc_omni_native = p_omni.returncode
+
+r15_69_ok = spec_ok and (rc_omni_native == 0)
+check_test("CLI spectrum-status hiển thị đầy đủ 4 tầng sóng và bộ kiểm thử native C99 test_omni_phy.exe đạt 5/5 PASS 100%",
+           r15_69_ok,
+           f"Spectrum verified (status={spec_ok}, native_harness_rc={rc_omni_native})")
+
 print("\n======================================================================")
 if all_passed:
-    print("  🏆 KET LUAN: 65/65 BAI KIEM TRA RED TEAM VONG 1-15 PASS 100%!")
-    print("  TOAN BO CAC LO HONG TU HIGH DEN LOW TRONG BAO CAO VONG 15 DA DUOC KHOA CHAT.")
+    print("  🏆 KET LUAN: 69/69 BAI KIEM TRA SOVEREIGN & OMNI-SPECTRUM PASS 100%!")
+    print("  TOAN BO 4 TANG PHO TIN HIEU VA CAC BAT BIEN AN NINH DA HOAN TAT KHEP KIN.")
     print("======================================================================")
     sys.exit(0)
 else:

@@ -106,6 +106,13 @@ if exist "tests\test_audit_verify.c" (
         exit /b !errorlevel!
     )
 )
+if exist "tests\test_omni_phy.c" (
+    cl.exe %CFLAGS% /Fe:tests\test_omni_phy.exe tests\test_omni_phy.c /link advapi32.lib
+    if !errorlevel! neq 0 (
+        echo [FAIL] Compilation of tests\test_omni_phy.exe failed.
+        exit /b !errorlevel!
+    )
+)
 del *.obj core\*.obj tests\*.obj >nul 2>nul
 
 :build_done
@@ -142,6 +149,12 @@ if exist "tests\test_audit_verify.exe" (
     echo.
     echo [TEST 4B/5] Running Real Crypto Audit Verification Suite...
     tests\test_audit_verify.exe
+    if !errorlevel! neq 0 exit /b !errorlevel!
+)
+if exist "tests\test_omni_phy.exe" (
+    echo.
+    echo [TEST 4C/5] Running Omni-Spectrum Cognitive PHY Verification Suite...
+    tests\test_omni_phy.exe
     if !errorlevel! neq 0 exit /b !errorlevel!
 )
 echo.

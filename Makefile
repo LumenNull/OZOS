@@ -12,6 +12,7 @@ TARGET = ozos_ghost
 CLI_TARGET = ozos
 TEST_TARGET = test_libozos
 AUDIT_TARGET = test_audit_verify
+OMNI_TARGET = test_omni_phy
 
 # Auto-detect Python 3 (prefer python3 on POSIX, fallback to python)
 PYTHON ?= $(shell which python3 2>/dev/null || which python 2>/dev/null || echo python3)
@@ -27,7 +28,7 @@ endif
 
 .PHONY: all test test_libozos test_wasm test_redteam test_rfc wasm clean
 
-all: $(TARGET) $(CLI_TARGET) $(TEST_TARGET) $(AUDIT_TARGET)
+all: $(TARGET) $(CLI_TARGET) $(TEST_TARGET) $(AUDIT_TARGET) $(OMNI_TARGET)
 
 $(TARGET): $(SRC)
 	@echo "================================================================="
@@ -59,7 +60,15 @@ $(AUDIT_TARGET): tests/test_audit_verify.c core/tweetnacl.c
 	cp -f $(AUDIT_TARGET) tests/$(AUDIT_TARGET)
 	@echo "  [SUCCESS] BUILT: $(AUDIT_TARGET) & tests/$(AUDIT_TARGET)"
 
-test: $(TARGET) $(CLI_TARGET) $(TEST_TARGET) $(AUDIT_TARGET)
+$(OMNI_TARGET): tests/test_omni_phy.c
+	@echo "================================================================="
+	@echo "  [O.Z.O.S] COMPILING OMNI-SPECTRUM COGNITIVE PHY TEST SUITE"
+	@echo "================================================================="
+	$(CC) $(CFLAGS) -o $(OMNI_TARGET) tests/test_omni_phy.c $(LDFLAGS) $(HARDENING_LDFLAGS)
+	cp -f $(OMNI_TARGET) tests/$(OMNI_TARGET)
+	@echo "  [SUCCESS] BUILT: $(OMNI_TARGET) & tests/$(OMNI_TARGET)"
+
+test: $(TARGET) $(CLI_TARGET) $(TEST_TARGET) $(AUDIT_TARGET) $(OMNI_TARGET)
 	@echo "================================================================="
 	@echo "  [TEST 1/5] HARDWARE TORTURE VERIFICATION"
 	@echo "================================================================="
@@ -80,6 +89,10 @@ test: $(TARGET) $(CLI_TARGET) $(TEST_TARGET) $(AUDIT_TARGET)
 	@echo "  [TEST 4B/5] REAL CRYPTO AUDIT VERIFICATION SUITE"
 	@echo "================================================================="
 	./$(AUDIT_TARGET)
+	@echo "================================================================="
+	@echo "  [TEST 4C/5] OMNI-SPECTRUM COGNITIVE PHY VERIFICATION SUITE"
+	@echo "================================================================="
+	./$(OMNI_TARGET)
 	@echo "================================================================="
 	@echo "  [TEST 5/5] SUPPLY CHAIN WASM INTEGRITY & PIN AUDIT"
 	@echo "================================================================="
