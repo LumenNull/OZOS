@@ -430,6 +430,8 @@ static bool query_hardware_tpm(ozos_tpm_info_t* info) {
         }
         NCryptFreeObject(hProv);
         if (!anchored) {
+            info->tpm_available = false;
+            strcpy(info->provider_name, "Hardware TPM Present but Anchor Failed (Fallback Non-Anchored)");
             ozos_secure_random_bytes(info->silicon_seed, 32);
         }
     } else {
@@ -461,6 +463,8 @@ static bool query_hardware_tpm(ozos_tpm_info_t* info) {
         }
         fclose(tpm_dev);
         if (!got_tpm_rng) {
+            info->tpm_available = false;
+            strcpy(info->provider_name, "Hardware TPM Device Present but RNG Failed (Fallback Non-Anchored)");
             ozos_secure_random_bytes(info->silicon_seed, 32);
         }
     } else {
@@ -814,6 +818,17 @@ static int cmd_packet_verify(const char* hex_str, uint64_t last_seen_nonce, cons
     printf("• Magic Header   : 0x%08X (Chuan xac)\n", validated.magic);
     printf("• Tripwire MAC16 : 0x%04X (Xac thuc trong < 20ns)\n", validated.header_mac16);
     printf("• Payload Length : %u bytes\n", validated.payload_len);
+
+    /* R15-M5: Validate trusted author pk format whenever argument is present, regardless of packet signature status */
+    if (trusted_author_pk_hex != NULL) {
+        if (strlen(trusted_author_pk_hex) != 64 || !is_valid_hex(trusted_author_pk_hex, 64)) {
+            printf("Trang thai: 🚨 BI TU CHOI: KHOA CHU QUYEN (TRUSTED KEY) SAI DINH DANG!\n");
+            printf("• Root Cause    : Trusted Public Key phai co do dai dung 64 ky tu hex hop le.\n");
+            printf("=================================================================\n");
+            free(buffer);
+            return 1;
+        }
+    }
 
     char payload_str[1025];
     size_t copy_len = validated.payload_len > 1024 ? 1024 : validated.payload_len;
@@ -1512,6 +1527,11 @@ static int cmd_handshake_finish(const char* ack_hex, const char* a_sk_hex, const
     ozos_crypto_zeroize(a_sk, sizeof(a_sk));
 
     uint32_t session_nonce = ozos_lookup_syn_nonce(a_pub_hex);
+    if (session_nonce == 0) {
+        ozos_crypto_zeroize(shared_secret, sizeof(shared_secret));
+        printf("🚨 [TU CHOI] Khong tim thay session nonce cho ephemeral pubkey A trong .ozos_syn_state!\n");
+        return 1;
+    }
     uint8_t session_key[32];
     if (ozos_kdf_session_key_ex(session_key, shared_secret, session_nonce) != 0) {
         ozos_crypto_zeroize(shared_secret, sizeof(shared_secret));
@@ -1750,7 +1770,20 @@ static int cmd_gossip_beacon(uint32_t epoch, const char* wav_path, bool raw_fram
     ozos_tpm_info_t tpm;
     query_hardware_tpm(&tpm);
     uint32_t peer_id = 0;
-    memcpy(&peer_id, tpm.silicon_seed, 4);
+    if (tpm.tpm_available) {
+        memcpy(&peer_id, tpm.silicon_seed, 4);
+    }
+    if (peer_id == 0) {
+        uint8_t sov_pk[32], sov_sk[64];
+        if (get_sovereign_keys(sov_pk, sov_sk, NULL) == 0) {
+            memcpy(&peer_id, sov_pk, 4);
+        } else {
+            uint8_t rand_id[4];
+            ozos_secure_random_bytes(rand_id, 4);
+            memcpy(&peer_id, rand_id, 4);
+        }
+        if (peer_id == 0) peer_id = 0x02052026; /* Non-zero fallback identity sentinel */
+    }
 
     uint64_t sample_leaves[4] = {
         0x1111222233334444ULL, 0x5555666677778888ULL,

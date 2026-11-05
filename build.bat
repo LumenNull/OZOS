@@ -99,6 +99,13 @@ if exist "tests\test_libozos.c" (
     )
     copy /y tests\test_libozos.exe test_libozos.exe >nul
 )
+if exist "tests\test_audit_verify.c" (
+    cl.exe %CFLAGS% /Fe:tests\test_audit_verify.exe tests\test_audit_verify.c core\tweetnacl.c /link advapi32.lib
+    if !errorlevel! neq 0 (
+        echo [FAIL] Compilation of tests\test_audit_verify.exe failed.
+        exit /b !errorlevel!
+    )
+)
 del *.obj core\*.obj tests\*.obj >nul 2>nul
 
 :build_done
@@ -129,6 +136,12 @@ if exist "tests\test_libozos.exe" (
     echo.
     echo [TEST 4/5] Running 15-Tier Native libozos Suite...
     tests\test_libozos.exe
+    if !errorlevel! neq 0 exit /b !errorlevel!
+)
+if exist "tests\test_audit_verify.exe" (
+    echo.
+    echo [TEST 4B/5] Running Real Crypto Audit Verification Suite...
+    tests\test_audit_verify.exe
     if !errorlevel! neq 0 exit /b !errorlevel!
 )
 echo.

@@ -347,7 +347,11 @@ def cmd_stego_embed(args):
     if not os.path.exists(args.image):
         print(f"{C_RED}Tệp không tồn tại: {args.image}{C_RESET}")
         sys.exit(1)
-    embed_2d_dct_watermark(args.image, args.payload, args.output)
+    try:
+        embed_2d_dct_watermark(args.image, args.payload, args.output)
+    except ValueError as e:
+        print(f"{C_RED}[LỖI NHÚNG THỦY VÂN]: {e}{C_RESET}")
+        sys.exit(1)
     print(f"{C_GREEN}{C_BOLD}[2D-DCT STEGO EMBED THÀNH CÔNG]: {args.output}{C_RESET}")
 
 def cmd_stego_extract(args):
@@ -356,8 +360,12 @@ def cmd_stego_extract(args):
         sys.exit(1)
 
     print(f"\n{C_BOLD}[2D-DCT] ĐANG PHÂN TÍCH QUANG PHỔ TẦN SỐ ẢNH: {args.image}{C_RESET}")
-    im = Image.open(args.image).convert('RGB')
-    extracted = extract_2d_dct_watermark_bytes(im)
+    try:
+        im = Image.open(args.image).convert('RGB')
+        extracted = extract_2d_dct_watermark_bytes(im)
+    except Exception as e:
+        print(f"{C_RED}[LỖI TRÍCH XUẤT]: {e}{C_RESET}")
+        sys.exit(1)
 
     if extracted is not None:
         payload = extracted.decode('utf-8', errors='replace')

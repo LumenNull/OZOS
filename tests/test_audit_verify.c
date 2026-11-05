@@ -6,32 +6,6 @@
 #include "../core/ozos_crypto.h"
 #include "../core/ozos_brainseed.h"
 
-/* Kiem chung truc tiep thuat toan Masking B2A/A2B cua compute_fast_gate_mac */
-static uint16_t test_masked_fnv1a_mac(const uint8_t* raw_78_bytes, uint64_t secret_seed, uint64_t random_mask) {
-    uint64_t share0 = secret_seed ^ random_mask;
-    uint64_t share1 = random_mask;
-
-    for (int i = 0; i < 78; ++i) {
-        uint8_t byte_in = raw_78_bytes[i];
-        uint64_t b0 = share0 ^ (uint64_t)byte_in;
-        uint64_t b1 = share1;
-
-        uint64_t arith_mask = (random_mask * 0x9E3779B97F4A7C15ULL)
-                            + ((uint64_t)(i + 1) * 0xBF58476D1CE4E5B9ULL);
-        uint64_t a0 = (b0 ^ b1) - arith_mask;
-        uint64_t a1 = arith_mask;
-
-        uint64_t p0 = a0 * 0x100000001B3ULL;
-        uint64_t p1 = a1 * 0x100000001B3ULL;
-
-        share1 = arith_mask ^ (random_mask >> ((i & 7) + 1));
-        share0 = (p0 + p1) ^ share1;
-    }
-
-    uint64_t final_hash = share0 ^ share1;
-    return (uint16_t)((final_hash ^ (final_hash >> 16) ^ (final_hash >> 32)) & 0xFFFF);
-}
-
 int main(void) {
     printf("======================================================================\n");
     printf("  [AUDIT VERIFY] KIEM CHUNG THUC NGHIEM SAU KHI VA LO HONG O.Z.O.S\n");
@@ -96,20 +70,25 @@ int main(void) {
     printf("    => Trang thai: %s\n\n", fix2_ok ? "DA VA THANH CONG (PASS)" : "THAT BAI (FAIL)");
     if (!fix2_ok) failures++;
 
-    /* 3. Kiem chung Boolean-to-Arithmetic (B2A/A2B) Masking trong compute_fast_gate_mac */
+    /* 3. Kiem chung ham MAC khoa SipHash-2-4 that trong compute_fast_gate_mac (F3 Remediation) */
     uint8_t pkt78[78];
     for (int i = 0; i < 78; i++) pkt78[i] = (uint8_t)(i * 7 + 3);
     uint64_t secret_seed = 0xA5A5A5A5ULL;
-    uint16_t mac_m0 = test_masked_fnv1a_mac(pkt78, secret_seed, 0ULL);
-    uint16_t mac_m1 = test_masked_fnv1a_mac(pkt78, secret_seed, 0xDEADBEEFCAFEBABEULL);
-    uint16_t mac_m2 = test_masked_fnv1a_mac(pkt78, secret_seed, 0x123456789ABCDEF0ULL);
-    bool fix3_ok = (mac_m0 == mac_m1) && (mac_m1 == mac_m2);
+    uint16_t mac_k0 = compute_fast_gate_mac(pkt78, 78, secret_seed, 0ULL);
+    uint16_t mac_k0_repeat = compute_fast_gate_mac(pkt78, 78, secret_seed, 0ULL);
+    uint16_t mac_k1 = compute_fast_gate_mac(pkt78, 78, secret_seed ^ 1ULL, 0ULL);
+    uint8_t pkt78_flip[78];
+    memcpy(pkt78_flip, pkt78, 78);
+    pkt78_flip[0] ^= 1;
+    uint16_t mac_data_flip = compute_fast_gate_mac(pkt78_flip, 78, secret_seed, 0ULL);
+    bool fix3_ok = (mac_k0 == mac_k0_repeat) && (mac_k0 != mac_k1) && (mac_k0 != mac_data_flip);
 
-    printf("[3] Va Lo Hong First-Order Masking (B2A/A2B) trong compute_fast_gate_mac:\n");
-    printf("    - MAC16 voi mask = 0x0000000000000000 : 0x%04X\n", mac_m0);
-    printf("    - MAC16 voi mask = 0xDEADBEEFCAFEBABE : 0x%04X\n", mac_m1);
-    printf("    - MAC16 voi mask = 0x123456789ABCDEF0 : 0x%04X\n", mac_m2);
-    printf("    => Trang thai: %s\n\n", fix3_ok ? "DA VA THANH CONG (PASS - BAT BIEN 100%)" : "THAT BAI (FAIL)");
+    printf("[3] Va Lo Hong compute_fast_gate_mac voi ham PRF SipHash-2-4 that:\n");
+    printf("    - MAC16 goc (Key 0xA5A5A5A5, KeyHi=0) : 0x%04X\n", mac_k0);
+    printf("    - MAC16 lap lai (Tinh tat dinh 100%%)   : 0x%04X (Khop: %s)\n", mac_k0_repeat, (mac_k0 == mac_k0_repeat) ? "DUNG" : "SAI");
+    printf("    - MAC16 lat 1 bit khoa (Avalanche)    : 0x%04X (Khac biet: %s)\n", mac_k1, (mac_k0 != mac_k1) ? "DUNG" : "SAI");
+    printf("    - MAC16 lat 1 bit du lieu (Tamper)    : 0x%04X (Khac biet: %s)\n", mac_data_flip, (mac_k0 != mac_data_flip) ? "DUNG" : "SAI");
+    printf("    => Trang thai: %s\n\n", fix3_ok ? "DA VA THANH CONG (PASS - SIPHASH-2-4 THAT)" : "THAT BAI (FAIL)");
     if (!fix3_ok) failures++;
 
     /* 4. Kiem chung Reentrant Tokenizer & Stack Zeroization trong Brainseed */

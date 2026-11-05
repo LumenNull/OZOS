@@ -255,12 +255,12 @@ class OZOSEngine {
 
         // Kiểm tra toàn vẹn Payload chống sửa đổi tại chỗ (FNV-1a 32-bit tương thích GenesisShield)
         // Triệt tiêu hoàn toàn lỗ hổng bypass khi kẻ tấn công set slot 15 = 0
-        if (payloadLen > 0) {
+        const expectedChecksum = view.getUint32(72, true);
+        if (payloadLen > 0 || expectedChecksum === 0) {
             let calcChecksum = 0x811C9DC5;
             for (let i = 0; i < payloadLen; i++) {
                 calcChecksum = Math.imul(calcChecksum ^ packetUint8[80 + i], 0x01000193) >>> 0;
             }
-            const expectedChecksum = view.getUint32(72, true);
             if (calcChecksum !== expectedChecksum) {
                 return { valid: false, code: 5, error: "Dữ liệu payload bị sửa đổi hoặc thiếu chữ ký toàn vẹn (Checksum FNV-1a không khớp)." };
             }

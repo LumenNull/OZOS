@@ -196,12 +196,12 @@ class GenesisShield {
 
         // 4. Kiểm tra toàn vẹn Payload chống sửa đổi tại chỗ
         // Triệt tiêu hoàn toàn lỗ hổng bypass khi kẻ tấn công set slot 15 = 0
-        if (payloadLen > 0) {
+        const expectedChecksum = view.getUint32(72, true);
+        if (payloadLen > 0 || expectedChecksum === 0) {
             let calcChecksum = 0x811C9DC5;
             for (let i = 0; i < payloadLen; i++) {
                 calcChecksum = Math.imul(calcChecksum ^ uint8View[80 + i], 0x01000193) >>> 0;
             }
-            const expectedChecksum = view.getUint32(72, true);
             if (calcChecksum !== expectedChecksum) {
                 return 5; // Dữ liệu payload bị sửa đổi / lật bit hoặc thiếu checksum
             }

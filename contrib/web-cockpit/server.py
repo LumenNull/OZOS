@@ -164,19 +164,19 @@ class OZOSRequestHandler(http.server.SimpleHTTPRequestHandler):
                 for idx, a in enumerate(args):
                     if not isinstance(a, str):
                         raise ValueError("Command arguments must be strings")
-                    if "\x00" in a or ".." in a:
-                        raise ValueError(f"Invalid path traversal or NUL byte detected: {a}")
+                    if "\x00" in a:
+                        raise ValueError(f"NUL byte detected in argument: {a}")
 
+                    # PY-L1/L2: Distinguish file path arguments from generic payload arguments strictly by position
                     is_file_arg = (
-                        a.lower().endswith(".wav")
-                        or (cmd_name == "audio-decode" and idx == 1)
+                        (cmd_name == "audio-decode" and idx == 1)
                         or (cmd_name == "audio-synth" and idx == 2)
                         or (cmd_name == "handshake-syn" and idx == 1)
                         or (cmd_name == "gossip-beacon" and idx == 2)
                         or (cmd_name == "handshake-ack" and idx == 2 and not a.startswith("-"))
                     )
                     if is_file_arg:
-                        if "/" in a or "\\" in a or a != os.path.basename(a) or not a.lower().endswith(".wav"):
+                        if ".." in a or "/" in a or "\\" in a or a != os.path.basename(a) or not a.lower().endswith(".wav"):
                             raise ValueError(f"Invalid WAV filename argument: {a}")
                         raw_join = os.path.join(DIRECTORY, a)
                         target = os.path.realpath(raw_join)
@@ -184,22 +184,30 @@ class OZOSRequestHandler(http.server.SimpleHTTPRequestHandler):
                             raise ValueError(f"Invalid path traversal or symlink detected: {a}")
                         safe_args.append(a)
                     else:
-                        a_base = os.path.basename(a)
-                        if a_base and os.path.islink(os.path.join(DIRECTORY, a_base)):
-                            raise ValueError(f"Symlink argument rejected: {a}")
                         safe_args.append(a)
                 
+                # PY-H1: Positional WAV targets only. Never suffix-scan all arguments!
                 wav_targets = []
-                if cmd_name in {"audio-synth", "handshake-syn", "gossip-beacon", "handshake-ack"}:
-                    for a in safe_args[1:]:
-                        if a.lower().endswith(".wav"):
-                            target_wav = os.path.realpath(os.path.join(DIRECTORY, a))
-                            wav_targets.append(target_wav)
-                            if os.path.exists(target_wav):
-                                try:
-                                    os.remove(target_wav)
-                                except OSError:
-                                    pass
+                target_arg_idx = None
+                if cmd_name == "audio-synth" and len(safe_args) >= 3:
+                    target_arg_idx = 2
+                elif cmd_name == "handshake-syn" and len(safe_args) >= 2:
+                    target_arg_idx = 1
+                elif cmd_name == "gossip-beacon" and len(safe_args) >= 3:
+                    target_arg_idx = 2
+                elif cmd_name == "handshake-ack" and len(safe_args) >= 3 and not safe_args[2].startswith("-"):
+                    target_arg_idx = 2
+
+                if target_arg_idx is not None and target_arg_idx < len(safe_args):
+                    target_filename = safe_args[target_arg_idx]
+                    if target_filename.lower().endswith(".wav"):
+                        target_wav = os.path.realpath(os.path.join(DIRECTORY, target_filename))
+                        wav_targets.append(target_wav)
+                        if os.path.exists(target_wav):
+                            try:
+                                os.remove(target_wav)
+                            except OSError:
+                                pass
 
                 start_time = time.time()
                 exe_path = resolve_ozos_exe()
