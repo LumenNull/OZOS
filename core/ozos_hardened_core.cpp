@@ -23,7 +23,9 @@
 #define OZOS_COMPILER_BARRIER() __asm__ __volatile__("" ::: "memory")
 #endif
 
+#ifdef __cplusplus
 extern "C" {
+#endif
 
 // =============================================================================
 // 1. TẦNG 7: VỆ SINH SỐ CHẤM ĐỘNG BITWISE (CHỐNG TIMING SIDE-CHANNEL SUBNORMALS)
@@ -261,4 +263,6 @@ float goertzel_power(
     return (s_prev2 * s_prev2) + (s_prev * s_prev) - (coeff * s_prev * s_prev2);
 }
 
+#ifdef __cplusplus
 } // extern "C"
+#endif

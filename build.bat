@@ -7,7 +7,7 @@ REM   Target: ozos_ghost.exe (Bare-metal Invariant Kernel)
 REM ==============================================================================
 
 set "TARGET=ozos_ghost.exe"
-set "SRC=core\ozos_ghost.c core\tweetnacl.c"
+set "SRC=core\ozos_ghost.c core\tweetnacl.c core\ozos_hardened_core.cpp"
 set "CFLAGS=/nologo /O2 /W3 /D_CRT_SECURE_NO_WARNINGS /Icore /I."
 set "LIBS=advapi32.lib winmm.lib"
 
@@ -43,14 +43,14 @@ if exist "C:\Program Files\Microsoft Visual Studio\2022\Professional\VC\Auxiliar
 where gcc >nul 2>nul
 if %errorlevel% equ 0 (
     echo [BUILD] Using GCC...
-    gcc -O3 -Wall -Icore -o %TARGET% core/ozos_ghost.c core/tweetnacl.c -ladvapi32 -lwinmm
+    gcc -O3 -Wall -Icore -o %TARGET% core/ozos_ghost.c core/tweetnacl.c core/ozos_hardened_core.cpp -ladvapi32 -lwinmm
     if !errorlevel! neq 0 exit /b !errorlevel!
     if exist core\ozos_main.c (
-        gcc -O3 -Wall -Icore -o ozos.exe core/ozos_main.c core/tweetnacl.c -ladvapi32 -lwinmm -lncrypt
+        gcc -O3 -Wall -Icore -o ozos.exe core/ozos_main.c core/tweetnacl.c core/ozos_hardened_core.cpp -ladvapi32 -lwinmm -lncrypt
         if !errorlevel! neq 0 exit /b !errorlevel!
     )
     if exist tests\test_libozos.c (
-        gcc -O3 -Wall -Icore -o tests/test_libozos.exe tests/test_libozos.c core/tweetnacl.c -ladvapi32
+        gcc -O3 -Wall -Icore -o tests/test_libozos.exe tests/test_libozos.c core/tweetnacl.c core/ozos_hardened_core.cpp -ladvapi32
         if !errorlevel! neq 0 exit /b !errorlevel!
         copy /y tests\test_libozos.exe test_libozos.exe >nul
     )
@@ -60,14 +60,14 @@ if %errorlevel% equ 0 (
 where clang >nul 2>nul
 if %errorlevel% equ 0 (
     echo [BUILD] Using Clang...
-    clang -O3 -Wall -Icore -o %TARGET% core/ozos_ghost.c core/tweetnacl.c -ladvapi32 -lwinmm
+    clang -O3 -Wall -Icore -o %TARGET% core/ozos_ghost.c core/tweetnacl.c core/ozos_hardened_core.cpp -ladvapi32 -lwinmm
     if !errorlevel! neq 0 exit /b !errorlevel!
     if exist core\ozos_main.c (
-        clang -O3 -Wall -Icore -o ozos.exe core/ozos_main.c core/tweetnacl.c -ladvapi32 -lwinmm -lncrypt
+        clang -O3 -Wall -Icore -o ozos.exe core/ozos_main.c core/tweetnacl.c core/ozos_hardened_core.cpp -ladvapi32 -lwinmm -lncrypt
         if !errorlevel! neq 0 exit /b !errorlevel!
     )
     if exist tests\test_libozos.c (
-        clang -O3 -Wall -Icore -o tests/test_libozos.exe tests/test_libozos.c core/tweetnacl.c -ladvapi32
+        clang -O3 -Wall -Icore -o tests/test_libozos.exe tests/test_libozos.c core/tweetnacl.c core/ozos_hardened_core.cpp -ladvapi32
         if !errorlevel! neq 0 exit /b !errorlevel!
         copy /y tests\test_libozos.exe test_libozos.exe >nul
     )
@@ -85,14 +85,14 @@ if %errorlevel% neq 0 (
     exit /b %errorlevel%
 )
 if exist "core\ozos_main.c" (
-    cl.exe %CFLAGS% /Fe:ozos.exe core\ozos_main.c core\tweetnacl.c /link advapi32.lib winmm.lib ncrypt.lib
+    cl.exe %CFLAGS% /Fe:ozos.exe core\ozos_main.c core\tweetnacl.c core\ozos_hardened_core.cpp /link advapi32.lib winmm.lib ncrypt.lib
     if !errorlevel! neq 0 (
         echo [FAIL] Compilation of ozos.exe failed.
         exit /b !errorlevel!
     )
 )
 if exist "tests\test_libozos.c" (
-    cl.exe %CFLAGS% /Fe:tests\test_libozos.exe tests\test_libozos.c core\tweetnacl.c /link advapi32.lib
+    cl.exe %CFLAGS% /Fe:tests\test_libozos.exe tests\test_libozos.c core\tweetnacl.c core\ozos_hardened_core.cpp /link advapi32.lib
     if !errorlevel! neq 0 (
         echo [FAIL] Compilation of tests\test_libozos.exe failed.
         exit /b !errorlevel!
@@ -100,7 +100,7 @@ if exist "tests\test_libozos.c" (
     copy /y tests\test_libozos.exe test_libozos.exe >nul
 )
 if exist "tests\test_audit_verify.c" (
-    cl.exe %CFLAGS% /Fe:tests\test_audit_verify.exe tests\test_audit_verify.c core\tweetnacl.c /link advapi32.lib
+    cl.exe %CFLAGS% /Fe:tests\test_audit_verify.exe tests\test_audit_verify.c core\tweetnacl.c core\ozos_hardened_core.cpp /link advapi32.lib
     if !errorlevel! neq 0 (
         echo [FAIL] Compilation of tests\test_audit_verify.exe failed.
         exit /b !errorlevel!

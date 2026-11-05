@@ -594,7 +594,7 @@ static inline size_t ozos_tunnel_encrypt(
     return total_frame_len;
 }
 
-#define OZOS_TUNNEL_REPLAY_WINDOW 64U
+#define OZOS_TUNNEL_REPLAY_WINDOW 2048U
 static uint8_t g_ozos_tunnel_seen_nonces[OZOS_TUNNEL_REPLAY_WINDOW][24];
 static size_t  g_ozos_tunnel_seen_count = 0;
 static size_t  g_ozos_tunnel_seen_pos   = 0;

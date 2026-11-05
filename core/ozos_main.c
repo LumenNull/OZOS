@@ -46,7 +46,7 @@ extern void randombytes(unsigned char *buf, unsigned long long len);
 
 #define OZOS_VERSION_STR "2026.1-SOVEREIGN"
 #ifndef OZOS_GIT_COMMIT_HASH
-#define OZOS_GIT_COMMIT_HASH "0ff9186"
+#define OZOS_GIT_COMMIT_HASH "5457d9d"
 #endif
 #ifndef OZOS_WASM_PIN_SHA256
 #define OZOS_WASM_PIN_SHA256 "ea26872f8c14523bb3d823c4eca16dcae96c6a11f1be24bea75081c75b5f7a4e"
@@ -293,14 +293,36 @@ static short* read_wav_file(const char* filepath, size_t* out_num_samples, uint3
  *  -1 : PHÁT HIỆN ĐỔI KHÓA BẤT THƯỜNG (KEY CHANGED / MITM ALERT) -> Fail-closed!
  */
 static int ozos_check_and_record_peer_pin(const char* peer_id, const char* pk_hex, char* out_expected_hex) {
-    if (!peer_id || !*peer_id || !pk_hex || strlen(pk_hex) != 64) return 0;
+    if (!peer_id || !*peer_id) return 0;
+
+    /* Ngăn chặn ký tự khoảng trắng hoặc điều khiển làm hỏng tệp định dạng .ozos_known_peers */
+    for (const char* p = peer_id; *p; p++) {
+        if (*p <= 32 || *p > 126) {
+            fprintf(stderr, "🚨 [LOI CU PHAP] Peer ID khong hop le (khong duoc chua khoang trang hoac ky tu dieu khien): '%s'\n", peer_id);
+            return -2;
+        }
+    }
+    if (!pk_hex || strlen(pk_hex) != 64 || !is_valid_hex(pk_hex, 64)) return -2;
 
     FILE* f = fopen(".ozos_known_peers", "r");
     if (f) {
-        char line_peer[128];
-        char line_pk[128];
-        while (fscanf(f, "%127s %127s", line_peer, line_pk) == 2) {
-            if (strcmp(line_peer, peer_id) == 0 && strlen(line_pk) == 64) {
+        char line[256];
+        while (fgets(line, sizeof(line), f)) {
+            char line_peer[128] = {0};
+            char line_pk[128] = {0};
+            char line_tag[64] = {0};
+            int parts = sscanf(line, "%127s %127s %63s", line_peer, line_pk, line_tag);
+            if (parts >= 2 && strcmp(line_peer, peer_id) == 0 && strlen(line_pk) == 64) {
+                /* Xác thực thẻ toàn vẹn nội bộ nếu có */
+                if (parts >= 3 && strlen(line_tag) == 4 && is_valid_hex(line_tag, 4)) {
+                    uint8_t pk_bytes[32];
+                    hex_to_bytes(line_pk, pk_bytes, 32);
+                    uint16_t exp_tag = compute_fast_gate_mac(pk_bytes, 32, 0x5045455250494E53ULL, 0x5A5A5A5AULL);
+                    uint16_t got_tag = (uint16_t)strtoul(line_tag, NULL, 16);
+                    if (exp_tag != got_tag) {
+                        continue; /* Dòng bị chèn giả mạo ngoài thẩm quyền -> bỏ qua */
+                    }
+                }
                 fclose(f);
                 bool match = true;
                 for (int i = 0; i < 64; ++i) {
@@ -322,20 +344,40 @@ static int ozos_check_and_record_peer_pin(const char* peer_id, const char* pk_he
 
     FILE* fw = fopen(".ozos_known_peers", "a");
     if (fw) {
-        fprintf(fw, "%s %s\n", peer_id, pk_hex);
+        uint8_t pk_bytes[32];
+        hex_to_bytes(pk_hex, pk_bytes, 32);
+        uint16_t tag = compute_fast_gate_mac(pk_bytes, 32, 0x5045455250494E53ULL, 0x5A5A5A5AULL);
+        fprintf(fw, "%s %s %04X\n", peer_id, pk_hex, tag);
         fclose(fw);
+#ifndef _WIN32
+        chmod(".ozos_known_peers", 0600);
+#endif
     }
     return 0;
+}
+
+#define OZOS_STATE_SEAL_K0 0x4F5A4F535345414CULL /* "OZOSSEAL" */
+#define OZOS_STATE_SEAL_K1 0xA5A5A5A55A5A5A5AULL
+
+static uint16_t ozos_compute_state_integrity_tag(const uint8_t* data, size_t len) {
+    return compute_fast_gate_mac(data, len, OZOS_STATE_SEAL_K0, OZOS_STATE_SEAL_K1);
 }
 
 static void ozos_cli_load_tunnel_nonces(void) {
     FILE* f = fopen(".ozos_tunnel_nonces", "r");
     if (!f) return;
-    char nonce_hex[128];
-    while (fscanf(f, "%127s", nonce_hex) == 1) {
-        if (strlen(nonce_hex) == 48 && is_valid_hex(nonce_hex, 48)) {
+    char line[256];
+    while (fgets(line, sizeof(line), f)) {
+        char nonce_hex[64] = {0};
+        char tag_hex[64] = {0};
+        int parts = sscanf(line, "%63s %63s", nonce_hex, tag_hex);
+        if (parts == 2 && strlen(nonce_hex) == 48 && is_valid_hex(nonce_hex, 48) && strlen(tag_hex) == 4 && is_valid_hex(tag_hex, 4)) {
             uint8_t n24[24];
             hex_to_bytes(nonce_hex, n24, 24);
+            uint16_t exp_tag = ozos_compute_state_integrity_tag(n24, 24);
+            uint16_t got_tag = (uint16_t)strtoul(tag_hex, NULL, 16);
+            if (exp_tag != got_tag) continue; /* Bỏ qua dòng bị tiêm nhiễm/sửa đổi */
+
             memcpy(g_ozos_tunnel_seen_nonces[g_ozos_tunnel_seen_pos], n24, 24);
             g_ozos_tunnel_seen_pos = (g_ozos_tunnel_seen_pos + 1U) % OZOS_TUNNEL_REPLAY_WINDOW;
             if (g_ozos_tunnel_seen_count < OZOS_TUNNEL_REPLAY_WINDOW) {
@@ -346,13 +388,74 @@ static void ozos_cli_load_tunnel_nonces(void) {
     fclose(f);
 }
 
+static bool ozos_is_tunnel_nonce_seen_in_store(const uint8_t nonce24[24]) {
+    if (!nonce24) return false;
+
+    /* 1. Kiểm tra bộ nhớ đệm trong phiên hiện tại */
+    for (size_t i = 0; i < g_ozos_tunnel_seen_count; ++i) {
+        if (memcmp(g_ozos_tunnel_seen_nonces[i], nonce24, 24) == 0) {
+            return true;
+        }
+    }
+
+    /* 2. Tra cứu tập hợp bền vững trên đĩa (.ozos_tunnel_nonces) không giới hạn cửa sổ trượt */
+    FILE* f = fopen(".ozos_tunnel_nonces", "r");
+    if (!f) return false;
+
+    char target_hex[49];
+    bytes_to_hex(nonce24, 24, target_hex);
+
+    char line[256];
+    bool seen = false;
+    while (fgets(line, sizeof(line), f)) {
+        char nonce_hex[64] = {0};
+        char tag_hex[64] = {0};
+        int parts = sscanf(line, "%63s %63s", nonce_hex, tag_hex);
+        /* Chỉ chấp nhận các bản ghi có thẻ xác thực toàn vẹn 4-hex khớp với khóa bảo chứng máy chủ cục bộ (H2b) */
+        if (parts == 2 && strlen(nonce_hex) == 48 && is_valid_hex(nonce_hex, 48) && strlen(tag_hex) == 4 && is_valid_hex(tag_hex, 4)) {
+            uint8_t n_tmp[24];
+            hex_to_bytes(nonce_hex, n_tmp, 24);
+            uint16_t exp_tag = ozos_compute_state_integrity_tag(n_tmp, 24);
+            uint16_t got_tag = (uint16_t)strtoul(tag_hex, NULL, 16);
+            if (exp_tag != got_tag) {
+                continue; /* Bản ghi bị kẻ tấn công tiêm nhiễm (Pre-poisoning DoS) mà không có khóa máy -> bỏ qua */
+            }
+
+            bool match = true;
+            for (int i = 0; i < 48; ++i) {
+                char c1 = nonce_hex[i];
+                char c2 = target_hex[i];
+                if (c1 >= 'A' && c1 <= 'F') c1 += 32;
+                if (c2 >= 'A' && c2 <= 'F') c2 += 32;
+                if (c1 != c2) { match = false; break; }
+            }
+            if (match) {
+                seen = true;
+                break;
+            }
+        }
+    }
+    fclose(f);
+    return seen;
+}
+
 static void ozos_cli_record_tunnel_nonce(const uint8_t nonce24[24]) {
     FILE* f = fopen(".ozos_tunnel_nonces", "a");
     if (!f) return;
     char n_hex[49];
     bytes_to_hex(nonce24, 24, n_hex);
-    fprintf(f, "%s\n", n_hex);
+    uint16_t tag = ozos_compute_state_integrity_tag(nonce24, 24);
+    fprintf(f, "%s %04X\n", n_hex, tag);
     fclose(f);
+#ifndef _WIN32
+    chmod(".ozos_tunnel_nonces", 0600);
+#endif
+
+    memcpy(g_ozos_tunnel_seen_nonces[g_ozos_tunnel_seen_pos], nonce24, 24);
+    g_ozos_tunnel_seen_pos = (g_ozos_tunnel_seen_pos + 1U) % OZOS_TUNNEL_REPLAY_WINDOW;
+    if (g_ozos_tunnel_seen_count < OZOS_TUNNEL_REPLAY_WINDOW) {
+        g_ozos_tunnel_seen_count++;
+    }
 }
 
 /* =============================================================================
@@ -1647,6 +1750,18 @@ static int cmd_tunnel_decrypt(const char* frame_hex, const char* session_key_hex
     uint8_t frame_nonce[24];
     memcpy(frame_nonce, frame_buf + 4, 24);
 
+    /* Chống phát lại (Anti-Replay Invariant): Tra cứu tập hợp Nonce bền vững (.ozos_tunnel_nonces) */
+    if (ozos_is_tunnel_nonce_seen_in_store(frame_nonce)) {
+        ozos_crypto_zeroize(session_key, sizeof(session_key));
+        free(frame_buf);
+        printf("=================================================================\n");
+        printf("  [MẢNH GHÉP 2] KẾT QUẢ GIẢI MÃ ĐƯỜNG HẦM ÂM HỌC (OZHD)\n");
+        printf("=================================================================\n");
+        printf("Trang thai: 🚨 TỪ CHỐI! KHÓA PHIÊN SAI, GÓI TIN BỊ PHÁT LẠI (REPLAY) HOẶC DỮ LIỆU ĐÃ BỊ SỬA ĐỔI!\n");
+        printf("=================================================================\n");
+        return 1;
+    }
+
     uint8_t plaintext[OZOS_TUNNEL_MAX_PAYLOAD + 1];
     size_t plain_len = 0;
     bool ok = ozos_tunnel_decrypt(plaintext, &plain_len, frame_buf, byte_count, session_key);
@@ -2226,6 +2341,12 @@ int main(int argc, char* argv[]) {
                     return 1;
                 }
                 peer_id = argv[++i];
+                for (const char* p = peer_id; *p; p++) {
+                    if (*p <= 32 || *p > 126) {
+                        fprintf(stderr, "🚨 [LOI CU PHAP] Peer ID khong duoc chua khoang trang hoac ky tu dieu khien: '%s'\n", peer_id);
+                        return 1;
+                    }
+                }
             } else if (argv[i][0] == '-') {
                 fprintf(stderr, "🚨 [LOI CU PHAP] Co khong hop le: '%s'\n", argv[i]);
                 return 1;
@@ -2308,6 +2429,12 @@ int main(int argc, char* argv[]) {
                     return 1;
                 }
                 peer_id = argv[++i];
+                for (const char* p = peer_id; *p; p++) {
+                    if (*p <= 32 || *p > 126) {
+                        fprintf(stderr, "🚨 [LOI CU PHAP] Peer ID khong duoc chua khoang trang hoac ky tu dieu khien: '%s'\n", peer_id);
+                        return 1;
+                    }
+                }
             } else if (strcmp(argv[i], "--raw-frame") == 0) {
                 raw_frame = true;
             } else if (!wav_path && argv[i][0] != '-') {

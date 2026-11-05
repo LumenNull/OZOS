@@ -242,90 +242,26 @@ OZOS_INLINE void ozos_packet_build(
 
 #define OZOS_A2_DOMAIN_CONSTANT      0xA5A5A5A5ULL /* Hang so domain mac dinh cua Sub-Profile A2 */
 
-#define OZOS_SIPROTL(x, b) (uint64_t)(((x) << (b)) | ((x) >> (64 - (b))))
-#define OZOS_SIPROUND(v0, v1, v2, v3)          \
-    do {                                       \
-        v0 += v1;                              \
-        v1 = OZOS_SIPROTL(v1, 13);             \
-        v1 ^= v0;                              \
-        v0 = OZOS_SIPROTL(v0, 32);             \
-        v2 += v3;                              \
-        v3 = OZOS_SIPROTL(v3, 16);             \
-        v3 ^= v2;                              \
-        v0 += v3;                              \
-        v3 = OZOS_SIPROTL(v3, 21);             \
-        v3 ^= v0;                              \
-        v2 += v1;                              \
-        v1 = OZOS_SIPROTL(v1, 17);             \
-        v1 ^= v2;                              \
-        v2 = OZOS_SIPROTL(v2, 32);             \
-    } while (0)
-
 /**
  * Tính mã xác thực thông điệp nhanh 16-bit (Fast Gatekeeper MAC) dựa trên
  * hàm PRF mật mã học SipHash-2-4 với khóa 128-bit (k0 = secret_seed, k1 = key_high)
  * để lọc gói tin rác tức thì trước khi gọi hàm xác thực Ed25519 / Poly1305.
+ * Được định nghĩa và biên dịch trực tiếp từ core/ozos_hardened_core.cpp.
  */
-OZOS_INLINE uint16_t compute_fast_gate_mac(
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+uint16_t compute_fast_gate_mac(
     const uint8_t* data,
     size_t len,
     uint64_t secret_seed,
     uint64_t key_high
-) {
-    if (!data && len > 0) return 0;
+);
 
-    uint64_t k0 = secret_seed;
-    uint64_t k1 = (key_high != 0ULL) ? key_high : (secret_seed ^ 0x4F5A4F5353495048ULL);
-
-    uint64_t v0 = 0x736f6d6570736575ULL ^ k0;
-    uint64_t v1 = 0x646f72616e646f6dULL ^ k1;
-    uint64_t v2 = 0x6c7967656e657261ULL ^ k0;
-    uint64_t v3 = 0x7465646279746573ULL ^ k1;
-
-    const uint8_t* end = data + (len - (len % 8));
-    const int left = (int)(len & 7);
-    uint64_t b = ((uint64_t)len) << 56;
-
-    for (const uint8_t* p = data; p != end; p += 8) {
-        uint64_t m = ((uint64_t)p[0])       |
-                     ((uint64_t)p[1] << 8)  |
-                     ((uint64_t)p[2] << 16) |
-                     ((uint64_t)p[3] << 24) |
-                     ((uint64_t)p[4] << 32) |
-                     ((uint64_t)p[5] << 40) |
-                     ((uint64_t)p[6] << 48) |
-                     ((uint64_t)p[7] << 56);
-        v3 ^= m;
-        OZOS_SIPROUND(v0, v1, v2, v3);
-        OZOS_SIPROUND(v0, v1, v2, v3);
-        v0 ^= m;
-    }
-
-    switch (left) {
-        case 7: b |= ((uint64_t)end[6]) << 48; /* fallthrough */
-        case 6: b |= ((uint64_t)end[5]) << 40; /* fallthrough */
-        case 5: b |= ((uint64_t)end[4]) << 32; /* fallthrough */
-        case 4: b |= ((uint64_t)end[3]) << 24; /* fallthrough */
-        case 3: b |= ((uint64_t)end[2]) << 16; /* fallthrough */
-        case 2: b |= ((uint64_t)end[1]) << 8;  /* fallthrough */
-        case 1: b |= ((uint64_t)end[0]); break;
-        case 0: break;
-    }
-
-    v3 ^= b;
-    OZOS_SIPROUND(v0, v1, v2, v3);
-    OZOS_SIPROUND(v0, v1, v2, v3);
-    v0 ^= b;
-
-    v2 ^= 0xFFULL;
-    OZOS_SIPROUND(v0, v1, v2, v3);
-    OZOS_SIPROUND(v0, v1, v2, v3);
-    OZOS_SIPROUND(v0, v1, v2, v3);
-    OZOS_SIPROUND(v0, v1, v2, v3);
-
-    uint64_t tag64 = v0 ^ v1 ^ v2 ^ v3;
-    return (uint16_t)((tag64 ^ (tag64 >> 16) ^ (tag64 >> 32) ^ (tag64 >> 48)) & 0xFFFFU);
+#ifdef __cplusplus
 }
+#endif
 
 /**
  * Dong dau niem phong Sub-Profile A2 (FNV-1a-64 Fold) bao ve toan ven ca Header (0..77) lan Payload (80..80+len).

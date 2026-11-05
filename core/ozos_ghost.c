@@ -14,6 +14,14 @@
 #include <stdbool.h>
 #include <errno.h>
 
+#ifndef _WIN32
+#include <strings.h>
+#include <sys/stat.h>
+#ifndef _stricmp
+#define _stricmp strcasecmp
+#endif
+#endif
+
 #include "libozos.h"
 #include "ozos_crypto.h"
 #include "ozos_brainseed.h"
@@ -21,6 +29,18 @@
 #include "ozos_ghost.h"
 #include "ozos_torture.h"
 #include "ozos_cosmic.h"
+
+static inline int ozos_hex_case_cmp(const char* s1, const char* s2) {
+    if (!s1 || !s2) return (s1 == s2) ? 0 : (s1 ? 1 : -1);
+    while (*s1 && *s2) {
+        char c1 = *s1++;
+        char c2 = *s2++;
+        if (c1 >= 'A' && c1 <= 'F') c1 += 32;
+        if (c2 >= 'A' && c2 <= 'F') c2 += 32;
+        if (c1 != c2) return (int)(unsigned char)c1 - (int)(unsigned char)c2;
+    }
+    return (int)(unsigned char)*s1 - (int)(unsigned char)*s2;
+}
 
 static void hex_dump_compact(const uint8_t* data, size_t len) {
     for (size_t i = 0; i < len; i++) {
@@ -969,6 +989,12 @@ int main(int argc, char* argv[]) {
         }
 
         if (peer_id_label) {
+            for (const char* p = peer_id_label; *p; p++) {
+                if (*p <= 32 || *p > 126) {
+                    printf("[!] [REJECTED] Invalid peer ID '%s': contains whitespace or non-printable character!\n", peer_id_label);
+                    return 1;
+                }
+            }
             char actual_hex[65];
             for (int p = 0; p < 32; p++) sprintf(&actual_hex[p * 2], "%02x", syn->eph_pubkey[p]);
             actual_hex[64] = '\0';
@@ -981,7 +1007,7 @@ int main(int argc, char* argv[]) {
                     char stored_hex[128] = {0};
                     if (sscanf(line, "%63s %127s", stored_id, stored_hex) == 2 && strcmp(stored_id, peer_id_label) == 0) {
                         found = true;
-                        if (_stricmp(stored_hex, actual_hex) != 0) {
+                        if (ozos_hex_case_cmp(stored_hex, actual_hex) != 0) {
                             fclose(fp);
                             printf("[!] [REJECTED] KEY CHANGED / MITM DETECTED for peer '%s' (stored=0x%s vs incoming=0x%s)!\n",
                                    peer_id_label, stored_hex, actual_hex);
@@ -997,6 +1023,9 @@ int main(int argc, char* argv[]) {
                 if (fw) {
                     fprintf(fw, "%s %s\n", peer_id_label, actual_hex);
                     fclose(fw);
+#ifndef _WIN32
+                    chmod(".ozos_known_peers", 0600);
+#endif
                 }
             }
         }

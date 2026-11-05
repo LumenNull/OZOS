@@ -170,7 +170,9 @@ class OZOSRequestHandler(http.server.SimpleHTTPRequestHandler):
                     # PY-L1/L2: Distinguish file path arguments from generic payload arguments strictly by position
                     is_file_arg = (
                         (cmd_name == "audio-decode" and idx == 1)
+                        or (cmd_name == "ofdm-decode" and idx == 1)
                         or (cmd_name == "audio-synth" and idx == 2)
+                        or (cmd_name == "ofdm-synth" and idx == 2)
                         or (cmd_name == "handshake-syn" and idx == 1)
                         or (cmd_name == "gossip-beacon" and idx == 2)
                         or (cmd_name == "handshake-ack" and idx == 2 and not a.startswith("-"))
@@ -189,7 +191,7 @@ class OZOSRequestHandler(http.server.SimpleHTTPRequestHandler):
                 # PY-H1: Positional WAV targets only. Never suffix-scan all arguments!
                 wav_targets = []
                 target_arg_idx = None
-                if cmd_name == "audio-synth" and len(safe_args) >= 3:
+                if cmd_name in ("audio-synth", "ofdm-synth") and len(safe_args) >= 3:
                     target_arg_idx = 2
                 elif cmd_name == "handshake-syn" and len(safe_args) >= 2:
                     target_arg_idx = 1

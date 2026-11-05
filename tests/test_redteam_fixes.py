@@ -2162,12 +2162,36 @@ rc_dec59_first, out_dec59_first, _ = run_ozos("tunnel-decrypt", enc59_hex, sess_
 # Second tunnel-decrypt of the exact same frame in process #2 must be REJECTED (rc != 0)
 rc_dec59_replay, out_dec59_replay, _ = run_ozos("tunnel-decrypt", enc59_hex, sess_key59)
 
+# H2a: Verify replay store is an unbounded SET (does not evict frame #1 after 65 intervening decrypts)
+h2a_eviction_blocked = True
+last_f_hex = ""
+for fi in range(2, 67):
+    rc_f, out_f, _ = run_ozos("tunnel-encrypt", f"TX_INTERVENING_{fi:03d}", sess_key59)
+    last_f_hex = [l.strip() for l in out_f.splitlines() if len(l.strip()) >= 96 and all(c in "0123456789abcdefABCDEF" for c in l.strip())][0]
+    rc_fd, _, _ = run_ozos("tunnel-decrypt", last_f_hex, sess_key59)
+    if rc_fd != 0: h2a_eviction_blocked = False
+
+rc_replay_after_65, _, _ = run_ozos("tunnel-decrypt", enc59_hex, sess_key59)
+rc_replay_last, _, _ = run_ozos("tunnel-decrypt", last_f_hex, sess_key59)
+h2a_ok = h2a_eviction_blocked and (rc_replay_after_65 != 0) and (rc_replay_last != 0)
+
+# H2b: Pre-poisoning test (unauthenticated injected nonce line without valid machine tag must NOT block legitimate first decrypt)
+rc_enc_psn, out_enc_psn, _ = run_ozos("tunnel-encrypt", "TX_POISON_TARGET", sess_key59)
+enc_psn_hex = [l.strip() for l in out_enc_psn.splitlines() if len(l.strip()) >= 96 and all(c in "0123456789abcdefABCDEF" for c in l.strip())][0]
+nonce_psn = enc_psn_hex[8:56]
+with open(os.path.join(REPO_ROOT, ".ozos_tunnel_nonces"), "a") as f:
+    f.write(f"{nonce_psn}\n")  # Injected without authentic tag
+rc_legit_dec, _, _ = run_ozos("tunnel-decrypt", enc_psn_hex, sess_key59)
+rc_re_replay_psn, _, _ = run_ozos("tunnel-decrypt", enc_psn_hex, sess_key59)
+h2b_ok = (rc_legit_dec == 0) and (rc_re_replay_psn != 0)
+
 f2_deep_ok = (rc_syn59 == 0 and rc_ack59 == 0 and rc_fin59 == 0 and len(sess_key59) == 64 and
               rc_dec59_first == 0 and "LENH_CHUYEN_KHOAN_1_TY" in out_dec59_first and
-              rc_dec59_replay != 0 and "REPLAY" in out_dec59_replay.upper())
-check_test("Poly1305 Handshake Auth Tag gan chat session_nonce va Tunnel Decrypt chan phat lai xuyen tien trinh CLI (F2)",
+              rc_dec59_replay != 0 and "REPLAY" in out_dec59_replay.upper() and
+              h2a_ok and h2b_ok)
+check_test("Poly1305 Handshake Tag gan session_nonce, Replay Store thanh tap hop ben vung (H2a) va chong tien nhiem Nonce (H2b)",
            f2_deep_ok,
-           f"Handshake + Cross-process anti-replay verified (first_rc={rc_dec59_first}, replay_rc={rc_dec59_replay})")
+           f"Handshake + Tunnel Set Replay verified (first={rc_dec59_first}, h2a_set={h2a_ok}, h2b_antipoison={h2b_ok})")
 
 # ----------------------------------------------------------------------
 # 60. TEST ROUND 14 (F8 & Item 15): --raw-frame, audio-decode 80ms Binary Frame, --no-secret & --secret-file
@@ -2214,12 +2238,17 @@ rc_pin2, out_pin2, err_pin2 = run_ozos("packet-verify", signed_hex, "1000", "--p
 rc_pin_mitm, out_pin_mitm, err_pin_mitm = run_ozos("packet-verify", attacker_hex, "1000", "--peer-id", "node_alpha")
 combined_mitm = (out_pin_mitm or "") + (err_pin_mitm or "")
 
+# 4. Peer ID containing whitespace must be strictly rejected (prevent space-id store corruption)
+rc_pin_space, out_pin_space, err_pin_space = run_ozos("packet-verify", signed_hex, "1000", "--peer-id", "node alpha")
+space_rejected = (rc_pin_space != 0) and ("khoang trang" in (out_pin_space + err_pin_space).lower())
+
 pin_store_ok = (rc_pin1 == 0 and ("XAC THUC THEO DANH BA .ozos_known_peers" in out_pin1 or "TOFU FIRST-USE PINNED" in out_pin1) and
                 rc_pin2 == 0 and
-                rc_pin_mitm == 1 and ("KEY CHANGED" in combined_mitm or "MITM" in combined_mitm or "THAY DOI KHOA" in combined_mitm))
-check_test("Persistent Peer Pin Store (.ozos_known_peers) ghim khoa lan dau va chan dung ke gia mao doi khoa (Item 15)",
+                rc_pin_mitm == 1 and ("KEY CHANGED" in combined_mitm or "MITM" in combined_mitm or "THAY DOI KHOA" in combined_mitm) and
+                space_rejected)
+check_test("Persistent Peer Pin Store (.ozos_known_peers) ghim khoa, phat hien MITM va chan khoang trang peer-id",
            pin_store_ok,
-           f"Pin store TOFU & MITM key-change rejection verified (pin1={rc_pin1}, pin2={rc_pin2}, mitm={rc_pin_mitm})")
+           f"Pin store TOFU & MITM key-change & space-id rejection verified (pin1={rc_pin1}, pin2={rc_pin2}, mitm={rc_pin_mitm}, space_rej={space_rejected})")
 
 # ----------------------------------------------------------------------
 # 62. TEST ROUND 14 (Item 16): Gossip [UNAUTHENTICATED CRC16 BEACON] Labeling & FORK_DETECTED Quarantine
