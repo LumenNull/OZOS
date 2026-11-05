@@ -1,0 +1,76 @@
+name: O.Z.O.S Sovereign CI
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  linux-build-and-test:
+    name: Linux GCC Bare-Metal Hardening
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Compile Sovereign C99 Binaries
+        run: |
+          make all
+
+      - name: Run Native C99 Test Suites
+        run: |
+          make test
+
+      - name: Run Red Team Audit Verification Suite (69/69 Invariants)
+        run: |
+          python tests/test_redteam_fixes.py
+
+      - name: Run Headless & JavaScript Engine Verification
+        run: |
+          node tests/test_ozos_15_tiers.js
+          node tests/test_ozos_headless.js
+
+  windows-build-and-test:
+    name: Windows MSVC Sovereign Build
+    runs-on: windows-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Compile and Run Native MSVC Test Suite
+        shell: cmd
+        run: |
+          call build.bat test
+
+      - name: Run Red Team Audit Verification Suite (69/69 Invariants)
+        shell: cmd
+        run: |
+          set PYTHONIOENCODING=utf-8
+          python tests/test_redteam_fixes.py
+
+      - name: Run Headless & JavaScript Engine Verification
+        shell: cmd
+        run: |
+          node tests/test_ozos_15_tiers.js
+          node tests/test_ozos_headless.js
