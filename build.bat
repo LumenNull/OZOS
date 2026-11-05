@@ -39,18 +39,22 @@ if exist "C:\Program Files\Microsoft Visual Studio\2022\Professional\VC\Auxiliar
     call "C:\Program Files\Microsoft Visual Studio\2022\Professional\VC\Auxiliary\Build\vcvars64.bat" >nul
     goto compile_msvc
 )
+if exist "C:\Program Files\Microsoft Visual Studio\2022\Enterprise\VC\Auxiliary\Build\vcvars64.bat" (
+    call "C:\Program Files\Microsoft Visual Studio\2022\Enterprise\VC\Auxiliary\Build\vcvars64.bat" >nul
+    goto compile_msvc
+)
 
 where gcc >nul 2>nul
 if %errorlevel% equ 0 (
     echo [BUILD] Using GCC...
-    gcc -O3 -Wall -Icore -o %TARGET% core/ozos_ghost.c core/tweetnacl.c core/ozos_hardened_core.cpp -ladvapi32 -lwinmm
+    gcc -O3 -Wall -Icore -I. -o %TARGET% core/ozos_ghost.c core/tweetnacl.c core/ozos_hardened_core.cpp -ladvapi32 -lwinmm
     if !errorlevel! neq 0 exit /b !errorlevel!
     if exist core\ozos_main.c (
-        gcc -O3 -Wall -Icore -o ozos.exe core/ozos_main.c core/tweetnacl.c core/ozos_hardened_core.cpp -ladvapi32 -lwinmm -lncrypt
+        gcc -O3 -Wall -Icore -I. -o ozos.exe core/ozos_main.c core/tweetnacl.c core/ozos_hardened_core.cpp -ladvapi32 -lwinmm -lncrypt
         if !errorlevel! neq 0 exit /b !errorlevel!
     )
     if exist tests\test_libozos.c (
-        gcc -O3 -Wall -Icore -o tests/test_libozos.exe tests/test_libozos.c core/tweetnacl.c core/ozos_hardened_core.cpp -ladvapi32
+        gcc -O3 -Wall -Icore -I. -o tests/test_libozos.exe tests/test_libozos.c core/tweetnacl.c core/ozos_hardened_core.cpp -ladvapi32
         if !errorlevel! neq 0 exit /b !errorlevel!
         copy /y tests\test_libozos.exe test_libozos.exe >nul
     )
@@ -60,14 +64,14 @@ if %errorlevel% equ 0 (
 where clang >nul 2>nul
 if %errorlevel% equ 0 (
     echo [BUILD] Using Clang...
-    clang -O3 -Wall -Icore -o %TARGET% core/ozos_ghost.c core/tweetnacl.c core/ozos_hardened_core.cpp -ladvapi32 -lwinmm
+    clang -O3 -Wall -Icore -I. -o %TARGET% core/ozos_ghost.c core/tweetnacl.c core/ozos_hardened_core.cpp -ladvapi32 -lwinmm
     if !errorlevel! neq 0 exit /b !errorlevel!
     if exist core\ozos_main.c (
-        clang -O3 -Wall -Icore -o ozos.exe core/ozos_main.c core/tweetnacl.c core/ozos_hardened_core.cpp -ladvapi32 -lwinmm -lncrypt
+        clang -O3 -Wall -Icore -I. -o ozos.exe core/ozos_main.c core/tweetnacl.c core/ozos_hardened_core.cpp -ladvapi32 -lwinmm -lncrypt
         if !errorlevel! neq 0 exit /b !errorlevel!
     )
     if exist tests\test_libozos.c (
-        clang -O3 -Wall -Icore -o tests/test_libozos.exe tests/test_libozos.c core/tweetnacl.c core/ozos_hardened_core.cpp -ladvapi32
+        clang -O3 -Wall -Icore -I. -o tests/test_libozos.exe tests/test_libozos.c core/tweetnacl.c core/ozos_hardened_core.cpp -ladvapi32
         if !errorlevel! neq 0 exit /b !errorlevel!
         copy /y tests\test_libozos.exe test_libozos.exe >nul
     )

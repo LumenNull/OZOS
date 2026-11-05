@@ -12,8 +12,12 @@ import base64
 import struct
 import math
 import wave
-from PIL import Image
-import numpy as np
+try:
+    from PIL import Image
+    import numpy as np
+except ImportError:
+    Image = None
+    np = None
 
 DIR = os.path.dirname(os.path.abspath(__file__))
 REPO_ROOT = os.path.abspath(os.path.join(DIR, "..", ".."))
