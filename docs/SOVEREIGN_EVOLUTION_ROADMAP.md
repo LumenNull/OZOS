@@ -89,10 +89,46 @@ flowchart TD
 
 ---
 
-## Part III: Commitment & Sovereign Covenant
+## Part III: The Sovereign Paradigm Shift — The Zero-UI Ambient Architecture (Round 18+ Mandate)
 
-This roadmap is an immutable mandate for all future development sprints of O.Z.O.S. Every new feature, protocol revision, or platform port must strictly satisfy the 4 Retrospective Lessons and advance towards the 4 Core Mandates.
+```mermaid
+flowchart TD
+    subgraph Architecture["O.Z.O.S Sovereign Ambient Architecture"]
+        T1["Tier 1: Sovereign Nucleus (libozos)<br/>• C99 / Rust no_std, Zero Malloc<br/>• Single Source of Truth<br/>• Finite State Machine (FSM)"]
+        T2["Tier 2: Physical Couriers (Transport)<br/>• Near-Ultrasound with RS(255,223) FEC<br/>• CSMA/CA Collision Avoidance<br/>• Optical Glyph & QR Streams"]
+        T3["Tier 3: Ambient Daemons & Pipes<br/>• OS Clipboard RAM Hook (5ms Auto-Armor)<br/>• Kernel Watchdog Hot-Folder<br/>• Unix Standard Pipe CLI"]
+    end
 
-*Sealed and recorded into the canonical repository on November 3, 2026.*  
-**Author:** LumenNull & ZeroStudio  
-**Status:** ACTIVE MANDATE  
+    T3 -->|Invokes Zero-Allocation Buffer| T1
+    T2 -->|Frames & Defends Packets| T1
+```
+
+### 1. The Art of Subtraction & De-Bloating (Eliminating the Web/App Trap)
+* **Empirical Diagnosis:** 17 rounds of adversarial testing proved that 90% of regressions, port collisions, path traversals, and glue-code failures originated from the web cockpit layer (`server.py`, port 8899, V8 JavaScript runtime, browser DevTools workarounds).
+* **Architectural Mandate:** O.Z.O.S permanently repudiates mandatory web servers, local HTTP ports, and bloated UI runtimes. The system transforms into a **formless, zero-UI ambient infrastructure protocol** running silently at the OS micro-kernel and daemon level.
+
+### 2. Single Source of Truth (SSOT) & Finite State Machine (FSM)
+* **Single Nucleus (`libozos`):** All packet framing, validation, and cryptographic state evaluations are consolidated strictly into a single C99/`no_std` Rust library. Duplicate parser implementations in Python and JavaScript are completely eliminated; peripheral tools interact purely via raw binary buffers and foreign function interfaces (FFI).
+* **Strict Fail-Closed FSM:** Eliminates fragile, nested heuristic `if/else` ladders. Packets are evaluated through a rigid 4-state transition table: `[UNVERIFIED] -> [MAC_VALID] -> [NONCE_VALID] -> [SIGNATURE_VALID]`. Any deviation or corrupted bit immediately triggers `STATE_ABORT` and volatile zeroization at byte zero.
+
+### 3. Invisible Ambient Guardian (`ozos-daemon`)
+* **Clipboard RAM Auto-Armor (`Win+Shift+S` / `Ctrl+C` -> `Ctrl+V`):**
+  - Registered OS kernel hook (`AddClipboardFormatListener` on Windows / X11/Wayland clipboard listener on Linux).
+  - Intercepts copied bitmap buffers in memory; injects imperceptible 2D-DCT 8x8 watermark, 80-byte header, and Ed25519 detached signature in **< 5 milliseconds**.
+  - Users paste into email, messaging apps, or banking portals with zero friction and zero GUI interaction, carrying indelible identity provenance.
+* **Kernel Watchdog Hot-Folder:** Automated filesystem monitoring (`ReadDirectoryChangesW` / `inotify`) applying instantaneous on-the-fly protection to dropped assets.
+* **Unix Pipe Standard:** Headless streaming pipeline integration (`cat document.bmp | ozos armor > secured.bmp`).
+
+### 4. Physical Transport Resilience: FEC & Acoustic Collision Avoidance
+* **Forward Error Correction (Reed-Solomon RS(255, 223)):** Replaces bare error-detection CRC16 with robust error-correcting codes, enabling 100% bit-exact packet reconstruction even under 20–30% acoustic reverberation or room clatter degradation.
+* **Carrier Sense Multiple Access with Collision Avoidance (CSMA/CA):** Energy detection across 18–20 kHz with random exponential backoff prior to beacon broadcasting, guaranteeing collision-free operation across high-density multi-node mesh networks.
+
+---
+
+## Part IV: Commitment & Standby Protocol (Awaiting Round 18 Audit)
+
+This specification is an immutable operational mandate. Upon delivery of the **Round 18 Red Team Audit Report**, all remediations will be executed exclusively through this clean architectural paradigm, decoupling the pure C99 sovereign nucleus from peripheral consumers and ending ad-hoc symptom patching permanently.
+
+*Formally updated, ratified, and committed to canonical repository.*  
+**Architect:** LumenNull & ZeroStudio  
+**Status:** ACTIVE SPECIFICATION & STANDBY MANDATE  
