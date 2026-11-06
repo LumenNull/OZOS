@@ -125,23 +125,70 @@ flowchart TD
 * **Zero-Touch Merkle Provenance Anchor (`ozos anchor <dir>`):** For legally immutable or read-only files, computes a binary Merkle tree over the directory snapshot, outputting a 32-byte Merkle Root signed with Ed25519 and timestamped nonces. Establishes mathematical proof of existence and historical ownership without modifying a single bit of the original files.
 * **Hardware Anti-Forensic Sanitization (`ozos burn <file>`):** Implements NIST SP 800-88 compliant 3-pass hardware sanitization (`0xAA` -> `0x55` -> `0x00`) with kernel controller flush barriers (`FlushFileBuffers` / `fdatasync`), permanently eliminating unarmored legacy drafts from physical magnetic/solid-state media.
 
-### 5. Tri-Modal Air-Gap Physical Transport Architecture (Zero-UI Omni-Spectrum PHY)
-* **Channel 1: Near-Ultrasound Inaudible Acoustic Modem (18.1–19.8 kHz):**
-  - **Hardware Medium:** Standard integrated PC/mobile loudspeakers and MEMS microphones (zero external hardware cost).
-  - **Protocol Execution:** Transmits Hann-windowed frequency-modulated frames imperceptible to human hearing. The background daemon passively listens with $O(N)$ Goertzel filters consuming $< 0.1\%\text{ CPU}$.
-  - **Resilience Engine:** Integrated **Reed-Solomon RS(255, 223) FEC** guarantees 100% bit-exact recovery under 20–30% multipath reverberation or room clatter. **CSMA/CA** energy detection with random exponential backoff prevents beacon packet collisions in dense multi-node environments.
-* **Channel 2: High-Speed Optical Line-of-Sight Stream (Glyph 32x32 & Dynamic QR):**
-  - **Hardware Medium:** Standard monitors/displays and integrated cameras/webcams.
-  - **Protocol Execution:** Headless C99 binary directly renders 32x32 binary optical glyph matrices or dynamic QR sequences at 60 FPS via native OS graphics interfaces (DirectX/GDI/X11 Framebuffer). Native camera drivers capture and decode frames directly in RAM.
-  - **Tactical Advantage:** Operates seamlessly through bulletproof glass or soundproof isolation chambers, completely immune to acoustic recording or RF spectrum sniffers.
-* **Channel 3: Long-Range Sub-GHz RF Mesh (LoRa 84-Byte Frames):**
-  - **Hardware Medium:** Low-cost external LoRa transceivers (Semtech SX1262 / SX1276) interfaced via UART/USB-Serial or bare-metal RISC-V GPIO.
-  - **Protocol Execution:** Emits standardized 84-byte frames (Sync `0x12`, Type `0x50`, CRC16-CCITT) across license-free ISM bands (433/868/915 MHz).
-  - **Tactical Advantage:** Overcomes spatial room boundaries, penetrating concrete structures, dense forests, and terrain over distances of **5 km to 15 km**, maintaining decentralized cryptographic consensus even during total nationwide Internet and cellular blackouts.
+### 5. Omni-Spectrum Cognitive Physical Transport Architecture (4-Tier Spectrum Overview)
+
+```
+   TIER 1: OPTICAL SPECTRUM     TIER 2: ACOUSTIC SPECTRUM     TIER 3: LONG-RANGE LORA      TIER 4: SKYWAVE HF
+   (Light Waves / 400-700nm)    (Acoustic OFDM / < 0.4s)      (Sub-GHz RF / 433-915MHz)    (Ionosphere / 3-30MHz)
+              |                             |                             |                           |
+            16 ms                        < 0.04s                       1 - 2 s                     2 - 10 s
+       Instantaneous!               Shatters 14.08s FSK            Penetrates Concrete         Transcontinental Skip
+```
+
+* **Tier 1: High-Speed Optical Line-of-Sight (Glyph 32x32 & Dynamic QR):**
+  - **Medium:** Standard monitors/displays and cameras/webcams.
+  - **Latency:** 16 ms per frame (60 FPS).
+  - **Properties:** Inaudible, zero RF emissions, operates through soundproof glass and RF-shielded environments.
+* **Tier 2: Fast Acoustic OFDM & Steganography (64-Point Radix-2 FFT):**
+  - **Medium:** Integrated loudspeakers and MEMS microphones.
+  - **Latency:** < 0.04s (38 ms) for complete 80-byte frame.
+  - **Properties:** Multi-carrier transmission (16 active QPSK subcarriers across 12.0–23.25 kHz) shattering legacy 14.08s FSK transmission time by 370x; ambient steganographic noise floor masking.
+* **Tier 3: Long-Range Sub-GHz Mesh (LoRa 84-Byte Frames):**
+  - **Medium:** External Semtech SX1262/SX1276 transceivers over UART/Serial.
+  - **Range:** 5 km to 15 km line-of-sight and non-line-of-sight.
+  - **Properties:** Chirp Spread Spectrum (CSS) with link budget > 148 dB, penetrating reinforced concrete and dense structures during communications blackouts.
+* **Tier 4: Planetary HF Skywave Telemetry (Ionospheric Reflection):**
+  - **Medium:** Shortwave analog transceiver line-in (10 m - 100 m wavelengths).
+  - **Range:** 500 km to 5,000+ km transcontinental.
+  - **Properties:** Doomsday skip propagation off the ionospheric F2 layer, independent of satellites, cellular towers, and submarine cables.
 
 ---
 
-## Part IV: Commitment & Standby Protocol (Awaiting Round 18 Audit)
+## Part IV: Physical In-the-Wild Hardening & Reality Check Mandate
+
+While all four transport layers achieve 100% mathematical bit-exactness within synthetic memory and clean loopback tests, real-world deployment across uncalibrated physical media introduces harsh analog channel degradation. The following four physical hardening modules are mandatory for field stability:
+
+### 1. Tier 1 Optical Hardening: Camera Distortion & Ambient Illumination
+* **Perspective Keystone Distortion:** Freehand camera alignment introduces non-orthogonal viewing angles (10–35 degrees pitch/yaw). Static grid sampling fails if tilt exceeds 2 degrees.
+  - *Hardening Contract:* Implement a 4-point **Homography Perspective Transform** (`ozos_homography_warp`). Detect the four 4x4 solid corner locator patterns, calculate the 3x3 projective transformation matrix $H$, and warp the quadrilateral back into an orthogonal $32 \times 32$ bit array prior to bit decoding.
+* **Moire Patterns & Dynamic Ambient Illumination:** Refresh rate interference and uneven room lighting corrupt fixed luminance thresholds.
+  - *Hardening Contract:* Replace static luminance thresholding (`lum > 384`) with **Otsu's Adaptive Binarization** combined with **Contrast Limited Adaptive Histogram Equalization (CLAHE)**.
+* **Burst Optical Glare Resilience:**
+  - *Hardening Contract:* Integrate **Reed-Solomon RS(255, 223)** error-correcting codes into the 84-byte glyph payload, enabling 100% bit-exact reconstruction even when up to 16 bytes (128 bits / 19% of the matrix) are completely obliterated by camera flash or specular reflection.
+
+### 2. Tier 2 Acoustic OFDM Hardening: Multipath Reverberation & Synchronization
+* **Continuous Stream Preamble Cross-Correlation:** Real-world audio capture operates as an unaligned continuous PCM stream. The receiver cannot assume that sample index 0 represents frame onset.
+  - *Hardening Contract:* Implement a **Schmidl-Cox Timing Metric** sliding correlator. The receiver evaluates continuous self-correlation over the two repetitive preamble training symbols:
+    $$M(d) = \frac{|P(d)|^2}{(R(d))^2}, \quad P(d) = \sum_{m=0}^{L-1} r^*(d+m) \cdot r(d+m+L)$$
+    Frame boundary is triggered strictly when $M(d)$ exceeds a normalized 0.85 plateau, achieving microsecond-accurate time synchronization.
+* **Multipath Delay Spread & Room Reverberation:** The current Cyclic Prefix of 16 samples ($0.33\text{ ms} \approx 11\text{ cm}$) is vulnerable to wall and desktop echoes.
+  - *Hardening Contract:* Expand Cyclic Prefix to **64 samples** ($1.33\text{ ms} \approx 45.3\text{ cm}$ path difference) and insert 4 comb-type pilot subcarriers to perform least-squares **Channel Estimation and Zero-Forcing Frequency-Domain Equalization (FDE)**.
+* **Sampling Clock Offset (SCO) Tracking:** Mismatches between independent soundcards ($48,005\text{ Hz}$ vs $47,995\text{ Hz}$) cause progressive phase rotation across OFDM subcarriers.
+  - *Hardening Contract:* Implement continuous pilot phase tracking:
+    $$\Delta \theta_s = \arg \left( \sum_{p} Y_s(p) \cdot X_s^*(p) \right)$$
+    Phase rotation is unrolled and compensated on every consecutive symbol.
+
+### 3. Tier 3 LoRa Sub-GHz Hardening: Native Hardware Serial Interface
+* **UART Driver Integration:** The 84-byte packet framing logic (`ozos_lora_frame_pack` / `ozos_lora_frame_unpack`) is cryptographically and structurally certified. However, physical hardware transmission requires direct serial device interfacing.
+  - *Hardening Contract:* Implement `core/ozos_lora_serial.c` using native OS APIs (Win32 `CreateFileA`/`SetCommState`/`SetCommTimeouts` and POSIX `termios` for Linux/macOS) with non-blocking ring-buffered I/O. Supports standard AT commands and raw transparent pass-through for Semtech SX1262/SX1276 modules at standard baud rates (9600, 57600, 115200 bps).
+
+### 4. Tier 4 Skywave HF Hardening: Ionospheric Skip Modulation Specification
+* **Narrowband Resilient Waveform:** To survive severe ionospheric phase flutter, Doppler spread, and atmospheric lightning static on 3–30 MHz, high-speed OFDM is unsuitable.
+  - *Hardening Contract:* Specify a 50-baud **8-GFSK (Gaussian Frequency Shift Keying)** or **Coherent BPSK** waveform with **Low-Density Parity-Check (LDPC)** error correction, constrained within an ultra-narrow $200\text{ Hz}$ bandwidth and operating reliably down to $-24\text{ dB}$ SNR.
+
+---
+
+## Part V: Commitment & Standby Protocol (Awaiting Round 18 Audit)
 
 This specification is an immutable operational mandate. Upon delivery of the **Round 18 Red Team Audit Report**, all remediations will be executed exclusively through this clean architectural paradigm, decoupling the pure C99 sovereign nucleus from peripheral consumers and ending ad-hoc symptom patching permanently.
 
