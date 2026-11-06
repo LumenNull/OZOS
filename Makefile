@@ -26,7 +26,7 @@ ifeq ($(UNAME_S),Darwin)
     LDFLAGS += -lm -lpthread
 endif
 
-.PHONY: all test test_libozos test_wasm test_redteam test_rfc wasm clean
+.PHONY: all test test_libozos test_wasm test_redteam test_rfc test_mutation reflex_audit wasm clean
 
 all: $(TARGET) $(CLI_TARGET) $(TEST_TARGET) $(AUDIT_TARGET) $(OMNI_TARGET)
 
@@ -145,6 +145,17 @@ test_rfc:
 		echo "        pip install cryptography"; \
 	}
 	$(PYTHON) tests/test_rfc_conformance.py
+
+test_mutation:
+	@echo "================================================================="
+	@echo "  [O.Z.O.S] RUNNING EMPIRICAL MUTATION TESTING (MULL PARITY)"
+	@echo "================================================================="
+	$(PYTHON) tests/mutation_test.py
+
+reflex_audit: test test_wasm test_redteam test_mutation
+	@echo "================================================================="
+	@echo "  🏆 O.Z.O.S FULL SOVEREIGN COGNITIVE DEFENSE REFLEX AUDIT: PASS"
+	@echo "================================================================="
 
 clean:
 	@echo "[CLEAN] Removing build artifacts..."
