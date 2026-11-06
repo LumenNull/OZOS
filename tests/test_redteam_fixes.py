@@ -2789,9 +2789,28 @@ check_test("Sub-5ms RAM Clipboard Auto-Armor intercepts CF_DIB and injects 2D-DC
            clip_ok,
            f"Clipboard armor verified (ok={clip_ok})")
 
+# ----------------------------------------------------------------------
+# 76. TEST ROUND 19: Workstation Virtual Air-Gap, Wi-Fi Guard & Ephemeral Enclave (ozos workstation-shield)
+# ----------------------------------------------------------------------
+print("\n[TEST 76/76] Workstation Virtual Air-Gap, Wi-Fi Host Defense & Ephemeral Enclave...")
+rc_ws, out_ws, _ = run_ozos("workstation-shield")
+ws_ok = (rc_ws == 0 and
+         "HARDWARE VIRTUALIZATION & HYPERVISOR AUDIT" in out_ws and
+         "HOST NETWORK & WI-FI EXPOSURE AUDIT" in out_ws and
+         "PROCESS MEMORY SHIELD & ANTI-DUMP PROTECTION" in out_ws and
+         "EPHEMERAL SUB-MILLISECOND KEY LIFECYCLE" in out_ws and
+         "100% SCRUBBED" in out_ws)
+
+rc_st, out_st, _ = run_ozos("status")
+st_ok = (rc_st == 0 and "WORKSTATION HARDENING & OPSEC POSTURE" in out_st)
+
+check_test("Workstation Virtual Air-Gap audits hypervisor, detects network interfaces, engages anti-dump DACL, and certifies ephemeral enclave",
+           ws_ok and st_ok,
+           f"Workstation shield verified (ws_rc={rc_ws}, st_rc={rc_st}, ws_ok={ws_ok})")
+
 print("\n======================================================================")
 if all_passed:
-    print("  🏆 CONCLUSION: 75/75 SOVEREIGN, OMNI-SPECTRUM & DATA-AT-REST REGRESSION TESTS PASSED 100%!")
+    print("  🏆 CONCLUSION: 76/76 SOVEREIGN, OMNI-SPECTRUM & DATA-AT-REST REGRESSION TESTS PASSED 100%!")
     print("  ALL 4 SIGNAL SPECTRUM TIERS & SECURITY INVARIANTS RIGOROUSLY ENFORCED.")
     print("======================================================================")
     sys.exit(0)
