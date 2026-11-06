@@ -46,6 +46,10 @@ jobs:
           node tests/test_ozos_15_tiers.js
           node tests/test_ozos_headless.js
 
+      - name: Run Empirical Mutation Testing Harness (Mull Parity)
+        run: |
+          python tests/mutation_test.py
+
   windows-build-and-test:
     name: Windows MSVC Sovereign Build
     runs-on: windows-latest
@@ -87,3 +91,9 @@ jobs:
         run: |
           node tests/test_ozos_15_tiers.js
           node tests/test_ozos_headless.js
+
+      - name: Run Empirical Mutation Testing Harness (Mull Parity)
+        shell: cmd
+        run: |
+          set PYTHONIOENCODING=utf-8
+          python tests/mutation_test.py

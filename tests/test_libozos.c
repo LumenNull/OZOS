@@ -68,6 +68,12 @@ int main(void) {
     st = ozos_packet_validate(buffer, 80 + 15, 4999ULL, &validated);
     if (st != OZOS_ERR_MAC16_MISMATCH) TEST_FAIL("Tampered packet", "MAC16 khong bat duoc bit sua doi");
 
+    /* Validate packet bi sua Magic Header (Magic phai bat ngay) */
+    memcpy(buffer, &pkt, sizeof(pkt));
+    ((ozos_packet80_t*)buffer)->magic = 0xDEADBEEF;
+    st = ozos_packet_validate(buffer, 80 + 15, 4999ULL, &validated);
+    if (st != OZOS_ERR_MAGIC_INVALID) TEST_FAIL("Magic check", "Khong bat duoc Magic header gia mao");
+
     /* Kiem tra lo hong A1+96: Goi tin A1 co payload du dem 96 byte rac phai bi TU CHOI OZOS_ERR_A1_PAYLOAD_UNPROTECTED */
     ozos_packet80_t a1_pkt;
     ozos_packet_build(&a1_pkt, 5001ULL, sample_coeffs, 15);
@@ -101,10 +107,11 @@ int main(void) {
     bool dfa_pass = ozos_verify_dual_path_dfa(a, b, 0.5f);
     if (!dfa_pass) TEST_FAIL("DFA normal", "Ket qua binh thuong bi fail");
 
-    /* Gia lap ban xung laser vao thanh ghi FPU */
-    a[0] = 999.0f;
-    bool dfa_glitch = ozos_verify_dual_path_dfa(a, b, 0.5f);
-    if (dfa_glitch) TEST_FAIL("DFA glitch", "Xung laser khong bi phat hien");
+    /* Gia lap ban xung laser vao thanh ghi FPU (Threshold lon de kiem chung doc lap Drift Barrier) */
+    a[0] = 70000.0f;
+    b[0] = 69000.0f;
+    bool dfa_glitch = ozos_verify_dual_path_dfa(a, b, 2000000.0f);
+    if (dfa_glitch) TEST_FAIL("DFA glitch", "Xung laser khong bi phat hien boi co che drift");
 
     TEST_PASS("Loi ALU Q15.16 phat hien xung laser lat bit tren FPU va kich hoat bao ve");
 
@@ -261,6 +268,27 @@ int main(void) {
     );
     if (!tamper_detected) {
         TEST_FAIL("Tamper Detection", "Chu ky khong phat hien thong diep bi sua doi");
+    }
+
+    /* Kiem tra bat bien S < L chong bien dang chu ky S + L (RFC 8032 Section 5.1.7) */
+    signed_frame[0] ^= 0x01; /* Restore frame */
+    static const uint8_t L_rfc8032[32] = {
+        0xed, 0xd3, 0xf5, 0x5c, 0x1a, 0x63, 0x12, 0x58,
+        0xd6, 0x9c, 0xf7, 0xa2, 0xde, 0xf9, 0xde, 0x14,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x10
+    };
+    uint8_t malformed_frame[256];
+    memcpy(malformed_frame, signed_frame, signed_len);
+    /* Tinh S' = S + L qua phep cong 256-bit little-endian (TweetNaCl co the chap nhan neu khong co cong gac S < L) */
+    uint64_t carry = 0;
+    for (int i = 0; i < 32; ++i) {
+        uint64_t sum = (uint64_t)signed_frame[signed_len - 32 + i] + (uint64_t)L_rfc8032[i] + carry;
+        malformed_frame[signed_len - 32 + i] = (uint8_t)(sum & 0xFF);
+        carry = sum >> 8;
+    }
+    if (ozos_verify_packet_frame(malformed_frame, signed_len, verified_pk)) {
+        TEST_FAIL("S < L check", "Chu ky bien dang S + L khong bi tu choi");
     }
     printf("  • Phat hien gia mao     : Phat hien lat 1 bit trong < 0.5 ms va tu choi ngay lap tuc\n");
     TEST_PASS("Pillar 1: Sovereign Ed25519 Signature & Public Key authenticated 100%");
