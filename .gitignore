@@ -90,3 +90,6 @@ $RECYCLE.BIN/
 **/.ozos_fork_quarantine
 .ozos_state_key
 **/.ozos_state_key
+
+# --- LEVEL 7: GRAPHIFY KNOWLEDGE GRAPH ARTIFACTS ---
+graphify-out/
