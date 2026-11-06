@@ -1,0 +1,83 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    O.Z.O.S Sovereign Invariant Microkit System Description
+    Target: seL4 Microkernel on ARM64 / RISC-V 64 / x86_64
+    Architecture: 4 Isolated Protection Domains (PDs) communicating via Capability Channels
+-->
+<system>
+    <!-- ================================================================= -->
+    <!-- SHARED MEMORY REGIONS (RING BUFFERS)                              -->
+    <!-- ================================================================= -->
+    <!-- Ingest Frame Buffer: 80-byte Aligned RX Wire Queue -->
+    <memory_region name="rx_frame_queue" size="0x10000" page_size="0x1000" />
+
+    <!-- Egress Frame Buffer: 80-byte Aligned TX Wire Queue -->
+    <memory_region name="tx_frame_queue" size="0x10000" page_size="0x1000" />
+
+    <!-- Sealed Hardware State / Monotonic Counters Storage Buffer -->
+    <memory_region name="storage_state_buf" size="0x4000" page_size="0x1000" />
+
+    <!-- ================================================================= -->
+    <!-- PROTECTION DOMAIN: crypto_enclave (SOVEREIGN CORE)                -->
+    <!-- Invariants: Zero Device Memory, Zero Network, Zero Heap           -->
+    <!-- ================================================================= -->
+    <protection_domain name="crypto_enclave" priority="200">
+        <program_image path="crypto_enclave.elf" />
+        <!-- Read-only ingest mapping: Can parse incoming frames from RX -->
+        <map mr="rx_frame_queue" vaddr="0x30000000" perms="r" cached="true" />
+        <!-- Read-write egress mapping: Can post signed frames to TX -->
+        <map mr="tx_frame_queue" vaddr="0x31000000" perms="rw" cached="true" />
+        <!-- Read-write storage mapping: Monotonic counter synchronization -->
+        <map mr="storage_state_buf" vaddr="0x32000000" perms="rw" cached="true" />
+    </protection_domain>
+
+    <!-- ================================================================= -->
+    <!-- PROTECTION DOMAIN: airgap_rx (SIGNAL DEMODULATION & INGEST)       -->
+    <!-- Handles ADC / Camera optical matrix / LoRa hardware buffers       -->
+    <!-- ================================================================= -->
+    <protection_domain name="airgap_rx" priority="180">
+        <program_image path="airgap_rx.elf" />
+        <!-- Write-only ingest buffer: Prepares 80-byte verified frames -->
+        <map mr="rx_frame_queue" vaddr="0x30000000" perms="rw" cached="true" />
+    </protection_domain>
+
+    <!-- ================================================================= -->
+    <!-- PROTECTION DOMAIN: airgap_tx (SIGNAL MODULATION & TRANSMIT)       -->
+    <!-- Handles DAC / Display terminal / LoRa RF transmitter              -->
+    <!-- ================================================================= -->
+    <protection_domain name="airgap_tx" priority="180">
+        <program_image path="airgap_tx.elf" />
+        <!-- Read-only egress buffer: Transmits sealed frames -->
+        <map mr="tx_frame_queue" vaddr="0x31000000" perms="r" cached="true" />
+    </protection_domain>
+
+    <!-- ================================================================= -->
+    <!-- PROTECTION DOMAIN: storage_vfs (PERSISTENT HARDWARE ANCHOR)       -->
+    <!-- Controls TPM 2.0 / Hardware NVRAM Monotonic Counters             -->
+    <!-- ================================================================= -->
+    <protection_domain name="storage_vfs" priority="150">
+        <program_image path="storage_vfs.elf" />
+        <map mr="storage_state_buf" vaddr="0x32000000" perms="rw" cached="true" />
+    </protection_domain>
+
+    <!-- ================================================================= -->
+    <!-- CAPABILITY COMMUNICATION CHANNELS                                 -->
+    <!-- ================================================================= -->
+    <!-- Channel 1: airgap_rx signals crypto_enclave on verified frame receipt -->
+    <channel>
+        <end pd="airgap_rx" id="1" />
+        <end pd="crypto_enclave" id="1" />
+    </channel>
+
+    <!-- Channel 2: crypto_enclave signals airgap_tx when signed frame is ready -->
+    <channel>
+        <end pd="crypto_enclave" id="2" />
+        <end pd="airgap_tx" id="2" />
+    </channel>
+
+    <!-- Channel 3: crypto_enclave syncs monotonic counter with storage_vfs -->
+    <channel>
+        <end pd="crypto_enclave" id="3" />
+        <end pd="storage_vfs" id="3" />
+    </channel>
+</system>

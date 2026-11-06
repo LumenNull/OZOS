@@ -959,7 +959,7 @@ class OZOSEngine {
 
     static get TIERS_15_REGISTRY() {
         return [
-            { id: "TIER_00", name: "Mathematical Formal Armor", tech: "seL4 Microkernel & Formal Verification", layer: "Kernel / Hardware", status: "VERIFIED" },
+            { id: "TIER_00", name: "Deterministic Stack Enclave", tech: "seL4-Inspired C99 Invariant Core", layer: "Kernel / Hardware", status: "ACTIVE" },
             { id: "TIER_01", name: "Autonomous Brain", tech: "Phantom WASM Core & Tar-pit PoW Nonce", layer: "WASM Runtime", status: "ACTIVE" },
             { id: "TIER_02", name: "Stealth Frequency Protocol", tech: "2D-DCT Steganography & FSK Audio Modem", layer: "Physical Air-Gap", status: "ACTIVE" },
             { id: "TIER_03", name: "Tripwire Gatekeeper & Oracle", tech: "Zero-Knowledge Identity Oracle API", layer: "Gatekeeper BaaS", status: "ENFORCED" },
@@ -972,7 +972,7 @@ class OZOSEngine {
             { id: "TIER_10", name: "Autonomous Economic Loop", tech: "Sovereign Identity BaaS Closed Loop", layer: "Economics", status: "AUTONOMOUS" },
             { id: "TIER_11", name: "Adversarial Red Team Lab", tech: "Continuous Red Teaming & Fault Injection", layer: "Adversarial Lab", status: "OPERATIONAL" },
             { id: "TIER_12", name: "Merkle State Accumulator", tech: "O(log N) Merkle Tree & Anti-Rollback", layer: "State Ledger", status: "MATHEMATICAL" },
-            { id: "TIER_13", name: "Post-Quantum Cryptography", tech: "Post-Quantum Crystals-Kyber & MPC Shamir", layer: "Cryptography", status: "FUTURE_PROOF" },
+            { id: "TIER_13", name: "Post-Quantum & Shamir SSS", tech: "Shamir's Secret Sharing (SSS) & PQC Hybrid Target", layer: "Cryptography", status: "ACTIVE" },
             { id: "TIER_14", name: "Blind Enclave Computation", tech: "Fully Homomorphic Encryption (FHE)", layer: "Blind Enclave", status: "PROVEN" }
         ];
     }

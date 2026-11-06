@@ -2792,7 +2792,7 @@ check_test("Sub-5ms RAM Clipboard Auto-Armor intercepts CF_DIB and injects 2D-DC
 # ----------------------------------------------------------------------
 # 76. TEST ROUND 19: Workstation Virtual Air-Gap, Wi-Fi Guard & Ephemeral Enclave (ozos workstation-shield)
 # ----------------------------------------------------------------------
-print("\n[TEST 76/76] Workstation Virtual Air-Gap, Wi-Fi Host Defense & Ephemeral Enclave...")
+print("\n[TEST 76/77] Workstation Virtual Air-Gap, Wi-Fi Host Defense & Ephemeral Enclave...")
 rc_ws, out_ws, _ = run_ozos("workstation-shield")
 ws_ok = (rc_ws == 0 and
          "HARDWARE VIRTUALIZATION & HYPERVISOR AUDIT" in out_ws and
@@ -2808,9 +2808,55 @@ check_test("Workstation Virtual Air-Gap audits hypervisor, detects network inter
            ws_ok and st_ok,
            f"Workstation shield verified (ws_rc={rc_ws}, st_rc={rc_st}, ws_ok={ws_ok})")
 
+# ----------------------------------------------------------------------
+# 77. TEST ROUND 20: Shamir's Secret Sharing (SSS) (k,n) Threshold Scheme (ozos brainseed-split / combine)
+# ----------------------------------------------------------------------
+print("\n[TEST 77/77] Shamir's Secret Sharing (SSS) over GF(2^8) (k,n) Threshold Scheme...")
+fixed_seed = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+rc_split, out_split, _ = run_ozos("brainseed-split", "--seed", fixed_seed, "--threshold", "3", "--shares", "5")
+split_ok = (rc_split == 0 and "SHAMIR'S SECRET SHARING (SSS) THRESHOLD SPLIT" in out_split)
+
+share_hexes = re.findall(r"\b(53[0-9a-fA-F]{74})\b", out_split)
+shares_extracted = (len(share_hexes) == 5)
+
+combine_ok_1 = False
+combine_ok_2 = False
+too_few_blocked = False
+tamper_blocked = False
+dup_blocked = False
+
+if shares_extracted:
+    # 1. Combine shares 0, 2, 4 (1st, 3rd, 5th)
+    rc_c1, out_c1, _ = run_ozos("brainseed-combine", share_hexes[0], share_hexes[2], share_hexes[4])
+    combine_ok_1 = (rc_c1 == 0 and fixed_seed in out_c1 and "RECONSTRUCTION SUCCESS" in out_c1)
+
+    # 2. Combine shares 1, 3, 4 (2nd, 4th, 5th)
+    rc_c2, out_c2, _ = run_ozos("brainseed-combine", share_hexes[1], share_hexes[3], share_hexes[4])
+    combine_ok_2 = (rc_c2 == 0 and fixed_seed in out_c2 and "RECONSTRUCTION SUCCESS" in out_c2)
+
+    # 3. Fail-closed: only 2 shares provided (< threshold 3)
+    rc_few, out_few, err_few = run_ozos("brainseed-combine", share_hexes[0], share_hexes[1])
+    too_few_blocked = (rc_few != 0 and "Insufficient shares" in (out_few + err_few))
+
+    # 4. Fail-closed: corrupted share CRC
+    tampered_share = share_hexes[0][:-2] + ("00" if share_hexes[0][-2:] != "00" else "ff")
+    rc_tamp, out_tamp, err_tamp = run_ozos("brainseed-combine", tampered_share, share_hexes[2], share_hexes[4])
+    tamper_blocked = (rc_tamp != 0 and "CRC16-CCITT checksum failed" in (out_tamp + err_tamp))
+
+    # 5. Fail-closed: duplicate shares
+    rc_dup, out_dup, err_dup = run_ozos("brainseed-combine", share_hexes[0], share_hexes[0], share_hexes[2])
+    dup_blocked = (rc_dup != 0 and "Duplicate share index detected" in (out_dup + err_dup))
+
+sss_test_ok = (split_ok and shares_extracted and combine_ok_1 and combine_ok_2 and
+               too_few_blocked and tamper_blocked and dup_blocked)
+
+check_test("Shamir's Secret Sharing (k,n) over GF(2^8) splits seed, restores bit-exact from distinct subsets, and rejects under-threshold or tampered shares",
+           sss_test_ok,
+           f"Shamir SSS verified (split={split_ok}, c1={combine_ok_1}, c2={combine_ok_2}, few={too_few_blocked}, tamp={tamper_blocked}, dup={dup_blocked})")
+
 print("\n======================================================================")
 if all_passed:
-    print("  🏆 CONCLUSION: 76/76 SOVEREIGN, OMNI-SPECTRUM & DATA-AT-REST REGRESSION TESTS PASSED 100%!")
+    print("  🏆 CONCLUSION: 77/77 SOVEREIGN, OMNI-SPECTRUM & DATA-AT-REST REGRESSION TESTS PASSED 100%!")
     print("  ALL 4 SIGNAL SPECTRUM TIERS & SECURITY INVARIANTS RIGOROUSLY ENFORCED.")
     print("======================================================================")
     sys.exit(0)

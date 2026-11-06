@@ -53,6 +53,7 @@ extern void randombytes(unsigned char *buf, unsigned long long len);
 #include "ozos_omni_phy.h"
 #include "ozos_data_at_rest.h"
 #include "ozos_workstation_guard.h"
+#include "ozos_shamir.h"
 
 #define OZOS_VERSION_STR "2026.1-SOVEREIGN"
 #ifndef OZOS_GIT_COMMIT_HASH
@@ -2449,6 +2450,86 @@ static int cmd_clipboard_armor(const char* custom_seed) {
    MAIN ENTRY POINT
    ============================================================================= */
 
+static int cmd_brainseed_split(uint8_t k, uint8_t n, const char* custom_seed_hex) {
+    uint8_t seed[32];
+    ozos_resolve_seed(custom_seed_hex, seed);
+
+    ozos_shamir_share_t shares[OZOS_SHAMIR_MAX_SHARES];
+    int rc = ozos_shamir_split(seed, k, n, shares);
+    ozos_crypto_zeroize(seed, sizeof(seed));
+
+    if (rc != 0) {
+        fprintf(stderr, "[ERROR] Shamir's Secret Sharing split failed (rc=%d). Parameters must satisfy 2 <= k <= n <= 16.\n", rc);
+        return 1;
+    }
+
+    printf("=================================================================\n");
+    printf("  O.Z.O.S // SHAMIR'S SECRET SHARING (SSS) THRESHOLD SPLIT\n");
+    printf("  Scheme: (%u-of-%u) Threshold Scheme over GF(2^8) (Rijndael 0x11B)\n", (unsigned)k, (unsigned)n);
+    printf("  Security: Any %u shares can restore; %u or fewer shares yield ZERO info\n", (unsigned)k, (unsigned)(k - 1));
+    printf("=================================================================\n\n");
+
+    for (uint8_t i = 0; i < n; ++i) {
+        char hex[OZOS_SHAMIR_SHARE_HEX_LEN + 1];
+        ozos_shamir_share_to_hex(&shares[i], hex);
+        printf("[SHARE %u/%u] (CRC16: 0x%04X):\n", (unsigned)shares[i].share_index, (unsigned)n, (unsigned)shares[i].crc16);
+        printf("  %s\n\n", hex);
+    }
+    printf("[INSTRUCTION] Distribute these %u shares across %u separate secure enclaves.\n", (unsigned)n, (unsigned)n);
+    printf("   To restore master seed: ozos.exe brainseed-combine <share_1> <share_2> ... <share_%u>\n", (unsigned)k);
+    printf("=================================================================\n");
+    return 0;
+}
+
+static int cmd_brainseed_combine(int num_shares, char* share_hexes[]) {
+    if (num_shares < OZOS_SHAMIR_MIN_THRESHOLD) {
+        fprintf(stderr, "[SYNTAX ERROR] At least %d shares are required for Shamir reconstruction.\n", OZOS_SHAMIR_MIN_THRESHOLD);
+        return 1;
+    }
+
+    ozos_shamir_share_t shares[OZOS_SHAMIR_MAX_SHARES];
+    for (int i = 0; i < num_shares; ++i) {
+        int rc = ozos_shamir_hex_to_share(share_hexes[i], &shares[i]);
+        if (rc != 0) {
+            fprintf(stderr, "[REJECTED] Share #%d is invalid or corrupted (rc=%d)!\n", i + 1, rc);
+            if (rc == -4) fprintf(stderr, "   CRC16-CCITT checksum failed! Typo or tampering detected in share.\n");
+            return 1;
+        }
+    }
+
+    uint8_t recovered_seed[32];
+    int rc = ozos_shamir_combine(shares, (uint8_t)num_shares, recovered_seed);
+    if (rc != 0) {
+        fprintf(stderr, "[SECURITY ALERT] Shamir's Secret Sharing reconstruction failed (rc=%d)!\n", rc);
+        if (rc == -2) fprintf(stderr, "   Insufficient shares: Threshold k=%u, but only %d valid shares provided.\n", shares[0].threshold_k, num_shares);
+        if (rc == -5) fprintf(stderr, "   Mismatched shares: Shares were generated from different split sessions!\n");
+        if (rc == -6) fprintf(stderr, "   Duplicate share index detected! Unique shares are required.\n");
+        return 1;
+    }
+
+    char seed_hex[65];
+    bytes_to_hex(recovered_seed, 32, seed_hex);
+
+    /* Derive master public key to verify identity */
+    uint8_t pk[32], sk[64];
+    crypto_sign_seed_keypair(pk, sk, recovered_seed);
+    char pk_hex[65];
+    bytes_to_hex(pk, 32, pk_hex);
+
+    printf("=================================================================\n");
+    printf("  O.Z.O.S // SHAMIR'S SECRET SHARING RECONSTRUCTION SUCCESS\n");
+    printf("  Lagrange Interpolation: Reconstructed using %d distinct shares\n", num_shares);
+    printf("=================================================================\n\n");
+    printf("* Sovereign Seed (Hex)  : %s\n", seed_hex);
+    printf("* Sovereign Public Key  : 0x%s\n", pk_hex);
+    printf("\n[STATUS] Master Brainseed identity successfully reconstituted bit-exact!\n");
+    printf("=================================================================\n");
+
+    ozos_crypto_zeroize(recovered_seed, sizeof(recovered_seed));
+    ozos_crypto_zeroize(sk, sizeof(sk));
+    return 0;
+}
+
 static int cmd_workstation_shield(void) {
     printf("=================================================================\n");
     printf("  O.Z.O.S // WORKSTATION VIRTUAL AIR-GAP & MEMORY SHIELD AUDIT\n");
@@ -2526,6 +2607,8 @@ static void print_banner(void) {
     printf("  ozos.exe tunnel-decrypt <hex> <key>    - [TIER 2] Decrypt and verify Poly1305 AEAD tag\n");
     printf("  ozos.exe brainseed-gen [passphrase]    - [TIER 3] Generate 12-word BIP-39 mnemonic\n");
     printf("  ozos.exe brainseed-restore <12 words>  - [TIER 3] Restore sovereign identity from mindseed\n");
+    printf("  ozos.exe brainseed-split [opts]        - [TIER 3] Shamir's Secret Sharing (k-of-n threshold split)\n");
+    printf("  ozos.exe brainseed-combine <shares...> - [TIER 3] Reconstruct master seed from k Shamir shares\n");
     printf("  ozos.exe gossip-beacon [epoch] [wav]   - [TIER 4] Broadcast Inaudible Heartbeat Beacon\n");
     printf("  ozos.exe gossip-listen <beacon> [epoch]- [TIER 4] Inaudible Merkle Consensus Arbitration\n");
     printf("  ozos.exe audio-synth <txt> <wav> [opt] - Acoustic carrier synthesis (Default: --stealth 18-20kHz)\n");
@@ -2798,6 +2881,56 @@ int main(int argc, char* argv[]) {
         }
         const char* passphrase = (argc == 4) ? argv[3] : "";
         return cmd_brainseed_restore(argv[2], passphrase);
+    } else if (strcmp(cmd, "brainseed-split") == 0) {
+        uint8_t threshold_k = 3;
+        uint8_t total_n = 5;
+        const char* custom_seed = NULL;
+        for (int i = 2; i < argc; ++i) {
+            if (strcmp(argv[i], "--threshold") == 0 || strcmp(argv[i], "-k") == 0) {
+                if (i + 1 >= argc) {
+                    fprintf(stderr, "[SYNTAX ERROR] Flag '%s' requires integer argument.\n", argv[i]);
+                    return 1;
+                }
+                uint32_t val = 0;
+                if (!parse_strict_u32(argv[++i], &val) || val < OZOS_SHAMIR_MIN_THRESHOLD || val > OZOS_SHAMIR_MAX_SHARES) {
+                    fprintf(stderr, "[SYNTAX ERROR] Threshold must be between %d and %d.\n", OZOS_SHAMIR_MIN_THRESHOLD, OZOS_SHAMIR_MAX_SHARES);
+                    return 1;
+                }
+                threshold_k = (uint8_t)val;
+            } else if (strcmp(argv[i], "--shares") == 0 || strcmp(argv[i], "-n") == 0) {
+                if (i + 1 >= argc) {
+                    fprintf(stderr, "[SYNTAX ERROR] Flag '%s' requires integer argument.\n", argv[i]);
+                    return 1;
+                }
+                uint32_t val = 0;
+                if (!parse_strict_u32(argv[++i], &val) || val < OZOS_SHAMIR_MIN_THRESHOLD || val > OZOS_SHAMIR_MAX_SHARES) {
+                    fprintf(stderr, "[SYNTAX ERROR] Total shares must be between %d and %d.\n", OZOS_SHAMIR_MIN_THRESHOLD, OZOS_SHAMIR_MAX_SHARES);
+                    return 1;
+                }
+                total_n = (uint8_t)val;
+            } else if (strcmp(argv[i], "--seed") == 0) {
+                if (i + 1 >= argc || custom_seed != NULL) {
+                    fprintf(stderr, "[SYNTAX ERROR] Flag '--seed' is duplicated or missing argument.\n");
+                    return 1;
+                }
+                custom_seed = argv[++i];
+            } else {
+                fprintf(stderr, "[SYNTAX ERROR] Unexpected argument: '%s'\n", argv[i]);
+                return 1;
+            }
+        }
+        if (threshold_k > total_n) {
+            fprintf(stderr, "[SYNTAX ERROR] Threshold k (%u) cannot exceed total shares n (%u)!\n", (unsigned)threshold_k, (unsigned)total_n);
+            return 1;
+        }
+        return cmd_brainseed_split(threshold_k, total_n, custom_seed);
+    } else if (strcmp(cmd, "brainseed-combine") == 0) {
+        if (argc < 4) {
+            fprintf(stderr, "[SYNTAX ERROR] Usage: ozos.exe brainseed-combine <share_hex_1> <share_hex_2> ... <share_hex_k>\n");
+            fprintf(stderr, "   At least 2 shares are required to reconstruct.\n");
+            return 1;
+        }
+        return cmd_brainseed_combine(argc - 2, &argv[2]);
     } else if (strcmp(cmd, "gossip-beacon") == 0) {
         uint32_t epoch = 100;
         const char* wav_path = NULL;

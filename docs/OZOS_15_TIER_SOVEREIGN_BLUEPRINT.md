@@ -18,7 +18,7 @@ The architecture is codified into **15 Closed-Loop Defense Tiers**, enforcing de
 
 ```
 ========================================================================================
-[TIER 00] MATHEMATICAL REINFORCEMENT (seL4 Microkernel & Formal Verification)
+[TIER 00] DETERMINISTIC STACK ENCLAVE (seL4-Inspired Invariant & Microkit Roadmap)
 [TIER 01] INDEPENDENT PHANTOM RUNTIME (Phantom WASM Core & Tar-Pit Proof-of-Work)
 [TIER 02] MULTI-CHANNEL STEALTH TRANSPORT (Air-Gapped 2D-DCT & Ultrasonic Audio Modem)
 [TIER 03] GATEKEEPER ORACLE (Gatekeeper API & Zero-Knowledge Identity Oracle)
@@ -40,9 +40,9 @@ The architecture is codified into **15 Closed-Loop Defense Tiers**, enforcing de
 
 ## 15-TIER TECHNICAL DEFENSE SPECIFICATION
 
-### TIER 0: MATHEMATICAL REINFORCEMENT (THE MATHEMATICAL FOUNDATION)
-- **Core Engine:** seL4 Microkernel verified via formal mathematical logic.
-- **Security Invariant:** Enforces strict hardware and memory isolation at the lowest abstraction layer. Formally proven to eliminate buffer overflows, enforce virtual address space isolation, and prevent kernel privilege escalation.
+### TIER 0: DETERMINISTIC STACK ENCLAVE (THE SE-L4-INSPIRED MEMORY FOUNDATION)
+- **Core Engine:** seL4-inspired deterministic C99 execution engine with zero-heap allocation (`malloc=0`) and non-paged stack locking (`VirtualLock` / `mlock`).
+- **Security Invariant:** Eliminates heap corruption, dynamic allocation fragmentation, and race conditions. Bare-metal seL4 Microkit protection domain deployment on ARM64/RISC-V represents the target sovereign formal boundary.
 
 ### TIER 1: INDEPENDENT PHANTOM RUNTIME (THE PHANTOM WASM CORE)
 - **Core Engine:** WebAssembly (WASM) SIMD128 compiled from bare-metal C++, running in an isolated background thread 100% decoupled from the UI thread.
