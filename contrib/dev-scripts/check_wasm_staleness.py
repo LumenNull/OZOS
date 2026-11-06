@@ -37,20 +37,20 @@ def main():
     for path in WASM_PATHS:
         rel = os.path.relpath(path, REPO_ROOT)
         if not os.path.exists(path):
-            print(f"❌ [MISSING] File not found: {rel}")
+            print(f"[MISSING] File not found: {rel}")
             all_ok = False
             continue
         with open(path, "rb") as f:
             raw = f.read()
             h = hashlib.sha256(raw).hexdigest()
         if h == PINNED_SHA256:
-            print(f"✅ [MATCH] {rel}: SHA-256 matches canonical pin ({h[:16]}...)")
+            print(f"[MATCH] {rel}: SHA-256 matches canonical pin ({h[:16]}...)")
         else:
-            print(f"❌ [MISMATCH] {rel}: SHA-256 {h} != {PINNED_SHA256}")
+            print(f"[MISMATCH] {rel}: SHA-256 {h} != {PINNED_SHA256}")
             all_ok = False
         # Verify R14-H1 bytecode invariants (FNV-1a prime 0x01000193 LEB128 = 93838008, float mask 0x7F800000 LEB128 = 808080fc07)
         if b"\x93\x83\x80\x08" not in raw or b"\x80\x80\x80\xfc\x07" not in raw:
-            print(f"❌ [STALE LOGIC] {rel}: Missing R14-H1 FNV-1a checksum or float finiteness guard in WASM bytecode!")
+            print(f"[STALE LOGIC] {rel}: Missing R14-H1 FNV-1a checksum or float finiteness guard in WASM bytecode!")
             all_ok = False
 
     # 2. Check source drift / mtime
@@ -62,16 +62,16 @@ def main():
                 newer_sources.append(os.path.relpath(src, REPO_ROOT))
         
         if newer_sources:
-            print("⚠️ [SOURCE DRIFT NOTICE] C++ sources newer than shipped zero_dct.wasm:")
+            print("[SOURCE DRIFT NOTICE] C++ sources newer than shipped zero_dct.wasm:")
             for s in newer_sources:
-                print(f"   • {s}")
-            print("   💡 Note: Shipped WASM is deterministically pinned. When emcc is available,")
-            print("      regenerate via: make wasm && python contrib/dev-scripts/check_wasm_staleness.py")
+                print(f"   * {s}")
+            print("   Note: Shipped WASM is deterministically pinned. When emcc is available,")
+            print("   regenerate via: make wasm && python contrib/dev-scripts/check_wasm_staleness.py")
             if parser_fail_on_drift:
-                print("❌ [STRICT FAILURE] Source drift detected under strict mode (--fail-on-drift default)!")
+                print("[STRICT FAILURE] Source drift detected under strict mode (--fail-on-drift default)!")
                 all_ok = False
         else:
-            print("✅ [IN SYNC] Shipped WASM binary matches or post-dates C++ source files.")
+            print("[IN SYNC] Shipped WASM binary matches or post-dates C++ source files.")
 
     print("=================================================================")
     sys.exit(0 if all_ok else 1)

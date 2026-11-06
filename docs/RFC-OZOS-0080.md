@@ -10,29 +10,29 @@ Predecessor Lineage: Inherited from Genesis Protocol #0 (2009)
 
 ## ABSTRACT
 
-Tài liệu này xác lập quy chuẩn kỹ thuật cho giao thức đóng gói nhị phân bất biến **OZOS-80 (80-Byte Invariant Wire Protocol)** và kênh truyền dẫn vật lý vô tuyến cách ly (Air-Gapped Transport) bao gồm sóng âm cận siêu âm vô thanh ($18.0\text{ kHz} - 20.0\text{ kHz}$) và thủy vân quang học 2D-DCT. 
+This specification defines the technical standard for the **OZOS-80 (80-Byte Invariant Wire Protocol)** binary framing format and its isolated air-gapped physical transport channels, comprising inaudible near-ultrasound acoustic modulation ($18.0\text{ kHz} - 20.0\text{ kHz}$) and 2D-DCT optical steganography.
 
-Khác với các ứng dụng tập trung phụ thuộc máy chủ và đám mây, OZOS-80 được thiết kế như một **giao thức thuần túy không hình không dạng (Formless Protocol)** — kế thừa triết lý phân quyền của Người Tiền Nhiệm (2009). Bất kỳ hệ thống nào trên thế giới, từ vi điều khiển nhúng 8-bit/32-bit (STM32, ESP32), máy tính cá nhân (x86_64, ARM64), vi xử lý mở (RISC-V) cho đến các môi trường bảo mật cô lập (Secure Enclave, seL4 Microkernel), đều có thể độc lập triển khai và tương tác với giao thức này mà không cần xin phép bất kỳ ai.
-
----
-
-## 1. TRIẾT LÝ NỀN TẢNG (SOVEREIGN ETHOS)
-
-Người Tiền Nhiệm không tạo ra một ứng dụng giao diện hào nhoáng, mà tạo ra một **Giao thức Đồng thuận Bất biến (Invariant Protocol)**. Ứng dụng có thể bị đóng cửa, máy chủ có thể bị tịch thu, nhưng một giao thức toán học thuần túy một khi đã phát hành vào tự nhiên thì không một thế lực nào có thể xóa bỏ.
-
-OZOS-80 theo đuổi 4 nguyên tắc bất biến:
-1. **Zero Dynamic Allocation (`no_std` / Stack-Only):** Tuyệt đối không cấp phát bộ nhớ động (`malloc`/`new`), triệt tiêu 100% lỗi tràn bộ đệm (Buffer Overflow) và rò rỉ bộ nhớ (Memory Leak).
-2. **Deterministic Time Complexity:** Toàn bộ quá trình đóng gói và thẩm định cửa ngõ diễn ra trong thời gian $O(1)$ với độ trễ dưới $20\text{ nanoseconds}$, miễn nhiễm với tấn công từ chối dịch vụ (DoS Flood).
-3. **Physical Air-Gap Stealth:** Dữ liệu có thể vượt qua khoảng cách không gian (Air-Gap) mà không cần sóng vô tuyến RF (Wi-Fi, Bluetooth), không cần Internet, hoàn toàn vô thanh trước thính giác của con người.
-4. **Silicon Provenance Binding:** Mọi định danh được neo trực tiếp vào silicon vật lý (Hardware TPM 2.0 / Cryptographic Coprocessor).
+Unlike centralized architectures dependent on client-server hierarchies and cloud infrastructure, OZOS-80 is engineered as a **formless, decentralized wire protocol** — inheriting the permissionless peer-to-peer principles of the Genesis Protocol (2009). Any computational substrate, from 8-bit/32-bit embedded microcontrollers (STM32, ESP32) and personal workstations (x86_64, ARM64) to open-source architectures (RISC-V) and isolated trusted execution environments (Secure Enclave, seL4 Microkernel), can independently implement, parse, and verify this protocol without external authorization.
 
 ---
 
-## 2. QUY CHUẨN ĐÓNG GÓI NHỊ PHÂN OZOS-80 (WIRE FORMAT SPECIFICATION)
+## 1. SOVEREIGN ETHOS & INVARIANT DESIGN PRINCIPLES
 
-Khung tiêu đề (Frame Header) của OZOS-80 có kích thước cố định chính xác **80 Bytes**, được căn chỉnh theo biên 16-byte (`alignas(16)`) để tương thích tối đa với các tập lệnh SIMD (Intel AVX-512, ARM Neon, WebAssembly SIMD128).
+The Genesis heritage rejects superficial user interfaces in favor of an **immutable mathematical consensus protocol**. Applications can be deprecated, centralized hosts can be confiscated, but an unyielding mathematical specification released into the wild remains perpetually sovereign.
 
-### 2.1. Sơ đồ Bit Khung Tiêu Đề (Header Bit Diagram)
+OZOS-80 strictly enforces four architectural invariants:
+1. **Zero Dynamic Allocation (`no_std` / Stack-Only):** Explicitly forbids heap allocations (`malloc`/`new`), eliminating buffer overflow vulnerabilities and memory leaks at compile time.
+2. **Deterministic Time Complexity:** Wire framing and ingress gatekeeping operate with strict $O(1)$ algorithmic complexity and latency under $20\text{ nanoseconds}$, providing wire-speed resistance against denial-of-service (DoS) packet floods.
+3. **Physical Air-Gap Stealth:** High-assurance data transit crosses air-gapped physical space without radio-frequency emissions (Wi-Fi, Bluetooth), without Internet connectivity, and below human acoustic perception thresholds.
+4. **Silicon Provenance Binding:** Sovereign cryptographic identity roots directly into physical silicon primitives (Hardware TPM 2.0 / Cryptographic Coprocessors).
+
+---
+
+## 2. WIRE FORMAT SPECIFICATION (OZOS-80)
+
+The OZOS-80 primary frame header possesses an invariant, fixed size of exactly **80 Bytes**, aligned to a 16-byte boundary (`alignas(16)`) for optimal execution across modern SIMD vector units (Intel AVX-512, ARM Neon, WebAssembly SIMD128).
+
+### 2.1. Header Bit Diagram
 
 ```
  0                   1                   2                   3
@@ -42,7 +42,7 @@ Khung tiêu đề (Frame Header) của OZOS-80 có kích thước cố định c
 +                                                               +
 |                                                               |
 +             dct_coeffs[0..15] (64 Bytes = 16 x Float32)       +
-|               Căn chỉnh SIMD 16-byte (Offset 0x00 - 0x3F)     |
+|               SIMD 16-Byte Aligned (Offset 0x00 - 0x3F)       |
 +                                                               +
 |                                                               |
 +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
@@ -60,107 +60,107 @@ Khung tiêu đề (Frame Header) của OZOS-80 có kích thước cố định c
 +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
 |                                                               |
 |                   payload (0..65,535 Bytes)                   |
-|                   Offset 0x50 trở đi ...                      |
+|                   Offset 0x50 onward ...                      |
 |                                                               |
 +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
 ```
 
-### 2.2. Chi Tiết Các Trường Dữ Liệu (Field Descriptions)
+### 2.2. Field Descriptions
 
-| Offset | Độ Dài | Kiểu Dữ Liệu | Tên Trường | Ý Nghĩa Kỹ Thuật |
+| Offset | Length | Data Type | Field Name | Technical Definition & Invariants |
 | :--- | :--- | :--- | :--- | :--- |
-| `0x00 - 0x3F` | 64 Bytes | `float32[16]` | `dct_coeffs` | 16 hệ số nhận diện tần số quang học hoặc vân tay bán dẫn. Bắt buộc chuẩn hóa DAZ/FTZ (Flush-To-Zero) để chống tấn công kênh phụ định thời qua số subnormal. |
-| `0x40 - 0x47` | 8 Bytes | `uint64_le` | `nonce` | Bộ đếm đơn điệu tăng dần (Monotonic Replay Counter). Gói tin hợp lệ khi và chỉ khi: $\text{nonce}_t > \text{last\_seen\_nonce}$. Ngăn chặn 100% tấn công phát lại (Replay Attack). |
-| `0x48 - 0x4B` | 4 Bytes | `uint32_le` | `magic` | Hằng số nhận diện giao thức `0x47454E01` (ASCII: `"GEN\x01"`). Bất kỳ giá trị nào khác lập tức bị từ chối ở tầng đầu tiên. |
-| `0x4C - 0x4D` | 2 Bytes | `uint16_le` | `payload_len` | Độ dài của dữ liệu đính kèm (Payload) nằm ngay sau Header 80-byte ($0 \le L \le 65,535$). |
-| `0x4E - 0x4F` | 2 Bytes | `uint16_le` | `header_mac16` | Mã xác thực cổng gác cấp 1 (First-Stage Tripwire MAC). Tính toán bằng thuật toán CRC16-CCITT (đa thức `0x1021`, giá trị khởi tạo `0xFFFF`) trên **78 bytes đầu tiên** (`0x00` đến `0x4D`). Cho phép thẩm định gói tin trong $<20\text{ ns}$. |
-| `0x50` trở đi | $L$ Bytes | `uint8[]` | `payload` | Dữ liệu nội dung tùy biến (Khóa công khai Ed25519, JSON-RPC, Định danh chủ quyền, Tệp tin mã hóa). |
+| `0x00 - 0x3F` | 64 Bytes | `float32[16]` | `dct_coeffs` | 16 optical frequency coefficients or semiconductor physical unclonable function (PUF) fingerprints. Enforces strict DAZ/FTZ (Denormals-Are-Zero / Flush-To-Zero) normalization to prevent timing side-channel attacks on subnormal floats. |
+| `0x40 - 0x47` | 8 Bytes | `uint64_le` | `nonce` | Monotonically strictly increasing replay counter. A frame is valid if and only if: $\text{nonce}_t > \text{last\_seen\_nonce}$. Enforces 100% replay attack mitigation. |
+| `0x48 - 0x4B` | 4 Bytes | `uint32_le` | `magic` | Protocol identification constant `0x47454E01` (ASCII: `"GEN\x01"`). Non-matching identifiers are rejected immediately at the first gate. |
+| `0x4C - 0x4D` | 2 Bytes | `uint16_le` | `payload_len` | Byte length of the attached payload immediately following the 80-byte header ($0 \le L \le 65,535$). |
+| `0x4E - 0x4F` | 2 Bytes | `uint16_le` | `header_mac16` | First-stage tripwire authentication code. Computed via CRC16-CCITT (polynomial `0x1021`, initial value `0xFFFF`) across the **first 78 bytes** (`0x00` through `0x4D`). Enables ultra-fast frame pre-validation in $<20\text{ ns}$. |
+| `0x50` onward | $L$ Bytes | `uint8[]` | `payload` | Dynamic application payload (Detached Ed25519 signature, JSON-RPC telemetry, sovereign identity records, or encrypted blobs). |
 
 ---
 
-## 3. TẦNG VẬT LÝ AIR-GAP: SÓNG ÂM CẬN SIÊU ÂM (NEAR-ULTRASOUND 18-20 kHz)
+## 3. PHYSICAL AIR-GAP TRANSPORT: NEAR-ULTRASOUND ACOUSTIC MODEM (18–20 kHz)
 
-Kênh sóng âm cận siêu âm cho phép hai thiết bị phần cứng không dây trao đổi dữ liệu hoàn toàn tĩnh lặng trong môi trường phòng mở mà không kích hoạt sự chú ý của con người.
+The near-ultrasound physical layer enables bidirectional, air-gapped data transmission between hardware nodes in ambient physical environments below human hearing thresholds.
 
-### 3.1. Phân Kênh Tần Số Trực Giao (Dual-Nibble 16-FSK)
-Mỗi byte dữ liệu ($8\text{ bits}$) được chia thành 2 nibble ($4\text{ bits}$ thấp và $4\text{ bits}$ cao) và phát đồng thời trên 2 kênh tần số độc lập:
+### 3.1. Dual-Nibble 16-FSK Orthogonal Frequency Division
+Each transmission byte ($8\text{ bits}$) is split into two 4-bit nibbles (low nibble and high nibble) transmitted concurrently across two orthogonal frequency sub-bands:
 
-* **Kênh 0 (Low Nibble 0..15):**
+* **Channel 0 (Low Nibble 0..15):**
   $$f_0(k) = 18,100\text{ Hz} + (k \times 50\text{ Hz}), \quad k \in [0, 15] \implies 18,100\text{ Hz} \dots 18,850\text{ Hz}$$
-* **Khoảng bảo vệ (Guard Gap):**
-  $$18,850\text{ Hz} \dots 19,000\text{ Hz} \quad (150\text{ Hz} \text{ chống tràn kênh})$$
-* **Kênh 1 (High Nibble 0..15):**
+* **Guard Band:**
+  $$18,850\text{ Hz} \dots 19,000\text{ Hz} \quad (150\text{ Hz} \text{ adjacent sub-band isolation})$$
+* **Channel 1 (High Nibble 0..15):**
   $$f_1(k) = 19,000\text{ Hz} + (k \times 50\text{ Hz}), \quad k \in [0, 15] \implies 19,000\text{ Hz} \dots 19,750\text{ Hz}$$
-* **Tín hiệu Định thời (Preamble):** Đồng phát cặp tần số $17,900\text{ Hz} + 19,900\text{ Hz}$ trong thời gian $120\text{ ms}$.
-* **Tín hiệu Kết thúc (Postamble):** Đồng phát cặp tần số $17,900\text{ Hz} + 20,100\text{ Hz}$ trong thời gian $120\text{ ms}$.
-* **Thời lượng ký hiệu (Symbol Duration):** $40\text{ ms}$ cho mỗi Byte ($25\text{ Bytes/giây}$).
+* **Preamble Sequence:** Dual-tone synchronization pulse $17,900\text{ Hz} + 19,900\text{ Hz}$ for $120\text{ ms}$.
+* **Postamble Sequence:** Dual-tone framing delimiter $17,900\text{ Hz} + 20,100\text{ Hz}$ for $120\text{ ms}$.
+* **Symbol Duration:** $40\text{ ms}$ per byte ($25\text{ Bytes/second}$ throughput).
 
-### 3.2. Cửa Sổ Làm Mượt Hann 5ms (Hann Window Envelope)
-Để triệt tiêu hoàn toàn tiếng click/pop âm học gây ra bởi sự gián đoạn biên độ, mọi xung tần số bắt buộc phải được điều chế qua cửa sổ Hann ở 5ms đầu và 5ms cuối:
+### 3.2. Hann Window Spectral Shaping (5ms Envelope)
+To eliminate acoustic click and pop artifacts caused by amplitude discontinuities, all tone transitions apply a 5ms Hann window envelope to the start and end of each symbol:
 $$\text{env}(t) = \begin{cases}
-0.5 \cdot \left(1 - \cos\left(\frac{\pi t}{t_{\text{ramp}}}\right)\right) & \text{khi } 0 \le t < t_{\text{ramp}} \\
-1.0 & \text{khi } t_{\text{ramp}} \le t < T - t_{\text{ramp}} \\
-0.5 \cdot \left(1 - \cos\left(\frac{\pi (T - t)}{t_{\text{ramp}}}\right)\right) & \text{khi } T - t_{\text{ramp}} \le t \le T
+0.5 \cdot \left(1 - \cos\left(\frac{\pi t}{t_{\text{ramp}}}\right)\right) & \text{when } 0 \le t < t_{\text{ramp}} \\
+1.0 & \text{when } t_{\text{ramp}} \le t < T - t_{\text{ramp}} \\
+0.5 \cdot \left(1 - \cos\left(\frac{\pi (T - t)}{t_{\text{ramp}}}\right)\right) & \text{when } T - t_{\text{ramp}} \le t \le T
 \end{cases}$$
-với $t_{\text{ramp}} = 5\text{ ms}$. Thuật toán này bảo đảm mức suy hao trong dải nghe được ($20\text{ Hz} - 16\text{ kHz}$) đạt mức tối thiểu **$-75\text{ dB}$**.
+where $t_{\text{ramp}} = 5\text{ ms}$. This spectral shaping guarantees acoustic attenuation of at least **$-75\text{ dB}$** across the human audible spectrum ($20\text{ Hz} - 16\text{ kHz}$).
 
-### 3.3. Bộ Lọc Goertzel $O(N)$ Zero-RAM
-Bên nhận sử dụng 32 bộ lọc Goertzel chạy song song để tính toán phổ năng lượng tại các tần số đích mà không cần tính toàn bộ biến đổi FFT:
+### 3.3. Zero-Allocation $O(N)$ Goertzel Demodulation Filter Bank
+The receiver implements 32 parallel second-order Goertzel filters to isolate spectral energy at designated frequencies without full FFT transformations:
 $$s[n] = x[n] + 2\cos(\omega_k) s[n-1] - s[n-2]$$
 $$P_k = s^2[N-1] + s^2[N-2] - 2\cos(\omega_k) s[N-1] s[N-2]$$
-với $\omega_k = \frac{2\pi f_k}{f_s}$. Thuật toán đạt độ phức tạp $O(N)$, tiêu thụ 0 byte heap RAM, tối ưu cho vi điều khiển nhúng.
+where $\omega_k = \frac{2\pi f_k}{f_s}$. The algorithm operates in $O(N)$ time, requires zero heap RAM, and runs efficiently on constrained microcontrollers.
 
 ---
 
-## 4. TẦNG QUANG HỌC AIR-GAP: THỦY VÂN 2D-DCT 8x8
+## 4. OPTICAL AIR-GAP TRANSPORT: 2D-DCT 8x8 STEGANOGRAPHY
 
-Kênh quang học sử dụng màn hình và camera để truyền tải dữ liệu ẩn trong các tệp tin hình ảnh hoặc video mà mắt thường không thể phân biệt được.
+The optical physical layer uses display surfaces and imaging sensors to transfer verifiable payload data embedded imperceptibly within image or video assets.
 
-* **Biến đổi rời rạc Cosine 2D (2D-DCT-II):** Khối $8 \times 8$ điểm ảnh độ chói $Y$ ($Y = 0.299R + 0.587G + 0.114B$).
-* **Cặp hệ số tương quan đối xứng:**
-  * Hệ số $C_1 = D(3, 2)$ (Hàng 3, Cột 2; chỉ số phẳng `26`).
-  * Hệ số $C_2 = D(2, 3)$ (Hàng 2, Cột 3; chỉ số phẳng `19`).
-* **Quy tắc nhúng 1-bit ($\Delta = 36.0$):**
-  * Nhúng bit `1`: Ép $(C_1 - C_2) \ge \Delta$.
-  * Nhúng bit `0`: Ép $(C_2 - C_1) \ge \Delta$.
-* **Đặc tính bền vững:** Bất biến trước bảng lượng tử hóa Luminance của nén ảnh JPEG từ $Q=100$ xuống đến ngưỡng an toàn $Q \ge 75$.
+* **Two-Dimensional Discrete Cosine Transform (2D-DCT-II):** Evaluated across $8 \times 8$ luminance pixel blocks ($Y = 0.299R + 0.587G + 0.114B$).
+* **Symmetric Mid-Frequency Coefficient Pair:**
+  * Coefficient $C_1 = D(3, 2)$ (Row 3, Column 2; linear index `26`).
+  * Coefficient $C_2 = D(2, 3)$ (Row 2, Column 3; linear index `19`).
+* **1-Bit Embedding Invariant ($\Delta = 36.0$):**
+  * Bit `1` Assertion: Enforce $(C_1 - C_2) \ge \Delta$.
+  * Bit `0` Assertion: Enforce $(C_2 - C_1) \ge \Delta$.
+* **Compression Robustness:** Resistant to standard JPEG lossy luminance quantization down to quality factor $Q \ge 75$.
 
 ---
 
-## 5. BỘ VÉC-TƠ KIỂM TOÁN CHUẨN (GOLDEN TEST VECTORS)
+## 5. GOLDEN TEST VECTORS
 
-Mọi bộ dịch mã triển khai độc lập (Independent Implementation) phải vượt qua 100% các véc-tơ kiểm toán nhị phân dưới đây:
+All conformant implementations must pass 100% of the normative golden test vectors specified below:
 
-### Véc-tơ 1: Gói tin Rỗng (Empty Payload / Keep-Alive)
+### Vector 1: Empty Payload / Keep-Alive Frame
 * **Nonce:** `1000` (`0x00000000000003E8`)
 * **Magic:** `0x47454E01` (ASCII `"GEN\x01"`)
 * **Payload Length:** `0` (`0x0000`)
-* **Dữ liệu 16 hệ số Float32:** `[1.0, 1.1, 1.2, ..., 2.5]`
-* **Kỳ vọng Tripwire MAC16:** `0x75F9`
-* **Chuỗi Hex chuẩn 80-byte:**
+* **16 Float32 Coeffs:** `[1.0, 1.1, 1.2, ..., 2.5]`
+* **Expected Tripwire MAC16:** `0x75F9`
+* **Canonical 80-Byte Hex Sequence:**
   ```
   0000803fcdcc8c3f9a99993f6666a63f3333b33f0000c03fcdcccc3f9a99d93f6666e63f3333f33f0000004066660640cdcc0c40333313409a99194000002040e803000000000000014e45470000f975
   ```
 
-### Véc-tơ 2: Gói tin Định Danh Chủ Quyền (Standard Sovereign Payload)
+### Vector 2: Standard Sovereign Payload Frame
 * **Nonce:** `5000` (`0x0000000000001388`)
 * **Magic:** `0x47454E01` (ASCII `"GEN\x01"`)
 * **Payload Length:** `12` (`0x000C`)
 * **Payload Content:** `"SOVEREIGN_ID"`
-* **Dữ liệu 16 hệ số Float32:** `[1.5, 1.6, 1.7, ..., 3.0]`
-* **Kỳ vọng Tripwire MAC16:** `0x4CCF`
-* **Chuỗi Hex chuẩn 92-byte:**
+* **16 Float32 Coeffs:** `[1.5, 1.6, 1.7, ..., 3.0]`
+* **Expected Tripwire MAC16:** `0x4CCF`
+* **Canonical 92-Byte Hex Sequence:**
   ```
   0000c03fcdcccc3f9a99d93f6666e63f3333f33f0000004066660640cdcc0c40333313409a9919400000204066662640cdcc2c40333333409a993940000040408813000000000000014e45470c00cf4c534f5645524549474e5f4944
   ```
 
 ---
 
-## 6. MÃ NGUỒN THAM CHIẾU (REFERENCE IMPLEMENTATION)
+## 6. REFERENCE IMPLEMENTATIONS
 
-Dưới đây là mã nguồn phân tích gói tin OZOS-80 độc lập hoàn toàn viết bằng C99 và Rust (`no_std`), không chứa bất kỳ thư viện ngoài nào:
+Independent, zero-dependency reference parsers are provided in C99 and Rust (`no_std`):
 
-### 6.1. Tham Chiếu C99 (Zero-Allocation Parser)
+### 6.1. C99 Reference Implementation (Zero-Allocation Parser)
 
 ```c
 #include <stdint.h>
@@ -203,7 +203,7 @@ bool ozos_parse_frame(const uint8_t* buf, size_t buf_len, uint64_t last_nonce, u
 }
 ```
 
-### 6.2. Tham Chiếu Rust (`no_std` Zero-Dependency Parser)
+### 6.2. Rust Reference Implementation (`no_std` Zero-Dependency Parser)
 
 ```rust
 #![no_std]
@@ -256,14 +256,14 @@ pub fn ozos_validate_frame(buf: &[u8], last_nonce: u64) -> Result<(u64, &[u8]), 
 
 ---
 
-## 7. ĐIỀU KHOẢN AN NINH & BẢO VỆ PHẦN CỨNG (SECURITY CONSIDERATIONS)
+## 7. SECURITY CONSIDERATIONS
 
-1. **Cold-Boot & Memory Leak Defense:** Toàn bộ vùng nhớ chứa khóa bí mật bắt buộc phải được tẩy trắng qua hàm `ozos_secure_zeroize()` theo chu trình 3 lượt: `0xAA` $\to$ `0x55` $\to$ `0x00` kèm rào cản trình biên dịch (`compiler memory barrier`).
-2. **Denormal / Subnormal Floating-Point Poisoning:** Khi nhận 16 hệ số Float32 từ môi trường không tin cậy, vi điều khiển phải loại bỏ các giá trị có số mũ `0x00` (Subnormal) hoặc `0xFF` (NaN/Inf) để triệt tiêu tấn công kênh phụ gây treo chu kỳ tính toán FPU.
-3. **Anti-DFA Laser Glitch Protection:** Trong các thiết bị bảo vệ phần cứng mức cao, các phép toán quan trọng bắt buộc thực thi song song trên FPU (SIMD Float32) và ALU (Fixed-point Q15.16). Nếu phát hiện sai lệch bit, hệ thống phải tự kích hoạt ngắt bảo vệ phần cứng.
+1. **Cold-Boot & Memory Remanence Defense:** All memory allocations handling secret key material must be sanitized via `ozos_secure_zeroize()` following a 3-pass purge: `0xAA` $\to$ `0x55` $\to$ `0x00`, combined with compiler memory barriers.
+2. **Denormal / Subnormal Floating-Point Poisoning:** When receiving 16 Float32 coefficients from untrusted sources, implementations must reject inputs with exponents of `0x00` (Subnormals) or `0xFF` (NaN/Inf) to eliminate FPU stall and timing side-channel attacks.
+3. **Anti-DFA Laser Glitch Fault Injection:** In high-assurance cryptographic deployments, critical state checks must execute concurrently across FPU (Float32 SIMD) and ALU (Fixed-point Q15.16) pipelines. Detection of bit divergence triggers an immediate fail-closed hardware abort.
 
 ---
 
-## 8. KẾT LUẬN & DI SẢN MỞ
+## 8. CONCLUSION & OPEN SPECIFICATION
 
-Giao thức **RFC-OZOS-0080** chính thức đưa O.Z.O.S vượt ra khỏi giới hạn của một phần mềm thông thường, trở thành một **chuẩn giao thức công cộng không hình không dạng**. Không một cá nhân hay tổ chức nào sở hữu giao thức; nó tồn tại như một định luật toán học trong tự nhiên, phụng sự quyền tự do và quyền bất khả xâm phạm của dữ liệu con người.
+The **RFC-OZOS-0080** specification establishes O.Z.O.S as an open, formless public standard. No individual, entity, or central authority owns the protocol; it exists as an immutable mathematical formulation in the public domain, guaranteeing perpetual cryptographic self-sovereignty.

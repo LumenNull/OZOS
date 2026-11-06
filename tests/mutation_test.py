@@ -10,8 +10,8 @@ core cryptographic, physical layer, and micro-kernel invariants to verify
 that the test suites (test_libozos, test_omni_phy, test_audit_verify,
 test_redteam_fixes) are GENUINE and FAIL IMMEDIATELY upon any violation.
 
-A test suite that passes despite a mutated invariant is flagged as "PASS ẢO"
-(False Positive / Weak Test). A high mutation score (100%) proves zero fake passes.
+A test suite that passes despite a mutated invariant is flagged as a FALSE POSITIVE
+(Weak / Fake Pass). A mutation score of 100% proves zero fake passes.
 """
 
 import os
@@ -246,12 +246,12 @@ def run_mutation_audit():
     print("=" * 70, flush=True)
 
     if len(survived_mutants) == 0 and mutation_score == 100.0:
-        print("  [CHUNG MINH THUC NGHIEM]: 100% CAC BAI TEST LA KIEM THU THAT!", flush=True)
-        print("  Khong co bat ky kiem chung ao nao (Zero False Positives / Zero Pass Ao).", flush=True)
+        print("  [EMPIRICAL PROOF]: 100% OF TESTS ARE GENUINE VERIFICATION!", flush=True)
+        print("  Zero false positives / Zero artificial passes detected across all suites.", flush=True)
         print("=" * 70 + "\n", flush=True)
         return True
     else:
-        print("  [CANH BAO]: CO MUTANT SONG SOT! CAN BO SUNG ASSERTION CHO CAC MUC SAU:", flush=True)
+        print("  [WARNING]: MUTANTS SURVIVED! ADDITIONAL RIGOROUS ASSERTIONS REQUIRED:", flush=True)
         for sm_id, sm_desc in survived_mutants:
             print(f"    - {sm_id}: {sm_desc}", flush=True)
         print("=" * 70 + "\n", flush=True)

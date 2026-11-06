@@ -62,9 +62,9 @@ class OZOSHardwareTPM:
 
     def get_hardware_entropy(self, length=32):
         """
-        Sinh chuỗi byte ngẫu nhiên từ TRNG (True Random Number Generator) của phần cứng.
-        Trên Windows: sử dụng BCryptGenRandom trực tiếp từ kernel.
-        Trên POSIX: sử dụng /dev/urandom hoặc os.urandom (C99 TRNG fallback).
+        Generate random bytes from hardware True Random Number Generator (TRNG).
+        On Windows: invokes BCryptGenRandom directly from kernel.
+        On POSIX: reads from /dev/urandom or os.urandom (C99 TRNG fallback).
         """
         if self.is_windows and self.bcrypt:
             try:

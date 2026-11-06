@@ -90,7 +90,7 @@ def check_test(name, success, detail=""):
 # ----------------------------------------------------------------------
 # 1. TEST MEDIUM 4: Seed length validation (Must not silently fall back)
 # ----------------------------------------------------------------------
-print("[TEST 1/8] Kiem Tra Tu Choi Seed Sai Do Dai (No Silent Fallback)...")
+print("[TEST 1/8] Seed Length Validation & Rejection (No Silent Fallback)...")
 code, out, err = run_ozos("keygen", "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef01") # 66 chars
 short_code, short_out, short_err = run_ozos("keygen", "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef") # 64 chars
 syntax_err_62 = run_ozos("keygen", "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcd") # 62 chars
@@ -102,7 +102,7 @@ check_test("Seed 64 ky tu hop le duoc chap nhan", short_code == 0 and "Sovereign
 # ----------------------------------------------------------------------
 # 2. TEST HIGH 1: Sovereign key signing & No silent fallback
 # ----------------------------------------------------------------------
-print("\n[TEST 2/8] Kiem Tra Chinh Sach Bao Ve Identity Mac Dinh...")
+print("\n[TEST 2/8] Default Sovereign Identity Protection Policy...")
 seed_sovereign = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
 code_sign, out_sign, err_sign = run_ozos("packet-sign", "GENESIS_SOVEREIGN_TRANSACTION", "2000", seed_sovereign)
 check_test("Ky goi tin voi seed chu quyen 64-hex thanh cong", code_sign == 0 and "[PACKET SIGNED]" in out_sign, "Packet signed")
@@ -122,7 +122,7 @@ check_test("Trich xuat duoc Signed Packet va Sovereign PubKey", signed_hex is no
 # ----------------------------------------------------------------------
 # 3. TEST HIGH 2: Self-referential author verification vs Pinned Sovereign Anchor
 # ----------------------------------------------------------------------
-print("\n[TEST 3/8] Kiem Tra Chot Chan Trust Anchor (Self-Referential Neutralization)...")
+print("\n[TEST 3/8] Trust Anchor Tripwire (Self-Referential Neutralization)...")
 # Sign with attacker seed
 seed_attacker = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
 code_att, out_att, _ = run_ozos("packet-sign", "FORGED BY ATTACKER - TRANSFER ALL FUNDS", "2001", seed_attacker)
@@ -150,7 +150,7 @@ check_test("Goi tin chu quyen that duoc xac nhan HOP LE TUYET DOI khi khop Sover
 # ----------------------------------------------------------------------
 # 4. TEST HIGH 3: Headline decoupled from signature validity
 # ----------------------------------------------------------------------
-print("\n[TEST 4/8] Kiem Tra Tinh Chinh Xac Cua Headline (No False Absolutes)...")
+print("\n[TEST 4/8] Headline Accuracy Verification (No False Absolutes)...")
 # Build unsigned packet
 code_b, out_b, _ = run_ozos("packet-build", "RAW_UNSIGNED_PAYLOAD", "2002")
 unsigned_hex = None
@@ -177,7 +177,7 @@ check_test("Goi tin bi sua chu ky TUYET DOI KHONG in 'HOP LE TUYET DOI'",
 # ----------------------------------------------------------------------
 # 5. TEST MEDIUM 1: Truncated signature frames
 # ----------------------------------------------------------------------
-print("\n[TEST 5/8] Kiem Tra Tu Choi Chu Ky Bi Cat Cut (Truncated Signature)...")
+print("\n[TEST 5/8] Truncated Signature Frame Rejection...")
 # Cut off 32 bytes from signature
 truncated_hex = signed_hex[:-64]
 code_tr, out_tr, _ = run_ozos("packet-verify", truncated_hex, "1000")
@@ -188,7 +188,7 @@ check_test("Goi tin bi cat cut chu ky bi TU CHOI nghiem ngat",
 # ----------------------------------------------------------------------
 # 6. TEST MEDIUM 2: Trailing garbage rejection (4B to 2000B)
 # ----------------------------------------------------------------------
-print("\n[TEST 6/8] Kiem Tra Tu Choi Rac Noi Duoi (Trailing Garbage)...")
+print("\n[TEST 6/8] Trailing Garbage Injection Rejection...")
 garbage_4b_hex = signed_hex + "deadbeef"
 garbage_2000b_hex = signed_hex + ("aa" * 2000)
 
@@ -205,7 +205,7 @@ check_test("Goi tin chua 2000 byte rac bi TU CHOI",
 # ----------------------------------------------------------------------
 # 7. TEST MEDIUM 3: Ed25519 S+L Malleability (RFC 8032 Section 5.1.7)
 # ----------------------------------------------------------------------
-print("\n[TEST 7/8] Kiem Tra Chong Malleability Ed25519 (S < L Invariant)...")
+print("\n[TEST 7/8] Ed25519 Non-Malleability Verification (S < L Invariant)...")
 # Order of the base point L for ed25519 in little-endian
 # L = 2^252 + 27742317777372353535851937790883648493
 L_INT = (2**252) + 27742317777372353535851937790883648493
@@ -238,7 +238,7 @@ check_test("Chu ky bien dang S + L bi TU CHOI boi quy tac chuan tac RFC 8032",
 # ----------------------------------------------------------------------
 # 8. TEST MEDIUM 5: Nonce Replay Protection
 # ----------------------------------------------------------------------
-print("\n[TEST 8/8] Kiem Tra Chong Tan Cong Phat Lai (Anti-Replay Invariant)...")
+print("\n[TEST 8/8] Anti-Replay Defense & Monotonic Nonce Invariant...")
 # signed_hex has nonce = 2000
 # Verifying with last_seen_nonce = 2000 must FAIL (nonce not strictly greater)
 code_rep1, out_rep1, _ = run_ozos("packet-verify", signed_hex, "2000")
@@ -255,7 +255,7 @@ check_test("Replay attack bi chan khi Nonce nho hon last_seen_nonce (2000 < 2001
 # ----------------------------------------------------------------------
 # 9. TEST ROUND 3 HIGH 1: Tunnel decrypt buffer overflow prevention
 # ----------------------------------------------------------------------
-print("\n[TEST 9/12] Kiem Tra Chong Tran Bo Nho Tunnel Decrypt (Payload > 512B)...")
+print("\n[TEST 9/12] Tunnel Decryption Buffer Boundary Protection (Payload > 512B)...")
 fake_key = "00" * 32
 large_frame = "4f5a4844" + "00" * 1200
 code_t1, out_t1, _ = run_ozos("tunnel-decrypt", large_frame, fake_key)
@@ -266,7 +266,7 @@ check_test("Frame vuot qua 560B bi tu choi truoc khi giai ma",
 # ----------------------------------------------------------------------
 # 10. TEST ROUND 3 HIGH 2: Audio decode sample rate guard (No SIGFPE / No overflow)
 # ----------------------------------------------------------------------
-print("\n[TEST 10/12] Kiem Tra Bao Ve Sample Rate Audio Decode (No SIGFPE / No Overflow)...")
+print("\n[TEST 10/12] Audio Demodulation Sample Rate Protection (No SIGFPE / No Overflow)...")
 import wave, struct
 wav_test = os.path.join(REPO_ROOT, "test_guard_sr.wav")
 try:
@@ -286,7 +286,7 @@ finally:
 # ----------------------------------------------------------------------
 # 11. TEST ROUND 3 HIGH 3: Ghost sign and ephemeral payload bounds (No enclave overflow)
 # ----------------------------------------------------------------------
-print("\n[TEST 11/12] Kiem Tra Gioi Han Payload Enclave Ghost (Payload >= 433B)...")
+print("\n[TEST 11/12] Enclave Ghost Payload Boundary Protection (Payload >= 433B)...")
 GHOST_EXE = find_binary("ozos_ghost")
 words = "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about"
 passphrase = "ZERO_STUDIO_SOVEREIGN_MIND"
@@ -305,7 +305,7 @@ check_test("ozos_ghost ephemeral voi payload 433B bi tu choi graceful (exit code
 # ----------------------------------------------------------------------
 # 12. TEST ROUND 3 HIGH 4: CLI exit code on verification failure and Genesis Seal
 # ----------------------------------------------------------------------
-print("\n[TEST 12/12] Kiem Tra Exit Code packet-verify va Chot Chan Genesis Hash...")
+print("\n[TEST 12/12] CLI packet-verify Exit Code Hygiene & Genesis Hash Seal...")
 code_exit, _, _ = run_ozos("packet-verify", corrupted_sig_hex, "1000")
 check_test("CLI packet-verify tra ve Exit Code 1 khi chu ky gia mao",
            code_exit == 1,
@@ -325,7 +325,7 @@ check_test("ozos_ghost genesis khop 100% voi hang so bat bien compile-time (3b5b
 # ----------------------------------------------------------------------
 # 13. TEST ROUND 4 MEDIUM 1: Trusted-key format validation hard-fail
 # ----------------------------------------------------------------------
-print("\n[TEST 13/16] Kiem Tra Tu Choi Khoa Chu Quyen Trusted-Key Sai Dinh Dang...")
+print("\n[TEST 13/16] Malformed Trusted Sovereign Key Rejection...")
 code_tk_bad, out_tk_bad, _ = run_ozos("packet-verify", signed_hex, "1000", "1234abcd")
 check_test("Trusted key sai dinh dang (8 hex chars) bi TU CHOI nghiem ngat (exit code 1)",
            code_tk_bad == 1 and ("KHOA CHU QUYEN (TRUSTED KEY) SAI DINH DANG" in out_tk_bad or "TRUSTED KEY INVALID FORMAT" in out_tk_bad),
@@ -334,7 +334,7 @@ check_test("Trusted key sai dinh dang (8 hex chars) bi TU CHOI nghiem ngat (exit
 # ----------------------------------------------------------------------
 # 14. TEST ROUND 4 MEDIUM 2: Brainseed whitespace normalization & 13th word rejection
 # ----------------------------------------------------------------------
-print("\n[TEST 14/16] Kiem Tra Chuan Hoa Brainseed & Tu Choi Thua Tu Thu 13 Tro Di...")
+print("\n[TEST 14/16] Brainseed Mnemonic Normalization & 13th-Word Rejection...")
 words_12_clean = "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about"
 words_12_spaces = "  abandon   abandon   abandon  abandon abandon   abandon abandon abandon abandon abandon abandon about  "
 words_13_extra  = "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about abandon"
@@ -347,18 +347,18 @@ import re
 pk_clean = re.findall(r"0x[0-9a-fA-F]{64}", out_b1)
 pk_spaces = re.findall(r"0x[0-9a-fA-F]{64}", out_b2)
 
-check_test("Brainseed co khoang trang / tab thua sinh cung Public Key (Zero Identity Fork)",
+check_test("Brainseed with whitespace / extra tabs produces identical Public Key (Zero Identity Fork)",
            code_b1 == 0 and code_b2 == 0 and pk_clean == pk_spaces and len(pk_clean) > 0,
            f"Bit-exact PubKey: {pk_clean[0][:16]}...")
 
-check_test("Brainseed thua tu thu 13 tro di bi TU CHOI nghiem ngat (exit code 1)",
-           code_b3 == 1 and ("THAT BAI" in out_b3 or "THẤT BẠI" in out_b3 or "FAILED" in out_b3),
+check_test("Brainseed rejects extraneous 13th word strictly (exit code 1)",
+           code_b3 == 1 and ("FAILED" in out_b3 or "THAT BAI" in out_b3),
            "Strictly 12 words enforced")
 
 # ----------------------------------------------------------------------
 # 15. TEST ROUND 4 HIGH 2: Sealed Local Vault in-place payload tampering prevention
 # ----------------------------------------------------------------------
-print("\n[TEST 15/16] Kiem Tra Toan Ven Payload Sealed Vault (Chong Sua Doi Tai Cho)...")
+print("\n[TEST 15/16] Sealed Vault Payload Integrity & In-Place Tamper Detection...")
 node_test_script = """
 const OZOSEngine = require('./contrib/web-cockpit/ozos-engine.js');
 const engine = new OZOSEngine();
@@ -389,7 +389,7 @@ check_test("Vault bat qua tang sua doi 1 bit byte 80 va sua JSON 100->900",
 # ----------------------------------------------------------------------
 # 16. TEST ROUND 4 HIGH 1 & MEDIUM 3: Python CLI ozos-cli.py and GenesisShield
 # ----------------------------------------------------------------------
-print("\n[TEST 16/16] Kiem Tra ozos-cli.py & GenesisShield (Chong MAC=0 & Rac Noi Duoi)...")
+print("\n[TEST 16/16] CLI Validator & GenesisShield Guard (Anti-MAC=0 & Trailing Garbage)...")
 # Test ozos-cli.py MAC=0 rejection
 CLI_PY = os.path.join(REPO_ROOT, "contrib", "dev-scripts", "ozos-cli.py")
 test_cli_script = """
@@ -433,7 +433,7 @@ check_test("ozos-cli.py chan dung MAC=0, chan rac noi duoi +4B va bat loi bit-fl
 # ----------------------------------------------------------------------
 # 17. TEST ROUND 5 MEDIUM 1 & LOW 1: Engine Genesis Payload Integrity & Shield Cross-Compatibility
 # ----------------------------------------------------------------------
-print("\n[TEST 17/20] Kiem Tra Toan Ven Payload Genesis Engine & TTuong Thich GenesisShield...")
+print("\n[TEST 17/20] Genesis Engine Payload Integrity & GenesisShield Compatibility...")
 test_engine_genesis_script = """
 const OZOSEngine = require('./contrib/web-cockpit/ozos-engine.js');
 const GenesisShield = require('./contrib/web-cockpit/genesis-shield.js');
@@ -480,7 +480,7 @@ check_test("Engine Genesis path kiem tra toan ven payload FNV va tuong thich 100
 # ----------------------------------------------------------------------
 # 18. TEST ROUND 5 LOW 2: Exit-Code Hygiene on Rejection Paths
 # ----------------------------------------------------------------------
-print("\n[TEST 18/20] Kiem Tra Exit-Code Hygiene Tren Cac Lenh CLI Tu Choi...")
+print("\n[TEST 18/20] Non-Zero Exit Code Hygiene on Rejection Across All CLI Subcommands...")
 # 1. tunnel-decrypt with oversize payload (> 560B)
 oversize_frame = "00" * 600
 dummy_key = "11" * 32
@@ -503,7 +503,7 @@ check_test("Cac lenh CLI tu choi (tunnel-decrypt, handshake-ack, gossip-listen) 
 # ----------------------------------------------------------------------
 # 19. TEST ROUND 5 LOW 3: server.py Missing / Invalid Content-Length Handling
 # ----------------------------------------------------------------------
-print("\n[TEST 19/20] Kiem Tra server.py Tu Choi Yeu Cau Thieu Content-Length (400 Bad Request)...")
+print("\n[TEST 19/20] server.py Rejection of Missing Content-Length (400 Bad Request)...")
 test_server_cl_script = """
 import urllib.request, urllib.error
 class NoHeaderRequest(urllib.request.Request):
@@ -544,7 +544,7 @@ check_test("server.py xu ly thieu Content-Length tra ve 400 Bad Request khong ro
 # ----------------------------------------------------------------------
 # 20. TEST ROUND 5 MEDIUM 2: Keyed Local Vault (Chong Ke Tan Cong Biet Thuat Toan)
 # ----------------------------------------------------------------------
-print("\n[TEST 20/20] Kiem Tra Keyed Local Vault (Chong Ke Tan Cong Co Y Dinh Tinh Lai MAC)...")
+print("\n[TEST 20/20] Machine-Keyed Local Vault (Attacker Re-Computation Neutralization)...")
 test_keyed_vault_script = """
 const OZOSEngine = require('./contrib/web-cockpit/ozos-engine.js');
 const engine = new OZOSEngine();
@@ -574,7 +574,7 @@ check_test("Keyed Local Vault bao ve chong ke tan cong biet thuat toan tinh lai 
 # ----------------------------------------------------------------------
 # 21. TEST ROUND 6 HIGH 1: Neutralize Zero-Slot Bypass in FNV Check (Engine & Shield)
 # ----------------------------------------------------------------------
-print("\n[TEST 21/24] Kiem Tra Triet Tieu Lo Hong Bypass FNV Bang Slot 15 == 0...")
+print("\n[TEST 21/24] Elimination of Zero-Slot FNV-1a Hash Bypass (Slot 15 == 0)...")
 test_zeroslot_script = """
 const OZOSEngine = require('./contrib/web-cockpit/ozos-engine.js');
 const GenesisShield = require('./contrib/web-cockpit/genesis-shield.js');
@@ -622,7 +622,7 @@ check_test("Triet tieu hoan toan bypass FNV khi set slot 15 == 0 (ca Engine lan 
 # ----------------------------------------------------------------------
 # 22. TEST ROUND 6 HIGH 2: Brainseed HMAC-SHA512 Long Passphrase Overflow Guard
 # ----------------------------------------------------------------------
-print("\n[TEST 22/24] Kiem Tra Chong Tran Bo Nho Stack Brainseed Voi Passphrase > 244 Ký Tự...")
+print("\n[TEST 22/24] Brainseed Stack Memory Boundary Protection (Passphrase > 244 chars)...")
 rc_gen_long, out_gen_long, _ = run_ozos("brainseed-gen", "P" * 300)
 words = "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about"
 rc_res_long, out_res_long, _ = run_ozos("brainseed-restore", words, "P" * 350)
@@ -635,7 +635,7 @@ check_test("Passphrase 300-350 ky tu chay an toan tren gen va restore, khong tra
 # ----------------------------------------------------------------------
 # 23. TEST ROUND 6 MEDIUM 1: GenesisShield Stateful Default Nonce Crash Fix
 # ----------------------------------------------------------------------
-print("\n[TEST 23/24] Kiem Tra GenesisShield Stateful Default Nonce (Khong Crash TypeError)...")
+print("\n[TEST 23/24] GenesisShield Stateful Default Nonce Invariant (No TypeError)...")
 test_shield_null_script = """
 const OZOSEngine = require('./contrib/web-cockpit/ozos-engine.js');
 const GenesisShield = require('./contrib/web-cockpit/genesis-shield.js');
@@ -678,7 +678,7 @@ check_test("GenesisShield validatePacket voi null/undefined nonce chay an toan v
 # ----------------------------------------------------------------------
 # 24. TEST ROUND 6 LOW 1: packet-sign and packet-build Exit-Code on Oversize Payload
 # ----------------------------------------------------------------------
-print("\n[TEST 24/24] Kiem Tra Exit Code 1 Khi packet-sign / packet-build Vuot Qua 1024 Bytes...")
+print("\n[TEST 24/24] Fail-Closed Exit Code 1 on Oversized Payload (> 1024 Bytes)...")
 rc_sign_over, _, _ = run_ozos("packet-sign", "A" * 1025)
 rc_build_over, _, _ = run_ozos("packet-build", "A" * 1025)
 
@@ -690,7 +690,7 @@ check_test("CLI packet-sign va packet-build tra ve Exit Code 1 khi payload > 102
 # ----------------------------------------------------------------------
 # 25. TEST ROUND 7: ghost listen rx_len Boundary Sweep (0, 3, 4, 513 tones)
 # ----------------------------------------------------------------------
-print("\n[TEST 25/28] Kiem Tra Boundary ghost listen (rx_len = 0, 3, 4, 513)...")
+print("\n[TEST 25/28] Boundary Frame Parsing for ghost listen (rx_len = 0, 3, 4, 513)...")
 GHOST_EXE = find_binary("ozos_ghost")
 
 def make_test_wav(num_tones, magic_u32=0):
@@ -749,7 +749,7 @@ check_test("ozos_ghost listen chan chat moi boundary (rx_len = 0, 3, 513 deu exi
 # ----------------------------------------------------------------------
 # 26. TEST ROUND 7: Brainseed Passphrase Scope (<= 500 chars valid, > 500 fail-closed)
 # ----------------------------------------------------------------------
-print("\n[TEST 26/28] Kiem Tra Brainseed Passphrase Cap (Toi da 500 ky tu, > 500 bi tu choi fail-closed)...")
+print("\n[TEST 26/28] Brainseed Passphrase Cap (Max 500 chars, fail-closed on excess)...")
 words = "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about"
 valid_mils = [0, 1, 119, 120, 244, 256, 500]
 all_valid_ok = True
@@ -761,20 +761,20 @@ for m in valid_mils:
         all_valid_ok = False
         break
 
-# Test fail-closed on passphrases > 500 characters (Triệt tiêu hoàn toàn silent truncation / identity fork)
+# Test fail-closed on passphrases > 500 characters (Eliminate silent truncation / identity fork)
 rc_over501_g, _, err_g = run_ozos("brainseed-gen", "P" * 501)
 rc_over501_r, _, err_r = run_ozos("brainseed-restore", words, "P" * 501)
 rc_over1016_r, _, _ = run_ozos("brainseed-restore", words, "P" * 1016)
 
 cap_enforced = all_valid_ok and (rc_over501_g == 1) and (rc_over501_r == 1) and (rc_over1016_r == 1)
-check_test("Brainseed chap nhan passphrase hop le <= 500 ky tu va TU CHOI dut khoat khi > 500 ky tu (No identity fork)",
+check_test("Brainseed accepts valid passphrase <= 500 chars and rejects fail-closed when > 500 chars (No identity fork)",
            cap_enforced,
            "Passphrase boundary cap strictly enforced fail-closed at 500 chars")
 
 # ----------------------------------------------------------------------
 # 27. TEST ROUND 7: server.py Robustness & Parser Fuzzing (Non-dict, non-list, bad JSON)
 # ----------------------------------------------------------------------
-print("\n[TEST 27/28] Kiem Tra Do Ben Parsing Cua server.py (Non-dict, Non-list, Bad JSON)...")
+print("\n[TEST 27/28] Server JSON Request Parsing Robustness (Non-dict, Non-list, Bad JSON)...")
 test_server_script = '''
 import json
 import urllib.request
@@ -818,7 +818,7 @@ check_test("server.py xu ly an toan cac payload fuzzing (non-dict, non-list, mal
 # ----------------------------------------------------------------------
 # 28. TEST ROUND 7: Fuzz Mutation with Recalculated FNV/MAC & Deep Parser Hardening
 # ----------------------------------------------------------------------
-print("\n[TEST 28/28] Kiem Tra Fuzz Mutation Co Tinh Lai FNV/MAC & Soi Sau Parser...")
+print("\n[TEST 28/28] Comprehensive Fuzz Mutation & Deep Invariant Verification...")
 test_fuzz_parser_script = """
 const OZOSEngine = require('./contrib/web-cockpit/ozos-engine.js');
 const engine = new OZOSEngine();
@@ -851,7 +851,7 @@ check_test("Fuzz mutation voi valid/invalid FNV va parser deep handling deu an t
 # ----------------------------------------------------------------------
 # 29. TEST ROUND 8: Profile A Dual-MAC Cross-Verification (C vs JS vs CLI)
 # ----------------------------------------------------------------------
-print("\n[TEST 29/30] Kiem Tra Profile A Dual-MAC Cross-Verification (C vs JS vs CLI)...")
+print("\n[TEST 29/30] Profile A Dual-MAC Cross-Language Verification (C vs JS vs CLI)...")
 
 # 1. C generates Sub-profile A1 (CRC16)
 rc_c_build, out_c_build, _ = run_ozos("packet-build", "SAFE_CROSS_C_TO_JS", "3000")
@@ -911,7 +911,7 @@ check_test("Profile A ho tro ca Sub-profile A1 (CRC16) va A2 (FNV fold) xac thuc
 # ----------------------------------------------------------------------
 # 30. TEST ROUND 8: Vault 64KB Payload Limit, Nonce Overflow Guard & Engine Replay Monotonicity
 # ----------------------------------------------------------------------
-print("\n[TEST 30/30] Kiem Tra Vault 64KB Payload Limit, Nonce Overflow & Replay Monotonicity...")
+print("\n[TEST 30/30] Vault 64KB Payload Boundary, Nonce Overflow & Replay Monotonicity...")
 test_r8_suite = """
 const OZOSEngine = require('./contrib/web-cockpit/ozos-engine.js');
 const engine = new OZOSEngine();
@@ -967,7 +967,7 @@ check_test("Vault payload 64KB cap, Nonce 2^64-1 overflow guard va Engine replay
 # ----------------------------------------------------------------------
 # 31. TEST ROUND 9: Brainseed Passphrase No-Echo & Positional Seed Guidance
 # ----------------------------------------------------------------------
-print("\n[TEST 31/34] Kiem Tra Brainseed Passphrase No-Echo & Positional Seed Guidance...")
+print("\n[TEST 31/34] Brainseed Passphrase Terminal No-Echo & Seed Guidance...")
 secret_pass = "top_secret_passphrase_test_r9"
 rc_gen, out_gen, _ = run_ozos("brainseed-gen", secret_pass)
 no_echo_ok = (rc_gen == 0) and (secret_pass not in out_gen) and ("[DA BAO VE" in out_gen or "[PROTECTED" in out_gen)
@@ -983,7 +983,7 @@ check_test("Passphrase khong bao gio bi echo ra terminal va huong dan ky dung cu
 # ----------------------------------------------------------------------
 # 32. TEST ROUND 9: saveLocalVault Return-Shape & Validator Type Check Robustness
 # ----------------------------------------------------------------------
-print("\n[TEST 32/34] Kiem Tra saveLocalVault Return-Shape & Type Check Robustness...")
+print("\n[TEST 32/34] saveLocalVault Return-Shape & Type Assertion Robustness...")
 test_js_types = """
 const OZOSEngine = require('./contrib/web-cockpit/ozos-engine.js');
 const GenesisShield = require('./contrib/web-cockpit/genesis-shield.js');
@@ -1034,7 +1034,7 @@ check_test("saveLocalVault tra ve shape nhat quan (success: true/false) va type-
 # ----------------------------------------------------------------------
 # 33. TEST ROUND 9: WASM Shipped Hash Pinning Verification
 # ----------------------------------------------------------------------
-print("\n[TEST 33/34] Kiem Tra Hash Pinning Cua Binary zero_dct.wasm Shipped...")
+print("\n[TEST 33/34] Cryptographic Hash Pinning of Shipped zero_dct.wasm...")
 import hashlib
 wasm_core_p = os.path.join(REPO_ROOT, "core", "zero_dct.wasm")
 wasm_web_p = os.path.join(REPO_ROOT, "contrib", "web-cockpit", "zero_dct.wasm")
@@ -1056,7 +1056,7 @@ check_test("Cac ban zero_dct.wasm dong nhat byte-exact va khop voi ma pin SHA-25
 # ----------------------------------------------------------------------
 # 34. TEST ROUND 9/10: Daemon Port Range & Fail-Closed CSPRNG Keygen
 # ----------------------------------------------------------------------
-print("\n[TEST 34/35] Kiem Tra Daemon Port Range & Keygen Khong Ro Ri Machine-ID...")
+print("\n[TEST 34/35] Daemon Port Boundary & CSPRNG Keygen Independence...")
 rc_dp1, _, _ = run_ozos("daemon", "70000")
 rc_dp2, _, _ = run_ozos("daemon", "0")
 rc_dp3, _, _ = run_ozos("daemon", "-10")
@@ -1076,7 +1076,7 @@ check_test("Daemon chan port ngoai bien (1-65535) va keygen fail-closed sinh CSP
 # ----------------------------------------------------------------------
 # 35. TEST ROUND 10: Sub-Profile A2 Default Payload Integrity & server.py Sandbox
 # ----------------------------------------------------------------------
-print("\n[TEST 35/35] Kiem Tra Sub-Profile A2 Default Payload Integrity & server.py Sandbox...")
+print("\n[TEST 35/35] Sub-Profile A2 Payload Integrity & server.py Sandbox Isolation...")
 
 # 1. C packet-build with payload emits Sub-Profile A2 (FNV fold covering payload)
 rc_b, out_b, _ = run_ozos("packet-build", "INTEGRITY_TEST_PAYLOAD", "6000")
@@ -1142,7 +1142,7 @@ check_test("C packet-build phat A2 bao ve toan ven payload mac dinh va server.py
 # ----------------------------------------------------------------------
 # 36. TEST ROUND 11: JS Numeric-0 Sentinel Replay Protection
 # ----------------------------------------------------------------------
-print("\n[TEST 36/40] Kiem Tra JS Numeric-0 Sentinel Replay Protection (Engine & Shield)...")
+print("\n[TEST 36/40] Numeric-0 Sentinel Replay Protection (JS Engine & GenesisShield)...")
 test_js_sentinel = """
 const OZOSEngine = require('./contrib/web-cockpit/ozos-engine.js');
 const engine = new OZOSEngine();
@@ -1173,7 +1173,7 @@ check_test("Truyen numeric-0 khong con bypass duoc co che Anti-Replay tren ca OZ
 # ----------------------------------------------------------------------
 # 37. TEST ROUND 11: Sub-Profile A1 with Payload Rejection across C, JS, Python
 # ----------------------------------------------------------------------
-print("\n[TEST 37/40] Kiem Tra Tu Choi Sub-Profile A1 Cho Goi Tin Co Payload (C, JS, Python)...")
+print("\n[TEST 37/40] Rejection of Profile A1 Framing with Attached Payloads (C, JS, Python)...")
 rc_a1_b, out_a1_b, _ = run_ozos("packet-build", "A1_PAYLOAD_TAMPER_TARGET", "7500")
 a1_hex_pkt = None
 for line in out_a1_b.splitlines():
@@ -1225,7 +1225,7 @@ check_test("Goi tin co payload mang Sub-Profile A1 bi tu choi dong loat tren ca 
 # ----------------------------------------------------------------------
 # 38. TEST ROUND 11: GenesisShield Nonce Auto-Advance & Engine Nonce Overflow Guard
 # ----------------------------------------------------------------------
-print("\n[TEST 38/40] Kiem Tra GenesisShield Nonce Auto-Advance & Engine Nonce Overflow Guard...")
+print("\n[TEST 38/40] GenesisShield Nonce Auto-Advance & 64-Bit Nonce Overflow Guard...")
 test_js_nonce_flow = """
 const GenesisShield = require('./contrib/web-cockpit/genesis-shield.js');
 const shield = new GenesisShield();
@@ -1262,7 +1262,7 @@ check_test("GenesisShield tu dong tang Nonce khong bi collision va OZOSEngine ch
 # ----------------------------------------------------------------------
 # 39. TEST ROUND 11: Poisoned Float (NaN/Infinity) Rejection across C, JS, Py
 # ----------------------------------------------------------------------
-print("\n[TEST 39/40] Kiem Tra Tu Choi He So Cham Dong Doc Hai (NaN / Inf) Tren C, JS, Py...")
+print("\n[TEST 39/40] Hostile Float Coeff Rejection (NaN / Inf) across C, JS, and Python...")
 raw_nan_pkt = bytearray(raw_a1_pkt)
 raw_nan_pkt[0:4] = struct.pack('<f', float('nan'))
 # Recompute A2
@@ -1296,7 +1296,7 @@ check_test("Goi tin chua he so float NaN / Infinity bi tu choi nghiem ngat tren 
 # ----------------------------------------------------------------------
 # 40. TEST ROUND 11: Handshake-ack Pinned Peer Check & Audio-Synth Failure Exit
 # ----------------------------------------------------------------------
-print("\n[TEST 40/40] Kiem Tra Handshake-ack Pinned Peer Check & Audio-Synth Failure Exit...")
+print("\n[TEST 40/40] Handshake-ack Pinned Peer Verification & Audio Failure Exit Codes...")
 rc_syn, out_syn, _ = run_ozos("handshake-syn")
 syn_hex_val = None
 peer_pk_val = None
@@ -1320,18 +1320,18 @@ check_test("Handshake-ack xac thuc peer theo khoa da ghim va audio-synth thoat m
 # ----------------------------------------------------------------------
 # 41. TEST ROUND 12: Neutralize Library ozos_packet_validate A1+96 Hole
 # ----------------------------------------------------------------------
-print("\n[TEST 41/46] Kiem Tra Thu Vien libozos.h Tu Choi A1 Co Payload Du Dem 96B Rac...")
+print("\n[TEST 41/46] libozos.h Rejection of Profile A1 Carrying 96-Byte Garbage...")
 proc_lib = subprocess.run([LIBOZOS_TEST_EXE],
                           capture_output=True, text=True, encoding="utf-8", errors="replace", cwd=REPO_ROOT)
-lib_a1_ok = (proc_lib.returncode == 0) and ("tu choi A1 co payload (+96B)" in proc_lib.stdout)
-check_test("Thu vien libozos.h tu choi Sub-Profile A1 co payload du dem 96 byte rac",
+lib_a1_ok = (proc_lib.returncode == 0) and ("unauthenticated A1 payloads (+96B)" in proc_lib.stdout or "tu choi A1 co payload (+96B)" in proc_lib.stdout)
+check_test("Library libozos.h rejects Sub-Profile A1 carrying 96-byte padding garbage",
            lib_a1_ok,
            "Library A1+96 heuristic bypass neutralized fail-closed")
 
 # ----------------------------------------------------------------------
 # 42. TEST ROUND 12: Ghost ack Pinned Peer Authentication & Unknown Flags Guard
 # ----------------------------------------------------------------------
-print("\n[TEST 42/46] Kiem Tra Ghost ack Pinned Peer Check & Tu Choi Co La...")
+print("\n[TEST 42/46] Ghost ack Pinned Peer Check & Hostile Flag Rejection...")
 ghost_exe = GHOST_EXE
 rc_gh_unk = subprocess.run([ghost_exe, "ack", syn_hex_val, "--unknown-flag"],
                            capture_output=True, text=True, encoding="utf-8", errors="replace", cwd=REPO_ROOT).returncode
@@ -1348,7 +1348,7 @@ check_test("Ghost ack ton trong --pinned-peer-pubkey va tu choi co la fail-close
 # ----------------------------------------------------------------------
 # 43. TEST ROUND 12: JS Nonce Range Bounds [0, 2^64-1] & Negative Nonce Rejection
 # ----------------------------------------------------------------------
-print("\n[TEST 43/46] Kiem Tra JS Nonce Range Bounds [0, 2^64-1] & Chặn Nonce Am...")
+print("\n[TEST 43/46] JS Nonce Bounds [0, 2^64-1] & Negative Nonce Rejection...")
 test_js_range_str = """
 const OZOSEngine = require('./contrib/web-cockpit/ozos-engine.js');
 const GenesisShield = require('./contrib/web-cockpit/genesis-shield.js');
@@ -1404,7 +1404,7 @@ check_test("JS validators chan dung nonce am, chan tran 2^64 va chan customNonce
 # ----------------------------------------------------------------------
 # 44. TEST ROUND 12: Python last_seen_nonce Coercion Guard & Memoryview Decoding
 # ----------------------------------------------------------------------
-print("\n[TEST 44/46] Kiem Tra Python last_seen_nonce Coercion Guard & Memoryview...")
+print("\n[TEST 44/46] Python last_seen_nonce Coercion Guard & Zero-Copy Memoryview...")
 val_bad_str, _, _ = ozos_cli_mod.validate_aligned_packet(bytes(raw_nan_pkt), last_seen_nonce="abc")
 val_bad_flt, _, _ = ozos_cli_mod.validate_aligned_packet(bytes(raw_nan_pkt), last_seen_nonce=7999.5)
 val_bad_none, _, _ = ozos_cli_mod.validate_aligned_packet(bytes(raw_nan_pkt), last_seen_nonce=None)
@@ -1421,7 +1421,7 @@ check_test("Python tu choi last_seen_nonce rac/float/None va giai ma thanh cong 
 # ----------------------------------------------------------------------
 # 45. TEST ROUND 12: Genesis Float Finiteness Validation (NaN / Inf in fingerprint slots)
 # ----------------------------------------------------------------------
-print("\n[TEST 45/46] Kiem Tra Genesis Float Finiteness Validation (NaN / Inf Fingerprint)...")
+print("\n[TEST 45/46] Genesis Float Finiteness Validation (NaN / Inf Rejection)...")
 test_js_gen_float = """
 const OZOSEngine = require('./contrib/web-cockpit/ozos-engine.js');
 const GenesisShield = require('./contrib/web-cockpit/genesis-shield.js');
@@ -1460,7 +1460,7 @@ check_test("Genesis validators tu choi he so float NaN / Infinity trong fingerpr
 # ----------------------------------------------------------------------
 # 46. TEST ROUND 12/14: CLI & Ghost --version Exact HEAD Commit & Stderr Secret Isolation
 # ----------------------------------------------------------------------
-print("\n[TEST 46/58] Kiem Tra CLI & Ghost --version (Khop Exact HEAD Commit), --help & Tach Secret Ra Stderr...")
+print("\n[TEST 46/58] CLI & Ghost --version (Commit Pinning), --help & Secret Separation to Stderr...")
 rc_ver, out_ver, _ = run_ozos("--version")
 proc_gh_ver = subprocess.run([GHOST_EXE, "--version"], capture_output=True, text=True, encoding="utf-8", errors="replace", cwd=REPO_ROOT)
 
@@ -1487,7 +1487,7 @@ check_test("CLI & Ghost ho tro --version, --help va tach Ephemeral Secret A ra s
 # ----------------------------------------------------------------------
 # 47. TEST ROUND 13: CLI handshake-ack Flag Hygiene & Strict Parameter Parsing
 # ----------------------------------------------------------------------
-print("\n[TEST 47/52] Kiem Tra CLI handshake-ack Flag Hygiene & Strict Flag Validation...")
+print("\n[TEST 47/52] CLI handshake-ack Flag Hygiene & Strict Flag Validation...")
 # Missing value for --pinned-peer-pubkey
 rc_missing_val, _, err_missing_val = run_ozos("handshake-ack", syn_hex_val, "--pinned-peer-pubkey")
 # Misspelled flag
@@ -1507,7 +1507,7 @@ check_test("CLI handshake-ack tu choi flag sai/thieu tham so/extra arg fail-clos
 # ----------------------------------------------------------------------
 # 48. TEST ROUND 13: Ghost Daemon Flag Validation & Mic Dispatch Unpinned Default-Deny
 # ----------------------------------------------------------------------
-print("\n[TEST 48/52] Kiem Tra Ghost Daemon Flag Hygiene & Mic Dispatch Unpinned Default-Deny...")
+print("\n[TEST 48/52] Ghost Daemon Flag Hygiene & Default-Deny Dispatch on Unpinned Peers...")
 # Unknown flag on ghost daemon
 proc_daemon_unk = subprocess.run([GHOST_EXE, "daemon", "--unknown-flag"],
                                  capture_output=True, text=True, encoding="utf-8", errors="replace", cwd=REPO_ROOT)
@@ -1528,7 +1528,7 @@ check_test("Ghost daemon tu choi flag la/thieu pubkey/pk sai do dai va CLI daemo
 # ----------------------------------------------------------------------
 # 49. TEST ROUND 13: JS Aligned Builder Nonce Strict Range Guards & State Anti-Poisoning (F13-A)
 # ----------------------------------------------------------------------
-print("\n[TEST 49/52] Kiem Tra JS Aligned Builder Nonce Bounds & State Anti-Poisoning (F13-A)...")
+print("\n[TEST 49/52] JS Aligned Builder Nonce Bounds & State Anti-Poisoning (F13-A)...")
 test_js_f13a = """
 const OZOSEngine = require('./contrib/web-cockpit/ozos-engine.js');
 const engine = new OZOSEngine();
@@ -1588,7 +1588,7 @@ check_test("JS Aligned builder chan nonce ngoai bien, chong nhiem doc state va h
 # ----------------------------------------------------------------------
 # 50. TEST ROUND 13: JS Validators Strict Floor Parsing & No Silent Fallback (F13-B)
 # ----------------------------------------------------------------------
-print("\n[TEST 50/52] Kiem Tra JS Validators Strict Floor Parsing & No Silent Fallback (F13-B)...")
+print("\n[TEST 50/52] JS Strict Floor Parsing & No Silent Fallback Invariant (F13-B)...")
 test_js_f13b = """
 const OZOSEngine = require('./contrib/web-cockpit/ozos-engine.js');
 const GenesisShield = require('./contrib/web-cockpit/genesis-shield.js');
@@ -1642,7 +1642,7 @@ check_test("JS validators tu choi lastSeenNonce khong hop le fail-closed, khong 
 # ----------------------------------------------------------------------
 # 51. TEST ROUND 13: Bridge server.py Realpath GET Sandbox & Stale File Overwrite Guard
 # ----------------------------------------------------------------------
-print("\n[TEST 51/52] Kiem Tra server.py Realpath GET Sandbox & Stale File Overwrite Guard...")
+print("\n[TEST 51/52] server.py Realpath Path Traversal Sandbox & File Overwrite Guard...")
 test_py_server = """
 import os
 import sys
@@ -1701,7 +1701,7 @@ check_test("server.py Realpath GET sandbox chan duyet file he thong va chong fak
 # ----------------------------------------------------------------------
 # 52. TEST ROUND 13: Vault & Shield Edge Hardening & Python Bool Type Robustness
 # ----------------------------------------------------------------------
-print("\n[TEST 52/52] Kiem Tra Vault, Shield 200KB Stack Safety & Python Bool Type Robustness...")
+print("\n[TEST 52/52] Vault & Shield 200KB Stack Safety & Python Bool Type Robustness...")
 test_js_vault = """
 const OZOSEngine = require('./contrib/web-cockpit/ozos-engine.js');
 const GenesisShield = require('./contrib/web-cockpit/genesis-shield.js');
@@ -1790,7 +1790,7 @@ check_test("Vault, Shield 200KB stack safety, payload cap 65535B va Python bool 
 # ----------------------------------------------------------------------
 # 53. TEST ROUND 14 (F1, F2): X25519 Low-Order Point Rejection, KDF Nonce Binding & Tunnel Anti-Replay
 # ----------------------------------------------------------------------
-print("\n[TEST 53/58] Kiem Tra Chan X25519 Low-Order Point (F1), KDF Nonce Binding & Tunnel Anti-Replay (F2)...")
+print("\n[TEST 53/58] X25519 Low-Order Point Rejection (F1), KDF Nonce Binding & Tunnel Anti-Replay (F2)...")
 # Build a SYN frame with all-zero ephemeral pubkey (42 bytes)
 syn_zero_buf = bytearray(42)
 struct.pack_into("<I", syn_zero_buf, 0, 0x4F5A4831) # OZH1 magic
@@ -1814,7 +1814,7 @@ check_test("Chan tuyet doi X25519 Low-Order Point (PK=0x00..00) tren ca CLI hand
 # ----------------------------------------------------------------------
 # 54. TEST ROUND 14 (F5): 2D-DCT Watermark Authentic Verification (No Fake Fallback)
 # ----------------------------------------------------------------------
-print("\n[TEST 54/58] Kiem Tra 2D-DCT Watermark Khong Nguy Tao Ket Qua Tren Anh Trang (F5)...")
+print("\n[TEST 54/58] 2D-DCT Watermark Fail-Closed Verification on Blank Carriers (F5)...")
 test_js_f5 = """
 const OZOSEngine = require('./contrib/web-cockpit/ozos-engine.js');
 const engine = new OZOSEngine();
@@ -1884,17 +1884,17 @@ p_cli_tampered_extract = subprocess.run([sys.executable, ozos_cli_path, "stego-e
                                         capture_output=True, text=True, encoding="utf-8", errors="replace", cwd=REPO_ROOT)
 for tf in [tmp_blank_img, tmp_wm_img, tampered_wm_img]:
     if os.path.exists(tf): os.remove(tf)
-f5_tamper_rejected = (p_cli_tampered_extract.returncode != 0) or ("CHỨNG CỨ BÓC TÁCH THÀNH CÔNG" not in p_cli_tampered_extract.stdout and "CHUNG CU BOC TACH THANH CONG" not in p_cli_tampered_extract.stdout)
+f5_tamper_rejected = (p_cli_tampered_extract.returncode != 0) or ("EVIDENCE EXTRACTED SUCCESSFULLY" not in p_cli_tampered_extract.stdout and "CHUNG CU BOC TACH THANH CONG" not in p_cli_tampered_extract.stdout)
 
 f5_ok = (p_js_f5.returncode == 0) and (p_cli_blank.returncode != 0) and (p_cli_embed.returncode == 0) and (p_cli_wm.returncode == 0 and "CLI-DCT-2026" in (p_cli_wm.stdout or "")) and f5_tamper_rejected
-check_test("2D-DCT Watermark tu choi anh trang fail-closed, bat loi block bi sua (F5) va khoi phuc dung thuy van that tren JS & CLI",
+check_test("2D-DCT Watermark rejects blank image fail-closed, detects tampered blocks (F5), and recovers authentic watermark",
            f5_ok,
            f"2D-DCT authentic extraction and tamper rejection verified (tamper_blocked={f5_tamper_rejected})")
 
 # ----------------------------------------------------------------------
 # 55. TEST ROUND 14 (R14-H1): Direct-Call WASM _parse_and_validate_packet Corpus & Default Strictness
 # ----------------------------------------------------------------------
-print("\n[TEST 55/58] Kiem Tra Direct-Call WASM _parse_and_validate_packet Corpus & Default Strictness (R14-H1)...")
+print("\n[TEST 55/58] Direct-Call WASM _parse_and_validate_packet Corpus & Default Strictness (R14-H1)...")
 test_wasm_direct = """
 const fs = require('fs');
 const wasmBuf = fs.readFileSync('core/zero_dct.wasm');
@@ -1969,7 +1969,7 @@ check_test("Direct-call WASM _parse_and_validate_packet chan day du 8 vector doi
 # ----------------------------------------------------------------------
 # 56. TEST ROUND 14 (R14-H2, R14-H3, F7, G1, G2): Live Bridge End-to-End Execution & Input File Protection
 # ----------------------------------------------------------------------
-print("\n[TEST 56/58] Kiem Tra Live Bridge /api/cmd Success (H2), Bao Ve Input WAV (H3), Giu Slash (F7) & GET G1/G2...")
+print("\n[TEST 56/58] Live Bridge /api/cmd Verification, Input File Protection & Path Traversal Guards...")
 kill_port_8899()
 test_live_bridge = """
 import os, sys, json, time, subprocess, urllib.request, urllib.error, http.client
@@ -2061,7 +2061,7 @@ check_test("Bridge /api/cmd thuc thi live thanh cong (H2), bao ve file WAV dau v
 # ----------------------------------------------------------------------
 # 57. TEST ROUND 14 (F8, R14-M1, P1, P2): Acoustic Cross-Binary WAV, C Strict Floor & Python Unicode Digits
 # ----------------------------------------------------------------------
-print("\n[TEST 57/58] Kiem Tra Giao Thuc Song Am Lien Binary (F8), C Strict Floor (M1) & Python Digit Guard (P1/P2)...")
+print("\n[TEST 57/58] Cross-Binary Acoustic Demodulation (F8), C Strict Floor (M1) & Python Digit Guard (P1/P2)...")
 tmp_syn_wav = os.path.join(REPO_ROOT, "_test_f8_syn.wav")
 rc_f8_syn, out_f8_syn, _ = run_ozos("handshake-syn", tmp_syn_wav, "77777")
 proc_f8_listen = subprocess.run([GHOST_EXE, "listen", tmp_syn_wav], capture_output=True, text=True, encoding="utf-8", errors="replace", cwd=REPO_ROOT)
@@ -2101,7 +2101,7 @@ check_test("Song am audible cross-language CLI vs C bit-exact (F8), packet-verif
 # ----------------------------------------------------------------------
 # 58. TEST ROUND 14 (F14-A, F14-B, F14-C): JS Shield Uint8Array Vault, Check-Before-Mutate Nonce & Unified Seed Parser
 # ----------------------------------------------------------------------
-print("\n[TEST 58/58] Kiem Tra JS Shield Uint8Array Vault (F14-A), Check-Before-Mutate Nonce (F14-B) & Unified Seed (F14-C)...")
+print("\n[TEST 58/58] JS Shield Uint8Array Vault (F14-A), Check-Before-Mutate Nonce (F14-B) & Unified Seed (F14-C)...")
 test_js_r14_lows = """
 const OZOSEngine = require('./contrib/web-cockpit/ozos-engine.js');
 const GenesisShield = require('./contrib/web-cockpit/genesis-shield.js');
@@ -2157,7 +2157,7 @@ check_test("JS Shield luu Uint8Array 40KB (F14-A), Engine khong lam hong current
 # ----------------------------------------------------------------------
 # 59. TEST ROUND 14 (F2 Deep): Nonce-Bound Handshake Poly1305 Auth Tag & Cross-Process Tunnel Anti-Replay
 # ----------------------------------------------------------------------
-print("\n[TEST 59/62] Kiem Tra Rang Buoc Nonce Vao Poly1305 Handshake Tag & Chong Phat Lai Tunnel Qua Nhieu Process (F2)...")
+print("\n[TEST 59/62] Nonce-Bound Poly1305 Handshake Tag & Multi-Process Replay Protection (F2)...")
 for st_f in [".ozos_syn_state", ".ozos_tunnel_nonces", ".ozos_known_peers", ".ozos_fork_quarantine"]:
     st_p = os.path.join(REPO_ROOT, st_f)
     if os.path.exists(st_p):
@@ -2242,7 +2242,7 @@ check_test("Poly1305 Handshake Tag gan session_nonce, Replay Store thanh tap hop
 # ----------------------------------------------------------------------
 # 60. TEST ROUND 14 (F8 & Item 15): --raw-frame, audio-decode 80ms Binary Frame, --no-secret & --secret-file
 # ----------------------------------------------------------------------
-print("\n[TEST 60/62] Kiem Tra --raw-frame, audio-decode 80ms Binary Frame & Bao Ve Ephemeral Secret (--no-secret / --secret-file)...")
+print("\n[TEST 60/62] Raw-Frame Audio Decoding (80ms) & Ephemeral Secret Redaction Invariants...")
 tmp_wav60 = os.path.join(REPO_ROOT, "_test_r14_60_syn.wav")
 tmp_sec60 = os.path.join(REPO_ROOT, "_test_r14_60_secret.txt")
 if os.path.exists(tmp_sec60):
@@ -2271,7 +2271,7 @@ check_test("ozos audio-decode & ozos_ghost listen giai ma WAV --raw-frame 42B do
 # ----------------------------------------------------------------------
 # 61. TEST ROUND 14 (Item 15): Persistent Peer Pin Store (.ozos_known_peers) & MITM Key-Change Detection
 # ----------------------------------------------------------------------
-print("\n[TEST 61/62] Kiem Tra So Danh Ba Khoa Ghim (.ozos_known_peers) Phat Hien Thay Doi Khoa / MITM (Item 15)...")
+print("\n[TEST 61/62] Pinned Peer Key Store (.ozos_known_peers) & MITM Key-Change Detection...")
 peers_file = os.path.join(REPO_ROOT, ".ozos_known_peers")
 if os.path.exists(peers_file):
     os.remove(peers_file)
@@ -2299,7 +2299,7 @@ check_test("Persistent Peer Pin Store (.ozos_known_peers) ghim khoa, phat hien M
 # ----------------------------------------------------------------------
 # 62. TEST ROUND 14 (Item 16): Gossip [UNAUTHENTICATED CRC16 BEACON] Labeling & FORK_DETECTED Quarantine
 # ----------------------------------------------------------------------
-print("\n[TEST 62/62] Kiem Tra Nhan Canh Bao [UNAUTHENTICATED CRC16 BEACON] & Phong Toa .ozos_fork_quarantine Khi Fork (Item 16)...")
+print("\n[TEST 62/62] Warning Label [UNAUTHENTICATED CRC16 BEACON] & Fork Quarantine Invariant...")
 quarantine_file = os.path.join(REPO_ROOT, ".ozos_fork_quarantine")
 if os.path.exists(quarantine_file):
     os.remove(quarantine_file)
@@ -2340,7 +2340,7 @@ check_test("Gossip in ro nhan [UNAUTHENTICATED CRC16 BEACON], kich hoat .ozos_fo
 # ----------------------------------------------------------------------
 # 63. TEST ROUND 15 (PY-H1, M5, PY-L1/L2): Positional WAV Unlink & Unsigned Trusted-PK Strict Validation
 # ----------------------------------------------------------------------
-print("\n[TEST 63/65] Kiem Tra Positional WAV Unlink (PY-H1), M5 Unsigned Trusted-PK & Path Traversal Data Isolation...")
+print("\n[TEST 63/65] Positional File Safety (PY-H1), M5 Unsigned Trusted-PK & Data Isolation Invariants...")
 cockpit_dir = os.path.join(REPO_ROOT, "contrib", "web-cockpit")
 payload_fake_wav = os.path.join(cockpit_dir, "data_payload_test.wav")
 with open(payload_fake_wav, "w", encoding="utf-8") as f:
@@ -2402,7 +2402,7 @@ check_test("server.py khong xoa nham file payload .wav (PY-H1), nhan .. trong pa
 # ----------------------------------------------------------------------
 # 64. TEST ROUND 15 (H1 & M4): Unknown A-Pub Fail-Closed & Gossip Non-Zero Peer ID
 # ----------------------------------------------------------------------
-print("\n[TEST 64/65] Kiem Tra Handshake Unknown A-Pub Fail-Closed (H1) & Gossip Non-Zero Peer ID (M4)...")
+print("\n[TEST 64/65] Handshake Unknown A-Pub Fail-Closed (H1) & Gossip Non-Zero Peer ID Invariant (M4)...")
 for st_f in [".ozos_syn_state", ".ozos_tunnel_nonces"]:
     st_p = os.path.join(REPO_ROOT, st_f)
     if os.path.exists(st_p):
@@ -2433,7 +2433,7 @@ check_test("handshake-finish tu choi fail-closed voi unknown A-pub khong co tron
 # ----------------------------------------------------------------------
 # 65. TEST ROUND 15 (J1 & Real SipHash-2-4): Empty-Payload Zero-Slot Checksum & Real Crypto Audit Suite
 # ----------------------------------------------------------------------
-print("\n[TEST 65/65] Kiem Tra JS Empty Payload Zero-Slot Guard (J1) & Chay Bo Kiem Thu Real Crypto Audit Suite...")
+print("\n[TEST 65/65] JS Empty Payload Zero-Slot Guard (J1) & Native Crypto Audit Suite Execution...")
 test_j1 = """
 const OZOSEngine = require('./contrib/web-cockpit/ozos-engine.js');
 const GenesisShield = require('./contrib/web-cockpit/genesis-shield.js');
@@ -2482,7 +2482,7 @@ check_test("JS chan zero-slot FNV bypass tren empty payload (J1) va test_audit_v
 # ----------------------------------------------------------------------
 # 66. TEST OMNI-SPECTRUM (TIER 1): Optical Glyph 32x32 Matrix & BMP Roundtrip
 # ----------------------------------------------------------------------
-print("\n[TEST 66/69] Kiem Tra Optical Glyph 32x32 Matrix & BMP File Roundtrip (Quang Hoc 16ms)...")
+print("\n[TEST 66/69] Optical Glyph 32x32 Matrix & BMP File Roundtrip (16ms Optical)...")
 raw_80_hex = signed_hex[:160]
 tmp_bmp = os.path.join(REPO_ROOT, "_test_r15_glyph.bmp")
 rc_g_enc, out_g_enc, _ = run_ozos("glyph-encode", raw_80_hex, "--bmp", tmp_bmp)
@@ -2502,14 +2502,14 @@ if os.path.exists(tmp_bmp):
     except: pass
 
 glyph_ok = (rc_g_enc == 0 and rc_g_dec == 0 and raw_80_hex.lower() in out_g_dec.lower() and tamper_bmp_detected)
-check_test("Optical Glyph 32x32 render BMP, bóc tách bit-exact và bắt quả tang sửa đổi file BMP (Tier 1)",
+check_test("Optical Glyph 32x32 renders BMP, extracts bit-exact, and detects BMP file tampering (Tier 1)",
            glyph_ok,
            f"Glyph verified (enc={rc_g_enc}, dec={rc_g_dec}, tamper={tamper_bmp_detected})")
 
 # ----------------------------------------------------------------------
 # 67. TEST OMNI-SPECTRUM (TIER 2): Acoustic OFDM Multi-Carrier (< 0.04s) & Ambient Steganography
 # ----------------------------------------------------------------------
-print("\n[TEST 67/69] Kiem Tra Acoustic OFDM Multi-Carrier (< 0.04s) & Ambient Steganography (Tier 2)...")
+print("\n[TEST 67/69] Acoustic OFDM Multi-Carrier (< 40ms) & Ambient Steganography (Tier 2)...")
 tmp_ofdm_wav = os.path.join(REPO_ROOT, "_test_r15_ofdm.wav")
 rc_ofdm_synth, out_ofdm_synth, _ = run_ozos("ofdm-synth", raw_80_hex, tmp_ofdm_wav, "--stego")
 rc_ofdm_dec, out_ofdm_dec, _ = run_ozos("ofdm-decode", tmp_ofdm_wav)
@@ -2518,14 +2518,14 @@ if os.path.exists(tmp_ofdm_wav):
     except: pass
 
 ofdm_ok = (rc_ofdm_synth == 0 and rc_ofdm_dec == 0 and raw_80_hex.lower() in out_ofdm_dec.lower())
-check_test("Acoustic OFDM 64-FFT tổng hợp đa sóng mang < 0.04s, giấu trong âm nền và giải mã chính xác 100% (Tier 2)",
+check_test("Acoustic OFDM 64-FFT synthesizes multi-carrier < 0.04s, steganographically hides in noise, and decodes bit-exact (Tier 2)",
            ofdm_ok,
            f"OFDM verified (synth={rc_ofdm_synth}, dec={rc_ofdm_dec})")
 
 # ----------------------------------------------------------------------
 # 68. TEST OMNI-SPECTRUM (TIER 3): Long-Range LoRa Sub-GHz 84-Byte Frame & CRC16-CCITT
 # ----------------------------------------------------------------------
-print("\n[TEST 68/69] Kiem Tra Long-Range LoRa Sub-GHz 84-Byte Frame & CRC16-CCITT (Tier 3)...")
+print("\n[TEST 68/69] Long-Range LoRa Sub-GHz 84-Byte Frame & CRC16-CCITT (Tier 3)...")
 rc_lora_pack, out_lora_pack, _ = run_ozos("lora-pack", raw_80_hex)
 lora_candidates = [l.strip() for l in out_lora_pack.splitlines() if len(l.strip()) == 168 and all(c in "0123456789abcdefABCDEF" for c in l.strip())]
 lora_frame_hex = lora_candidates[0] if lora_candidates else ""
@@ -2536,22 +2536,22 @@ tampered_lora = lora_frame_hex[:50] + ("00" if lora_frame_hex[50:52] != "00" els
 rc_lora_tamper, _, _ = run_ozos("lora-unpack", tampered_lora)
 
 lora_ok = (rc_lora_pack == 0 and rc_lora_unpack == 0 and raw_80_hex.lower() in out_lora_unpack.lower() and rc_lora_tamper != 0)
-check_test("LoRa Sub-GHz đóng khung 84-byte (Sync 0x12, Type 0x50, CRC16-CCITT) và chặn đứng sửa đổi (Tier 3)",
+check_test("LoRa Sub-GHz frames 84-byte (Sync 0x12, Type 0x50, CRC16-CCITT) and blocks bit tampering (Tier 3)",
            lora_ok,
            f"LoRa verified (pack={rc_lora_pack}, unpack={rc_lora_unpack}, tamper_blocked={rc_lora_tamper != 0})")
 
 # ----------------------------------------------------------------------
 # 69. TEST OMNI-SPECTRUM (TIER 4 & HARNESS): Diagnostic Spectrum Status & Native PHY Harness
 # ----------------------------------------------------------------------
-print("\n[TEST 69/69] Kiem Tra Spectrum-Status & Bo Test Native C99 test_omni_phy (H-SUITE-1 & H-OMNI-1)...")
+print("\n[TEST 69/69] Spectrum-Status Diagnostics & Native C99 test_omni_phy Execution (H-SUITE-1 & H-OMNI-1)...")
 rc_spec, out_spec, _ = run_ozos("spectrum-status")
 # Assert Tier 4 is marked PLANNED / NOT IMPLEMENTED and strictly reject fake "ALL 4 TIERS OPERATIONAL 100%"
-spec_claim_ok = ("ALL 4 TIERS OPERATIONAL 100%" not in out_spec and "TẤT CẢ 4 TẦNG" not in out_spec)
-spec_tiers_present = (("TẦNG 1" in out_spec or "TIER 1" in out_spec) and
-                      ("TẦNG 2" in out_spec or "TIER 2" in out_spec) and
-                      ("TẦNG 3" in out_spec or "TIER 3" in out_spec) and
-                      ("TẦNG 4" in out_spec or "TIER 4" in out_spec) and
-                      ("NOT IMPLEMENTED" in out_spec or "PLANNED" in out_spec or "CHƯA" in out_spec))
+spec_claim_ok = ("ALL 4 TIERS OPERATIONAL 100%" not in out_spec)
+spec_tiers_present = (("TIER 1" in out_spec) and
+                      ("TIER 2" in out_spec) and
+                      ("TIER 3" in out_spec) and
+                      ("TIER 4" in out_spec) and
+                      ("NOT IMPLEMENTED" in out_spec or "PLANNED" in out_spec))
 spec_ok = (rc_spec == 0) and spec_claim_ok and spec_tiers_present
 
 # Cross-platform lookup: do not silently skip if .exe is missing (H-SUITE-1 fix)
@@ -2575,8 +2575,8 @@ check_test("CLI spectrum-status danh chinh ngon thuan Tier 4 (H-OMNI-1) va test_
 
 print("\n======================================================================")
 if all_passed:
-    print("  🏆 KET LUAN: 69/69 BAI KIEM TRA SOVEREIGN & OMNI-SPECTRUM PASS 100%!")
-    print("  TOAN BO 4 TANG PHO TIN HIEU VA CAC BAT BIEN AN NINH DA HOAN TAT KHEP KIN.")
+    print("  🏆 CONCLUSION: 69/69 SOVEREIGN & OMNI-SPECTRUM REGRESSION TESTS PASSED 100%!")
+    print("  ALL 4 SIGNAL SPECTRUM TIERS & SECURITY INVARIANTS RIGOROUSLY ENFORCED.")
     print("======================================================================")
     sys.exit(0)
 else:

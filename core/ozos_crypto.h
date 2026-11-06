@@ -23,8 +23,8 @@ uint16_t compute_fast_gate_mac(
 );
 
 /**
- * [MẢNH GHÉP 1]: CHỮ KÝ BẢN THỂ (ED25519 SOVEREIGN SIGNATURE)
- * Tái tạo cặp khóa Ed25519 từ Hạt giống 32-byte (TPM Silicon Seed hoặc Brainseed)
+ * [PILLAR 1]: ED25519 SOVEREIGN SIGNATURE
+ * Reconstructs Ed25519 keypair from 32-byte seed (TPM Silicon Seed or Brainseed)
  */
 static inline int ozos_ed25519_seed_keypair(
     uint8_t pk[OZOS_ED25519_PK_BYTES],
@@ -36,7 +36,7 @@ static inline int ozos_ed25519_seed_keypair(
 }
 
 /**
- * Ký số Ed25519 trên một thông điệp (Detached Signature 64 Bytes).
+ * Computes detached 64-byte Ed25519 digital signature over message.
  */
 static inline int ozos_ed25519_sign_detached(
     uint8_t sig[OZOS_ED25519_SIG_BYTES],
@@ -57,8 +57,8 @@ static inline int ozos_ed25519_sign_detached(
 }
 
 /**
- * Thẩm định chữ ký số Ed25519 (Detached Verification) bằng khóa công khai bản thể.
- * Chạy 100% trên stack, không cấp phát heap RAM (no_std compliant).
+ * Verifies detached Ed25519 digital signature using sovereign public key.
+ * Executes 100% on stack, zero heap RAM allocation (no_std compliant).
  */
 /**
  * Kiem tra tinh chuan tac (Canonicity) cua phan tu vo huong S theo RFC 8032 Section 5.1.7:
@@ -111,7 +111,7 @@ static inline bool ozos_ed25519_verify_detached(
 }
 
 /**
- * Cấu trúc Gói Tin Đã Ký Bản Thể (Signed Sovereign Frame):
+ * Signed Sovereign Frame Structure:
  * [OZOS-80 Header (80B)] + [Payload (L Bytes)] + [Public Key (32B)] + [Signature (64B)]
  */
 #define OZOS_SIG_ATTACHMENT_SIZE (OZOS_ED25519_PK_BYTES + OZOS_ED25519_SIG_BYTES) /* 96 Bytes */
@@ -166,9 +166,9 @@ static inline bool ozos_verify_packet_frame(
 }
 
 /* ========================================================================= */
-/*   [MẢNH GHÉP 2]: BẮT TAY HAI CHIỀU VÔ THANH (ACOUSTIC ECDH TUNNEL)       */
-/*   Giao thức thiết lập đường hầm mã hóa âm học không dây trong < 2.0s      */
-/*   với Perfect Forward Secrecy (X25519 + SHA-512 + XSalsa20-Poly1305)       */
+/*   [PILLAR 2]: BIDIRECTIONAL SILENT ACOUSTIC ECDH TUNNEL                   */
+/*   Acoustic wireless encrypted tunnel establishment in < 2.0s              */
+/*   with Perfect Forward Secrecy (X25519 + SHA-512 + XSalsa20-Poly1305)     */
 /* ========================================================================= */
 
 #define OZOS_ECDH_PK_BYTES       32
@@ -208,7 +208,7 @@ typedef struct {
 #pragma pack(pop)
 
 /**
- * Sinh cặp khóa Curve25519 Ephemeral cho Bắt tay Âm học Vô thanh.
+ * Generates ephemeral Curve25519 keypair for silent acoustic handshake.
  */
 static inline int ozos_ecdh_keypair(
     uint8_t pk[OZOS_ECDH_PK_BYTES],
@@ -225,7 +225,7 @@ static inline void ozos_crypto_zeroize(void* ptr, size_t len) {
 }
 
 /**
- * Kiểm tra thời gian hằng định (constant-time) các điểm bậc thấp trên đường cong Curve25519
+ * Constant-time validation against low-order points on Curve25519
  * (RFC 7748 Section 6.1 / Bernstein 2006 - 8 canonical low-order points).
  */
 static inline bool ozos_is_low_order_curve25519_point(const uint8_t pk[32]) {
@@ -270,9 +270,9 @@ static inline bool ozos_is_low_order_curve25519_point(const uint8_t pk[32]) {
 }
 
 /**
- * Tính toán Điểm bí mật chung ECDH: Shared = Peer_PK ^ My_SK (mod 2^255 - 19)
- * Bắt buộc: Từ chối điểm bậc thấp (Small-Subgroup Confinement Attack RFC 7748 Section 6.1)
- * và từ chối tuyệt đối khi kết quả X25519 suy biến về toàn số 0 (all-zero output).
+ * Computes ECDH Shared Secret: Shared = Peer_PK ^ My_SK (mod 2^255 - 19)
+ * Enforced: Small-subgroup confinement attack rejection (RFC 7748 Section 6.1)
+ * and strict rejection of all-zero X25519 scalar multiplication results.
  */
 static inline int ozos_ecdh_shared_secret(
     uint8_t shared_out[OZOS_ECDH_SHARED_BYTES],
@@ -288,7 +288,7 @@ static inline int ozos_ecdh_shared_secret(
         ozos_crypto_zeroize(shared_out, OZOS_ECDH_SHARED_BYTES);
         return -1;
     }
-    /* Kiểm tra thời gian hằng định (constant-time) chống khóa chung toàn 0 */
+    /* Constant-time check rejecting all-zero shared secret */
     static const uint8_t zero32[32] = {0};
     if (crypto_verify_32(shared_out, zero32) == 0) {
         ozos_crypto_zeroize(shared_out, OZOS_ECDH_SHARED_BYTES);
@@ -298,7 +298,7 @@ static inline int ozos_ecdh_shared_secret(
 }
 
 /**
- * Hàm phân rã khóa KDF (Key Derivation Function) qua SHA-512 có gắn kết Session Nonce:
+ * SHA-512 Key Derivation Function (KDF) bound with Session Nonce:
  * K_session (32B) = SHA-512(Shared_Secret || "OZOS_ACOUSTIC_TUNNEL_V1" || session_nonce_le)[0:32]
  */
 static inline int ozos_kdf_session_key_ex(
@@ -339,9 +339,9 @@ static inline int ozos_kdf_session_key(
 }
 
 /**
- * Dẫn xuất khóa con một lần (One-Time Auth Subkey) tách biệt miền (Domain-Separated)
- * dành riêng cho bước xác thực bắt tay Poly1305, tuyệt đối không tái sử dụng trực tiếp
- * khóa phiên K_session của đường hầm XSalsa20.
+ * Domain-separated one-time authentication subkey derivation
+ * dedicated to Poly1305 handshake verification; strictly avoids reusing
+ * XSalsa20 tunnel session key K_session directly.
  */
 static inline void ozos_derive_handshake_poly1305_subkey_ex(
     uint8_t subkey_out[32],
@@ -386,7 +386,7 @@ static inline void ozos_derive_handshake_poly1305_subkey(
 }
 
 /**
- * Tính toán Thẻ xác nhận bắt tay Auth Tag (16 Bytes Poly1305) có gắn kết session_nonce:
+ * Computes 16-byte Poly1305 handshake Auth Tag bound with session_nonce:
  * AuthTag = Poly1305(SubKey_Handshake, A_pub || B_pub || session_nonce)
  */
 static inline int ozos_compute_handshake_auth_tag_ex(
@@ -423,7 +423,7 @@ static inline int ozos_compute_handshake_auth_tag(
 }
 
 /**
- * Xác thực Thẻ bắt tay Auth Tag có gắn kết session_nonce:
+ * Verifies Poly1305 handshake Auth Tag bound with session_nonce:
  */
 static inline bool ozos_verify_handshake_auth_tag_ex(
     const uint8_t expected_tag[16],
@@ -459,7 +459,7 @@ static inline bool ozos_verify_handshake_auth_tag(
 }
 
 /**
- * Đóng gói Gói tin Bắt tay SYN (Node A -> Node B)
+ * Encapsulates Handshake SYN packet (Node A -> Node B)
  */
 static inline void ozos_handshake_syn_build(
     ozos_handshake_syn_t* syn,
@@ -471,7 +471,7 @@ static inline void ozos_handshake_syn_build(
     memcpy(syn->eph_pubkey, a_pub, 32);
     syn->session_nonce = session_nonce;
 
-    /* Tính MAC16 cổng gác cho phần đầu */
+    /* Compute Tripwire MAC16 for header */
     uint16_t crc = 0xFFFF;
     const uint8_t* p = (const uint8_t*)syn;
     for (size_t i = 0; i < 40; ++i) {
@@ -484,7 +484,7 @@ static inline void ozos_handshake_syn_build(
 }
 
 /**
- * Thẩm định Gói tin Bắt tay SYN
+ * Validates Handshake SYN packet
  */
 static inline bool ozos_handshake_syn_verify(const ozos_handshake_syn_t* syn) {
     if (!syn) return false;
@@ -504,7 +504,7 @@ static inline bool ozos_handshake_syn_verify(const ozos_handshake_syn_t* syn) {
 }
 
 /**
- * Đóng gói Gói tin Bắt tay ACK (Node B -> Node A)
+ * Encapsulates Handshake ACK packet (Node B -> Node A)
  */
 static inline void ozos_handshake_ack_build(
     ozos_handshake_ack_t* ack,
@@ -528,7 +528,7 @@ static inline void ozos_handshake_ack_build(
 }
 
 /**
- * Thẩm định Gói tin Bắt tay ACK
+ * Validates Handshake ACK packet
  */
 static inline bool ozos_handshake_ack_verify(const ozos_handshake_ack_t* ack) {
     if (!ack) return false;
@@ -547,7 +547,7 @@ static inline bool ozos_handshake_ack_verify(const ozos_handshake_ack_t* ack) {
 }
 
 /**
- * Mã hóa dữ liệu truyền qua Đường hầm Âm học (Acoustic Tunnel Encryption):
+ * Encrypts data transmission over Acoustic Tunnel:
  * Output frame: [32B Header] + [16B Poly1305 Tag] + [payload_len Bytes Ciphertext]
  */
 static inline size_t ozos_tunnel_encrypt(
@@ -589,7 +589,7 @@ static inline size_t ozos_tunnel_encrypt(
         return 0;
     }
 
-    /* pad_c + 16 chứa: 16 bytes Poly1305 MAC + plaintext_len bytes Ciphertext */
+    /* pad_c + 16 contains: 16 bytes Poly1305 MAC + plaintext_len bytes Ciphertext */
     memcpy(out_frame + sizeof(ozos_tunnel_data_hdr_t), pad_c + 16, 16 + plaintext_len);
 
     ozos_crypto_zeroize(pad_m, sizeof(pad_m));
@@ -603,8 +603,8 @@ static size_t  g_ozos_tunnel_seen_count = 0;
 static size_t  g_ozos_tunnel_seen_pos   = 0;
 
 /**
- * Giải mã dữ liệu nhận được từ Đường hầm Âm học (Acoustic Tunnel Decryption)
- * Tích hợp bộ nhớ đệm chống phát lại (Anti-Replay 24-Byte Nonce Ring Window)
+ * Decrypts payload received from Acoustic Tunnel
+ * Integrates 24-byte Nonce Ring Window anti-replay cache
  */
 static inline bool ozos_tunnel_decrypt(
     uint8_t* out_plaintext,

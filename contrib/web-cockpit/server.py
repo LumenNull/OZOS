@@ -123,16 +123,16 @@ class OZOSRequestHandler(http.server.SimpleHTTPRequestHandler):
             self.wfile.write(b'{"error":"Forbidden: Cross-Origin Request Blocked"}\n')
             return
         if self.path == '/api/cmd':
-            # Mô hình tin cậy: Server bridge bind chặt vào 127.0.0.1, giả định tin tưởng localhost cục bộ.
-            # Dành riêng cho Web Cockpit chạy trên máy của chính node chủ quyền.
-            # Yêu cầu không có header Origin (CLI local/curl) hoặc Origin localhost được chấp nhận theo thiết kế.
-            # Mọi đường dẫn file ghi ra đều được sandbox tuyệt đối vào thư mục server.
+            # Trust model: Server bridge strictly binds to 127.0.0.1, trusting local loopback callers.
+            # Dedicated to Web Cockpit running on the sovereign node itself.
+            # Requires no Origin header (local CLI/curl) or localhost Origin as designed.
+            # All written files are strictly sandboxed inside the server directory.
             try:
                 cl_val = self.headers.get('Content-Length')
                 if cl_val is None:
                     raise ValueError("Missing Content-Length header")
                 content_length = int(cl_val)
-                if content_length <= 0 or content_length > 10485760: # Giới hạn tối đa 10MB
+                if content_length <= 0 or content_length > 10485760: # 10MB maximum payload limit
                     raise ValueError("Content-Length out of bounds")
             except (ValueError, TypeError):
                 self.send_response(400)
@@ -262,7 +262,7 @@ if __name__ == '__main__':
     os.chdir(DIRECTORY)
     HOST = "127.0.0.1"
     if HOST not in ("127.0.0.1", "localhost", "::1"):
-        raise SystemExit("BẢO VỆ CHỦ QUYỀN: Server bridge chỉ được phép bind vào loopback cục bộ (127.0.0.1)!")
+        raise SystemExit("SOVEREIGN PROTECTION: Server bridge must strictly bind to local loopback (127.0.0.1)!")
     with ThreadedTCPServer((HOST, PORT), OZOSRequestHandler) as httpd:
         print("=================================================================")
         print("  [OK] O.Z.O.S SOVEREIGN COMMAND STATION & NATIVE BRIDGE ACTIVE")
@@ -276,5 +276,5 @@ if __name__ == '__main__':
         try:
             httpd.serve_forever()
         except KeyboardInterrupt:
-            print("\n[OZOS] Đã tắt trạm.")
+            print("\n[OZOS] Command station terminated.")
             httpd.server_close()

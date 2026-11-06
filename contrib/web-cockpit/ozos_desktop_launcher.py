@@ -25,7 +25,7 @@ def is_server_running(port):
         return s.connect_ex(('127.0.0.1', port)) == 0
 
 def find_standalone_browser_binary():
-    """Tìm binary trình duyệt hỗ trợ flag --app (Edge hoặc Chrome)"""
+    """Locate browser binary supporting --app flag (Edge or Chrome)."""
     paths = [
         r"C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe",
         r"C:\Program Files\Microsoft\Edge\Application\msedge.exe",
@@ -42,34 +42,34 @@ def launch_native_kiosk():
     print("  [O.Z.O.S] INITIALIZING NATIVE DESKTOP SOVEREIGN CONSOLE")
     print("=================================================================")
 
-    # 1. Khởi động Hardware TPM 2.0 Root of Trust
-    print("[TPM 2.0] Đang kết nối với vi mạch phần cứng qua ncrypt.dll...")
+    # 1. Initialize Hardware TPM 2.0 Root of Trust
+    print("[TPM 2.0] Connecting to hardware silicon via ncrypt.dll...")
     tpm = OZOSHardwareTPM()
     badge = tpm.export_provenance_badge()
-    print(f"  -> Trạng thái TPM: {badge['tpm_status']}")
+    print(f"  -> TPM Status: {badge['tpm_status']}")
     print(f"  -> Provider: {badge['provider']}")
     print(f"  -> Silicon Fingerprint: {badge['master_silicon_seed_fingerprint']}")
     
-    # Lưu chứng thư TPM vào runtime
+    # Save TPM provenance cert to runtime
     tpm_cert_path = os.path.join(DIR, "core", "tpm_provenance.json")
     with open(tpm_cert_path, "w", encoding="utf-8") as f:
         json.dump(badge, f, indent=2, ensure_ascii=False)
     tpm.close()
 
-    # 2. Kiểm tra Local Server
+    # 2. Verify Local Server
     if not is_server_running(PORT):
-        print(f"[Server] Đang kích hoạt trạm cục bộ cổng {PORT}...")
+        print(f"[Server] Activating local loopback station on port {PORT}...")
         subprocess.Popen([sys.executable, os.path.join(DIR, "server.py")], cwd=DIR)
         time.sleep(1.2)
     else:
-        print(f"[Server] Trạm cục bộ đã hoạt động tại http://localhost:{PORT}")
+        print(f"[Server] Local station active at http://localhost:{PORT}")
 
-    # 3. Mở cửa sổ Desktop Kiosk độc lập
+    # 3. Launch Standalone Kiosk Window
     bin_path = find_standalone_browser_binary()
     app_url = f"http://localhost:{PORT}"
 
     if bin_path:
-        print(f"[Desktop Shell] Khởi chạy Native Application Window via {os.path.basename(bin_path)}...")
+        print(f"[Desktop Shell] Launching Native Application Window via {os.path.basename(bin_path)}...")
         cmd = [
             bin_path,
             f"--app={app_url}",
@@ -83,14 +83,14 @@ def launch_native_kiosk():
             "--disable-background-networking"
         ]
         subprocess.Popen(cmd)
-        print("  -> Cửa sổ Native Frameless Desktop đã mở thành công.")
+        print("  -> Frameless Native Desktop window initialized successfully.")
     else:
         import webbrowser
-        print("[Desktop Shell] Không tìm thấy msedge/chrome, mở qua trình duyệt mặc định.")
+        print("[Desktop Shell] Standalone binary not found; falling back to default browser.")
         webbrowser.open(app_url)
 
     print("=================================================================")
-    print("  [OK] CHIẾN HÀO 1 (NATIVE HARDWARE DESKTOP) HOÀN THÀNH!")
+    print("  [OK] TRENCH 1 (NATIVE HARDWARE DESKTOP) READY!")
     print("=================================================================")
 
 if __name__ == '__main__':

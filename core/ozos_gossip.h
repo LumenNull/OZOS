@@ -1,7 +1,11 @@
+/**
+ * O.Z.O.S - Sovereign Acoustic Gossip Mesh & Merkle State Sync
+ * Open Specification: Standards Track RFC-OZOS-0080
+ */
+
 #ifndef OZOS_GOSSIP_H
 #define OZOS_GOSSIP_H
 
-#include "libozos.h"
 #include <stdint.h>
 #include <stdbool.h>
 #include <string.h>
@@ -11,7 +15,7 @@ extern "C" {
 #endif
 
 /* ========================================================================= */
-/*   [MẢNH GHÉP 4]: MẠNG LƯỚI LAN TRUYỀN TIN ĐỒN VÔ THANH                   */
+/*   [PILLAR 4]: INAUDIBLE ACOUSTIC GOSSIP MESH & MERKLE STATE SYNC         */
 /*   (ACOUSTIC GOSSIP MESH & MERKLE STATE SYNCHRONIZATION)                   */
 /* ========================================================================= */
 
@@ -20,31 +24,31 @@ extern "C" {
 #define OZOS_MAGIC_GOSSIP_DATA   0x4F5A4454 /* "OZDT" */
 
 typedef enum {
-    OZOS_GOSSIP_IN_SYNC = 0,         /* Hai nút hoàn toàn đồng thuận trạng thái */
-    OZOS_GOSSIP_PEER_AHEAD = 1,      /* Nút láng giềng có trạng thái mới hơn (Cần PULL) */
-    OZOS_GOSSIP_LOCAL_AHEAD = 2,     /* Trạng thái cục bộ mới hơn (Có thể PUSH) */
-    OZOS_GOSSIP_FORK_DETECTED = 3    /* Phát hiện rẽ nhánh Merkle khác nhau ở cùng Epoch */
+    OZOS_GOSSIP_IN_SYNC = 0,         /* Both nodes in full state consensus */
+    OZOS_GOSSIP_PEER_AHEAD = 1,      /* Remote peer has newer state (Requires PULL) */
+    OZOS_GOSSIP_LOCAL_AHEAD = 2,     /* Local state is ahead (Can PUSH) */
+    OZOS_GOSSIP_FORK_DETECTED = 3    /* Divergent Merkle root detected at same epoch */
 } ozos_gossip_action_t;
 
 #pragma pack(push, 1)
 typedef struct {
     uint32_t magic;          /* 0x4F5A4753 ("OZGS") */
-    uint32_t peer_id;        /* Mã định danh 4-byte của tác giả (CRC32 từ Ed25519 PK) */
-    uint64_t merkle_root;    /* Gốc Merkle 64-bit đại diện cho toàn bộ trạng thái */
-    uint32_t epoch_nonce;    /* Phiên bản số thứ tự tăng dần đơn điệu */
-    uint16_t beacon_mac16;   /* Cổng gác kiểm tra toàn vẹn Tripwire MAC16 */
+    uint32_t peer_id;        /* 4-byte author identity identifier (CRC32 from Ed25519 PK) */
+    uint64_t merkle_root;    /* 64-bit Merkle root representing global state */
+    uint32_t epoch_nonce;    /* Monotonically increasing sequence epoch */
+    uint16_t beacon_mac16;   /* Tripwire MAC16 integrity gate */
 } ozos_gossip_beacon_t;      /* 22 Bytes */
 
 typedef struct {
     uint32_t magic;          /* 0x4F5A5055 ("OZPU") */
-    uint32_t requester_id;   /* ID của nút yêu cầu đồng bộ */
-    uint32_t from_epoch;     /* Epoch hiện tại của nút yêu cầu */
-    uint16_t pull_mac16;     /* Cổng gác kiểm tra toàn vẹn */
+    uint32_t requester_id;   /* ID of requesting node */
+    uint32_t from_epoch;     /* Current epoch of requesting node */
+    uint16_t pull_mac16;     /* Integrity check gate */
 } ozos_gossip_pull_t;        /* 10 Bytes */
 #pragma pack(pop)
 
 /**
- * Đóng gói Xung Tim Lan Truyền Vô Thanh (Acoustic Gossip Beacon 22 Bytes)
+ * Frame Inaudible Acoustic Gossip Heartbeat (Acoustic Gossip Beacon 22 Bytes)
  */
 static inline void ozos_gossip_beacon_build(
     ozos_gossip_beacon_t* beacon,
@@ -68,7 +72,7 @@ static inline void ozos_gossip_beacon_build(
 }
 
 /**
- * Thẩm định Xung Tim Lan Truyền Vô Thanh
+ * Validate Inaudible Acoustic Gossip Heartbeat
  */
 static inline bool ozos_gossip_beacon_verify(const ozos_gossip_beacon_t* beacon) {
     if (!beacon) return false;
@@ -84,7 +88,7 @@ static inline bool ozos_gossip_beacon_verify(const ozos_gossip_beacon_t* beacon)
 }
 
 /**
- * Thuật toán Phân xử Đồng thuận Trạng thái Merkle (Anti-Entropy Comparison)
+ * Anti-Entropy State Consensus Comparison Algorithm
  */
 static inline ozos_gossip_action_t ozos_gossip_compare_state(
     uint64_t local_merkle_root,
@@ -107,7 +111,7 @@ static inline ozos_gossip_action_t ozos_gossip_compare_state(
 }
 
 /**
- * Đóng gói Yêu cầu Kéo Cập Nhật (Gossip Pull Request 10 Bytes)
+ * Frame Gossip Pull Request (10 Bytes)
  */
 static inline void ozos_gossip_pull_build(
     ozos_gossip_pull_t* pull,

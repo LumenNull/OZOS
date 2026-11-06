@@ -1,139 +1,139 @@
 # O.Z.O.S • OMNI-ZERO OPERATING SHIELD
-## SIÊU BẢN THIẾT KẾ ĐỘC LẬP: MA TRẬN 15 TẦNG PHÒNG THỦ KHÉP KÍN (TIER 0 — TIER 14)
+## SOVEREIGN ARCHITECTURAL BLUEPRINT: 15-TIER CLOSED-LOOP DEFENSE MATRIX (TIER 0 — TIER 14)
 
-> **CẤP ĐỘ PHÂN LOẠI: TUYỆT MẬT / CHỦ QUYỀN ĐỘC LẬP (TOP SECRET / SOVEREIGN CORE)**  
-> **KIẾN TRÚC SƯ TRƯỞNG: LUMENNULL (SOVEREIGN ARCHITECT #000000)**  
-> **PHIÊN BẢN: O.Z.O.S V1.0 SOVEREIGN RELEASE (31/10/2026)**  
-> **ĐỊA CHỈ TRẠM CỤC BỘ: `OFFLINE AIR-GAPPED WORKSTATION`**
+> **CLASSIFICATION LEVEL: TOP SECRET / SOVEREIGN CORE**  
+> **PRINCIPAL ARCHITECT: LUMENNULL (SOVEREIGN ARCHITECT #000000)**  
+> **VERSION: O.Z.O.S V1.0 SOVEREIGN RELEASE (OCTOBER 2026)**  
+> **PRIMARY WORKSTATION: `OFFLINE AIR-GAPPED WORKSTATION`**
 
 ---
 
-### TRIẾT LÝ KIẾN TẠO CỦA O.Z.O.S (SOVEREIGN CREED)
+### SOVEREIGN CREED & ARCHITECTURAL FOUNDATION
 
-O.Z.O.S không phải là một tiện ích mở rộng, không phải là một công cụ văn phòng và tuyệt đối tách biệt khỏi mọi dự án thứ cấp. 
+O.Z.O.S is neither a generic browser extension nor an office utility, and remains strictly decoupled from all secondary platforms.
 
-O.Z.O.S ra đời từ sự hợp nhất giữa **tư duy toán học bảo vệ danh tính tuyệt đối của ZeroStudio** (Lưới vi mô Guilloche, 2D-DCT Steganography, Zero-Server RAM Execution) và **kiến trúc truyền tải đa kênh vật lý độc lập của Genesis Omni-Channel Hub** (WASM SIMD128, Giao thức nhị phân 80-byte, Kênh quang học QR stream, Kênh sóng âm FSK Audio Modem, và Mỏ neo phần cứng Hardware Root of Trust).
+O.Z.O.S originates from the synthesis of **ZeroStudio's uncompromising mathematical identity protection** (micro-guilloche patterns, 2D-DCT steganography, zero-server ephemeral RAM execution) and the **independent multi-channel physical transport architecture of the Genesis Omni-Channel Hub** (WASM SIMD128, 80-byte binary wire format, optical high-throughput dynamic QR streams, FSK acoustic modem, and Hardware Root of Trust anchors).
 
-Hệ thống được xây dựng trên **15 Tầng Phòng Thủ Khép Kín (Closed-Loop Defense Tiers)** bảo vệ từ cấp độ vi kiến trúc bán dẫn, thanh ghi CPU, sóng âm không gian mở cho đến vùng tối mật mã học:
+The architecture is codified into **15 Closed-Loop Defense Tiers**, enforcing defense-in-depth from semiconductor micro-architectures and CPU register banks to open acoustic airspaces and zero-knowledge cryptographic enclaves:
 
 ```
 ========================================================================================
-[TẦNG 00] CỐT THÉP TOÁN HỌC (seL4 Microkernel & Formal Verification)
-[TẦNG 01] NÃO BỘ ĐỘC LẬP (Phantom WASM Core & Tar-pit Proof-of-Work)
-[TẦNG 02] GIAO THỨC TÀNG HÌNH (Air-Gapped 2D-DCT & Ultrasonic Audio Modem)
-[TẦNG 03] KẺ GÁC CỔNG & ORACLE (Gatekeeper API & Zero-Knowledge Identity Oracle)
-[TẦNG 04] MỎ NEO PHẦN CỨNG & TỰ HỦY (Hardware USB Token, Enclave OTA & Kill-Switch)
-[TẦNG 05] TRẠM CHỈ HUY TÁC CHIẾN (Sovereign Command Center Cockpit)
-[TẦNG 06] VIỄN TRẮC MÃ HÓA CỰC BỘ (Encrypted Telemetry & Zero-Egress Memory Dumps)
-[TẦNG 07] PHÒNG THỦ BÁN DẪN VI KIẾN TRÚC (Dual-Path Anti-DFA, Anti-CPA Masking, Anti-Cold-Boot)
-[TẦNG 08] KIÊN CỐ VẬT LÝ & LỒNG FARADAY (Physical Resilience, Faraday Cage & Anti-Tamper Mesh)
-[TẦNG 09] HẬU CẦN KHÁNG KIỂM DUYỆT (Air-Gapped Logistics, Optical-Sonic Mesh Routing)
-[TẦNG 10] VÒNG LẶP KINH TẾ TỰ TRỊ (Sovereign Autonomous Identity Economic Loop)
-[TẦNG 11] PHÒNG THÍ NGHIỆM ĐỐI KHÁNG THẬT (Continuous Red Teaming & Fault Injection Lab)
-[TẦNG 12] CÂY TRẠNG THÁI MERKLE & SSI (Merkle State Tree O(log N) & Self-Sovereign Identity)
-[TẦNG 13] MẬT MÃ KHÁNG LƯỢNG TỬ & MPC (Post-Quantum Lattice/Hash & Shamir Threshold)
-[TẦNG 14] TÍNH TOÁN VÙNG TỐI TUYỆT ĐỐI (Fully Homomorphic Encryption & Dark Enclave)
+[TIER 00] MATHEMATICAL REINFORCEMENT (seL4 Microkernel & Formal Verification)
+[TIER 01] INDEPENDENT PHANTOM RUNTIME (Phantom WASM Core & Tar-Pit Proof-of-Work)
+[TIER 02] MULTI-CHANNEL STEALTH TRANSPORT (Air-Gapped 2D-DCT & Ultrasonic Audio Modem)
+[TIER 03] GATEKEEPER ORACLE (Gatekeeper API & Zero-Knowledge Identity Oracle)
+[TIER 04] SILICON ANCHORS & ZEROIZATION (Hardware USB Token, Enclave OTA & Kill-Switch)
+[TIER 05] SOVEREIGN OPERATIONAL COCKPIT (Tactical Sovereign Command Center)
+[TIER 06] LOCAL ENCRYPTED TELEMETRY (Encrypted Telemetry & Zero-Egress Memory Dumps)
+[TIER 07] SILICON-LEVEL MICRO-DEFENSE (Dual-Path Anti-DFA, Anti-CPA Masking, Anti-Cold-Boot)
+[TIER 08] PHYSICAL INTEGRITY & TEMPEST SHIELD (Physical Resilience, Faraday Cage & Anti-Tamper Mesh)
+[TIER 09] RESILIENT AIR-GAP LOGISTICS (Air-Gapped Logistics, Optical-Sonic Mesh Routing)
+[TIER 10] AUTONOMOUS ECONOMIC CIRCULATION (Sovereign Autonomous Identity Economic Loop)
+[TIER 11] EMPIRICAL ADVERSARIAL LABORATORY (Continuous Red Teaming & Fault Injection Lab)
+[TIER 12] MERKLE STATE ACCUMULATOR & SSI (Merkle State Tree O(log N) & Self-Sovereign Identity)
+[TIER 13] POST-QUANTUM CRYPTOGRAPHY & MPC (Post-Quantum Lattice/Hash & Shamir Threshold)
+[TIER 14] CONFIDENTIAL DARK COMPUTING (Fully Homomorphic Encryption & Dark Enclave)
 ========================================================================================
 ```
 
 ---
 
-## CHI TIẾT KỸ THUẬT 15 TẦNG PHÒNG THỦ O.Z.O.S
+## 15-TIER TECHNICAL DEFENSE SPECIFICATION
 
-### TẦNG 0: CỐT THÉP TOÁN HỌC (THE MATHEMATICAL FOUNDATION)
-- **Công nghệ lõi:** Vi nhân seL4 (seL4 Microkernel) được chứng minh đúng đắn bằng toán học hình thức (Formal Verification).
-- **Nguyên lý bảo vệ:** Khóa chặt quyền kiểm soát bộ nhớ và phần cứng ở cấp độ thấp nhất. Hệ thống toán học bảo đảm tuyệt đối không xảy ra lỗi tràn bộ đệm (Buffer Overflow), cô lập hoàn toàn không gian địa chỉ ảo, triệt tiêu mọi rủi ro leo thang đặc quyền (Privilege Escalation) từ kernel.
+### TIER 0: MATHEMATICAL REINFORCEMENT (THE MATHEMATICAL FOUNDATION)
+- **Core Engine:** seL4 Microkernel verified via formal mathematical logic.
+- **Security Invariant:** Enforces strict hardware and memory isolation at the lowest abstraction layer. Formally proven to eliminate buffer overflows, enforce virtual address space isolation, and prevent kernel privilege escalation.
 
-### TẦNG 1: NÃO BỘ ĐỘC LẬP (THE PHANTOM WASM CORE)
-- **Công nghệ lõi:** WebAssembly (WASM) SIMD128 được biên dịch từ C++ tối ưu bare-metal, chạy nền tàng hình tách biệt 100% khỏi luồng giao diện người dùng (UI Thread).
-- **Cơ chế bẫy "Hố hắc ín" (Tar-Pit PoW):** Bất kỳ luồng truy vấn đáng ngờ nào cũng bị ép giải bài toán tiêu hao chu kỳ CPU trước khi được phép chạm vào hàm giải mã.
-- **Cơ chế Nonce 64-bit đơn điệu:** Mọi gói tin gửi đến bắt buộc phải có giá trị $Nonce_{t} > Nonce_{last}$. Nếu $Nonce_{t} \le Nonce_{last}$, gói tin bị từ chối ngay tức thì, triệt tiêu hoàn toàn tấn công phát lại (Replay Attack).
+### TIER 1: INDEPENDENT PHANTOM RUNTIME (THE PHANTOM WASM CORE)
+- **Core Engine:** WebAssembly (WASM) SIMD128 compiled from bare-metal C++, running in an isolated background thread 100% decoupled from the UI thread.
+- **Tar-Pit Proof-of-Work (PoW):** Adversarial query bursts are trapped in dynamic CPU cycle burns before reaching core decryption primitives.
+- **Monotonic 64-Bit Nonce:** Every incoming frame strictly requires $\text{Nonce}_{t} > \text{Nonce}_{\text{last}}$. Frames violating this condition are dropped immediately, neutralizing replay attacks.
 
-### TẦNG 2: GIAO THỨC TÀNG HÌNH ĐA KÊNH AIR-GAPPED (STEALTH PROTOCOLS)
-- **Kênh Thị giác (2D-DCT Frequency Steganography):** Phân rã ảnh thành khối $8 \times 8$ trên kênh độ sáng Luminance Y. Điều chế các hệ số tần số trung bình $C(3,4), C(4,3), C(2,5)$ để cấy mộc số vô hình. Chống chịu thuật toán nén mất mát JPEG Q=75, làm mịn da và cắt xén.
-- **Kênh Thính giác (Sonic FSK Audio Modem):** Điều chế dòng byte nhị phân thành dải tần số âm thanh từ 1000Hz đến 3040Hz, với xung mở đầu Preamble 3400Hz (120ms) và Postamble 3600Hz (120ms). Cho phép 2 máy tính cách ly vật lý hoàn toàn (Air-Gapped) truyền dữ liệu mật qua Loa và Micro.
-- **Kênh Quang học (Optical Dynamic QR Stream):** Chuyển đổi gói tin 80-byte thành chuỗi QR động tốc độ cao, quét bằng camera trực tiếp mà không cần dây cáp hay sóng radio.
+### TIER 2: MULTI-CHANNEL STEALTH AIR-GAP TRANSPORT
+- **Visual Steganography (2D-DCT Frequency Steganography):** Decomposes imagery into $8 \times 8$ luminance blocks (Y). Modulates symmetric mid-frequency coefficient pairs $C(3,4), C(4,3), C(2,5)$ to inject imperceptible cryptographic watermarks resilient to JPEG lossy compression ($Q \ge 75$), scaling, and cropping.
+- **Acoustic Modem (Sonic FSK Audio Modem):** Modulates binary byte streams across audio bands (1000 Hz – 3040 Hz), framed by a 3400 Hz (120ms) preamble and a 3600 Hz (120ms) postamble. Enables physical air-gap data exchange between isolated workstations via speaker and microphone.
+- **Optical Stream (Optical Dynamic QR Stream):** Encodes 80-byte binary packets into high-framerate dynamic QR sequences, scanned via optical sensors without physical cabling or radio frequencies.
 
-### TẦNG 3: QUYỀN LỰC KẺ GÁC CỔNG & ORACLE (GATEKEEPER API & ZERO-KNOWLEDGE ORACLE)
-- **Mô hình hoạt động:** Đóng băng mã nguồn lõi, vận hành độc lập như một Oracle phán quyết danh tính tối cao.
-- **Xác thực Zero-Knowledge:** Các tổ chức tài chính/ngân hàng gửi dữ liệu kiểm tra vào O.Z.O.S để nhận về kết quả True/False kèm bằng chứng toán học chứng minh danh tính mà không bao giờ được phép xem khóa giải mã gốc hoặc can thiệp vào lõi.
+### TIER 3: GATEKEEPER API & ZERO-KNOWLEDGE ORACLE
+- **Operational Model:** Shipped as an immutable, frozen core operating as an authoritative zero-knowledge identity oracle.
+- **Zero-Knowledge Verification:** Third-party auditors submit zero-knowledge challenges to O.Z.O.S and receive deterministic mathematical proofs without accessing underlying private keys or plaintext data.
 
-### TẦNG 4: MỎ NEO PHẦN CỨNG & TỰ HỦY VI MẠCH (HARDWARE TOKEN & PHYSICAL KILL-SWITCH)
-- **Giải quyết bài toán $T=0$:** Cung cấp "Mỏ neo phần cứng" (Hardware Root of Trust) vật lý thông qua USB Security Token tích hợp Secure Enclave / TPM 2.0.
-- **Cập nhật OTA có chữ ký ly khai:** USB Token chỉ thực thi các gói Bytecode WASM ký bởi Khóa gốc Master Private Key.
-- **Cảm biến tự hủy (Anti-Tamper Kill-Switch):** Khi phát hiện xâm nhập vật lý (mở vỏ, rọi tia X, dò chân vi mạch), cảm biến phần cứng lập tức kích hoạt đoản mạch, kích nổ vi điện áp xóa sạch bộ nhớ khóa vĩnh viễn trong 2 micro-giây.
+### TIER 4: HARDWARE ANCHORS & ZEROIZATION KILL-SWITCH
+- **$T=0$ Root of Trust:** Establishes physical hardware root of trust via dedicated USB Security Tokens with embedded Secure Enclaves or TPM 2.0.
+- **Detached Signed Updates:** The token strictly accepts firmware updates bearing verified detached signatures from master cryptographic keys.
+- **Anti-Tamper Kill-Switch:** Physical tampering detectors (casing breaches, X-ray inspection, micro-probing) instantly trigger high-speed hardware zeroization, purging volatile key memory within 2 microseconds.
 
-### TẦNG 5: TRẠM CHỈ HUY TÁC CHIẾN TÁCH BIỆT (SOVEREIGN COMMAND COCKPIT)
-- **Bản chất trạm:** Ứng dụng Desktop độc lập chạy trên máy trạm cục bộ (`OFFLINE AIR-GAPPED WORKSTATION`), hoàn toàn tách rời khỏi các tiện ích web công cộng.
-- **6 Phân khu tác chiến:**
-  1. *Shield Forge:* Rèn giáp CCCD Guilloche & Dấu chéo 45° chống eKYC Deepfake.
-  2. *Spectral Spyglass:* Kính soi ma trận tần số 2D-DCT bóc tách nguồn rò rỉ nội bộ.
-  3. *Air-Gap Tx:* Trạm phát sóng quang học QR và sóng âm FSK.
-  4. *Air-Gap Rx:* Trạm thu nhận Camera QR và Micro FFT thời gian thực.
-  5. *Sovereign P2P:* Đường hầm WebRTC trực tiếp không máy chủ trung gian.
-  6. *Local Vault & Telemetry:* Két sắt chống sửa bit F12 và radar giám sát 0-byte egress.
+### TIER 5: SOVEREIGN OPERATIONAL COCKPIT
+- **Workstation Isolation:** Standalone desktop application executing on local air-gapped workstations (`OFFLINE AIR-GAPPED WORKSTATION`), independent of external services.
+- **Tactical Stations:**
+  1. *Shield Forge:* Generates micro-guilloche identity laminates with 45° anti-eKYC deepfake geometry.
+  2. *Spectral Spyglass:* 2D-DCT frequency heatmap inspection for leak tracing.
+  3. *Air-Gap Tx:* High-assurance optical QR and FSK acoustic transmission station.
+  4. *Air-Gap Rx:* Camera QR scanner and real-time Goertzel FFT receiver.
+  5. *Sovereign P2P:* Direct, brokerless WebRTC peer channels.
+  6. *Local Vault & Telemetry:* Hardened local storage resistant to memory alteration and continuous 0-byte egress monitoring.
 
-### TẦNG 6: VIỄN TRẮC MÃ HÓA CỤC BỘ (ENCRYPTED TELEMETRY & ZERO-LEAKAGE DUMPS)
-- **Thu thập chẩn đoán 0 rò rỉ:** Khi xảy ra sự cố sập ứng dụng, bộ nhớ crash dump được mã hóa cục bộ bằng khóa công khai bất đối xứng trước khi ghi vào nhật ký.
-- **Zero-Egress Radar:** Đồng hồ vi mô độ phân giải cao liên tục giám sát mọi socket mạng; nếu phát hiện 1 byte dữ liệu ngoài ý muốn thoát ra Internet, hệ thống lập tức ngắt toàn bộ card mạng (Network Kill-Switch).
+### TIER 6: LOCAL ENCRYPTED TELEMETRY & ZERO-LEAKAGE DUMPS
+- **Zero-Leakage Diagnostic Invariants:** Critical exceptions trigger asymmetric-encrypted crash dumps written strictly to local storage.
+- **Zero-Egress Radar:** Microsecond-precision socket telemetry continuously monitors system network interfaces; unauthorized external byte transmissions trigger an immediate network kill-switch.
 
-### TẦNG 7: PHÒNG THỦ BÁN DẪN VI KIẾN TRÚC (SILICON-LEVEL HARDENING)
-- **Bố cục gói tin Zero-Padding SIMD (Căn chỉnh 16-byte):**
-  - Offset `0x00 - 0x3F`: `float32 dct_coeffs[16]` (`alignas(16)` chuẩn SIMD vector).
-  - Offset `0x40 - 0x47`: `uint64_t nonce` (căn chỉnh 8-byte).
-  - Offset `0x48 - 0x4B`: `uint32_t magic = 0x47454E01` (căn chỉnh 4-byte).
-  - Offset `0x4C - 0x4D`: `uint16_t payload_len` (căn chỉnh 2-byte).
-  - Offset `0x4E - 0x4F`: `uint16_t header_mac16` (MAC cổng gác hoàn thiện 80 bytes).
-- **Chống Bắn Tia Laser (Dual-Path Anti-DFA Execution):**
-  - Luồng 1: FPU SIMD 128-bit float32 duyệt xuôi $0 \to 15$.
-  - Luồng 2: ALU số nguyên dấu phẩy tĩnh Q15.16 duyệt ngược $15 \to 0$.
-  - Cách ly bằng rào chắn trình biên dịch `COMPILER_BARRIER()`. Nếu 2 luồng lệch nhau quá ngưỡng hoặc phát hiện lỗi phần cứng, kích hoạt xóa trắng RAM ngay lập tức.
-- **Triệt tiêu Lỗi Bất Định (Zero-FPU UB Trap):** Sử dụng mặt nạ bit kẹp chặt số mũ (Bitwise Exponent Clamping) để ép số mũ lớn về miền an toàn trước khi ép kiểu sang int32, ngăn chặn lỗi trap CPU và sai lệch đa nền tảng.
-- **Chống Đo Dao Động Ký Công Suất (Anti-CPA Masking):** Kỹ thuật Masking bậc 1 tách khóa bí mật thành 2 phần ngẫu nhiên $S = S_0 \oplus S_1$ để san phẳng đồ thị tiêu thụ năng lượng.
-- **Chống Đóng Băng Nitơ Lỏng & Lão Hóa BTI (Anti-Cold-Boot):** Bộ nhớ động hồi chuyển (Memory Rolling) luân chuyển dữ liệu liên tục trong RAM bằng số ngẫu nhiên phần cứng, tự hủy bằng 3 lớp ghi đè (`0xAA`, `0x55`, `0x00`).
-- **Cổng gác Siêu nhẹ MAC16 & Leaky Bucket Throttling:** Chạy Dry-Run Nonce check ở tầng 80-byte để chống tràn cửa sổ Replay, kết hợp thuật toán rò rỉ xô (Leaky Bucket) hạ nhiệt ngắt khi có bão gói DoS.
+### TIER 7: SILICON-LEVEL MICRO-DEFENSE (HARDENED C99/C++ CORE)
+- **Zero-Padding SIMD Framing (16-Byte Aligned):**
+  - Offset `0x00 - 0x3F`: `float32 dct_coeffs[16]` (`alignas(16)` SIMD vector boundary).
+  - Offset `0x40 - 0x47`: `uint64_t nonce` (8-byte boundary).
+  - Offset `0x48 - 0x4B`: `uint32_t magic = 0x47454E01` (4-byte boundary).
+  - Offset `0x4C - 0x4D`: `uint16_t payload_len` (2-byte boundary).
+  - Offset `0x4E - 0x4F`: `uint16_t header_mac16` (2-byte tripwire CRC16 completing the 80-byte header).
+- **Dual-Path Anti-DFA Execution:**
+  - Pipeline 1: 128-bit Float32 SIMD FPU evaluates forward $0 \to 15$.
+  - Pipeline 2: Fixed-point Q15.16 integer ALU evaluates reverse $15 \to 0$.
+  - Enforces compiler barriers (`COMPILER_BARRIER()`). Bit discrepancies or fault injections immediately trigger volatile zeroization.
+- **Zero-FPU UB Trap:** Bitwise exponent clamping confines large floats to safe integer ranges prior to int32 casting, neutralizing CPU traps and cross-platform divergence.
+- **Anti-CPA First-Order Masking:** Splits sensitive key shares ($S = S_0 \oplus S_1$) to flatten differential power consumption curves.
+- **Anti-Cold-Boot Defense:** Memory rolling cycles sensitive buffers with hardware randomness, executing 3-pass overwrites (`0xAA`, `0x55`, `0x00`) upon exit.
+- **Tripwire MAC16 & Leaky Bucket Throttling:** Dry-run pre-filtering of 80-byte headers prevents replay buffer exhaustion, backed by leaky bucket rate limiting against DoS bursts.
 
-### TẦNG 8: TÍNH KIÊN CỐ VẬT LÝ & LỒNG FARADAY (PHYSICAL RESILIENCE)
-- **Vỏ bọc Lồng Faraday:** Thiết bị phần cứng được bọc lớp hợp kim chống bức xạ điện từ, triệt tiêu khả năng thu trộm tín hiệu phát xạ (TEMPEST) từ chip.
-- **Lưới bảo vệ vi cơ (Anti-Tamper Mesh):** Các đường dây mạch vi mô chạy chéo trên bề mặt chip; nếu kẻ tấn công mài mòn chip hoặc rọi tia X làm đứt 1 sợi dây nano, mạch logic sẽ ngắt nguồn và xóa sạch khóa phiên.
+### TIER 8: PHYSICAL INTEGRITY & TEMPEST FARADAY RESILIENCE
+- **Faraday Enclosure:** Hardware chassis incorporate electromagnetic radiation attenuation layers to suppress TEMPEST side-channel RF leakage.
+- **Anti-Tamper Active Mesh:** Serpentine micro-wiring traces crisscross the chip surface; severed nano-traces cut power rails and vaporize volatile session keys.
 
-### TẦNG 9: HẬU CẦN KHÁNG KIỂM DUYỆT (AIR-GAPPED LOGISTICS & MESH ROUTING)
-- **Định tuyến Mesh Ngoại tuyến:** Truyền tải dữ liệu qua mạng lưới vô tuyến đa chặng (Multi-hop Mesh) và sóng âm giữa các thiết bị ngoại tuyến, hoàn toàn vô hiệu hóa mọi bức tường lửa quốc gia (Firewall) hoặc kiểm duyệt sâu gói tin (DPI).
-- **Cập nhật tàng hình:** Các gói bản vá phần mềm được giấu sâu bên trong các tệp đa phương tiện vô hại (Steganographic Carrier).
+### TIER 9: RESILIENT AIR-GAP LOGISTICS & MESH ROUTING
+- **Offline Mesh Routing:** Multi-hop wireless and acoustic relay networks route data between air-gapped endpoints, bypassing state firewalls and deep packet inspection (DPI).
+- **Covert Channels:** Software patches and critical telemetry can be carried within steganographic carrier media.
 
-### TẦNG 10: VÒNG LẶP KINH TẾ TỰ TRỊ (SOVEREIGN AUTONOMOUS ECONOMIC LOOP)
-- **Hệ thống thanh toán khép kín:** Thu phí định danh thông qua các kênh phi tập trung, hợp đồng thông minh tự trị, miễn nhiễm hoàn toàn với các lệnh trừng phạt hoặc phong tỏa tài khoản ngân hàng truyền thống (SWIFT/Visa).
+### TIER 10: AUTONOMOUS ECONOMIC CIRCULATION
+- **Self-Contained Settlement:** Decentralized identity issuance and verification pipelines execute via peer-to-peer protocols, immune to centralized payment channel freezes.
 
-### TẦNG 11: PHÒNG THÍ NGHIỆM ĐỐI KHÁNG THỰC CHIẾN (CONTINUOUS RED TEAMING & FAULT LAB)
-- **Mô phỏng tấn công thời gian thực:** Phòng lab tích hợp sẵn các kịch bản Voltage Glitching, đảo bit RAM, ném gói tin dị dạng để hệ thống tự phát hiện điểm yếu và vá lỗi tự động.
+### TIER 11: EMPIRICAL ADVERSARIAL LABORATORY (CONTINUOUS RED TEAMING)
+- **Live Fault Injection Harness:** Integrated suites simulate voltage glitching, bit-flip corruption, and malformed frames to empirically verify fail-closed invariants.
 
-### TẦNG 12: CÂY TRẠNG THÁI MERKLE & ĐỊNH DANH TỰ CHỦ (MERKLE STATE TREE & SSI)
-- **Cây Merkle $O(\log N)$:** Toàn bộ trạng thái khóa và giao dịch được liên kết trong cây Merkle nhị phân. Xác thực bằng chứng gói tin chỉ mất $h = \log_2 N$ phép băm, tiết kiệm tài nguyên vi điều khiển tuyệt đối và chống tua ngược lịch sử (Anti-Rollback).
-- **Self-Sovereign Identity (SSI):** Người dùng làm chủ danh tính số của chính mình bằng cặp khóa mật mã bất đối xứng, không phụ thuộc vào bất kỳ nhà cấp phát chứng chỉ tập trung (CA) nào.
+### TIER 12: MERKLE STATE ACCUMULATOR & SELF-SOVEREIGN IDENTITY (SSI)
+- **$O(\log N)$ Merkle Accumulator:** System states and identity commitments root in binary Merkle trees. Verification proofs require $h = \log_2 N$ hashes, providing anti-rollback protection for embedded targets.
+- **Self-Sovereign Identity (SSI):** Users maintain mathematical control of their cryptographic identities using detached asymmetric keypairs without certificate authority (CA) reliance.
 
-### TẦNG 13: MẬT MÃ KHÁNG LƯỢNG TỬ & MPC (POST-QUANTUM & SHAMIR SECRET SHARING)
-- **Mật mã dựa trên lưới (Lattice-based PQC):** Tích hợp thuật toán kháng máy tính lượng tử (chuẩn NIST Crystals-Kyber cho mã hóa khóa và Crystals-Dilithium cho chữ ký số).
-- **Khôi phục thảm họa phân rã (Shamir's Secret Sharing):** Chia nhỏ khóa Master Key thành $n$ mảnh; hệ thống chỉ có thể phục hồi khi có đủ sự đồng thuận của tối thiểu $k$ trên $n$ người nắm giữ cổ phần khóa.
+### TIER 13: POST-QUANTUM CRYPTOGRAPHY & MPC THRESHOLD SCHEMES
+- **Lattice-Based Post-Quantum Primitives:** Implements NIST-standardized quantum-resistant algorithms (Crystals-Kyber for key exchange, Crystals-Dilithium for signatures).
+- **Shamir's Secret Sharing (SSS):** Splits the sovereign master key into $n$ polynomial shares, requiring a minimum quorum $k$ of $n$ to reconstitute identity.
 
-### TẦNG 14: TÍNH TOÁN VÙNG TỐI TUYỆT ĐỐI (FULLY HOMOMORPHIC ENCRYPTION & DARK ENCLAVE)
-- **Mã hóa đồng cấu toàn phần (FHE):** Cho phép thực hiện các phép toán đại số trực tiếp trên dữ liệu đang bị mã hóa mà không cần giải mã ra văn bản gốc.
-- **Vùng tối Enclave:** Dữ liệu sinh trắc học và khóa định danh của người dùng luôn ở trạng thái mã hóa 100% trong suốt quá trình xử lý, biến O.Z.O.S thành một chiếc "Hộp đen bất khả tri" (Blind Oracle) ngay cả khi kẻ tấn công đứng nhìn trực tiếp dòng điện trên bo mạch.
+### TIER 14: CONFIDENTIAL DARK COMPUTING (FHE & SECURE ENCLAVES)
+- **Fully Homomorphic Encryption (FHE):** Enables algebraic operations directly on ciphertext payloads without plaintext exposure.
+- **Dark Enclave Execution:** Biometric templates and cryptographic credentials remain 100% encrypted during processing, creating a blind oracle even under direct silicon-level physical observation.
 
 ---
 
-## MA TRẬN ÁNH XẠ KIẾN TRÚC MÃ NGUỒN O.Z.O.S THỰC THỂ
+## CONCRETE SOURCE CODE IMPLEMENTATION MATRIX
 
-| Tầng Phòng Thủ | Module Mã Nguồn Thực Thi | Vị Trí Trong O.Z.O.S | Trạng Thái Hoạt Động |
+| Defense Tier | Target Implementation Module | Repository Location | Production Status |
 | :--- | :--- | :--- | :--- |
 | **Tier 0 & 1** | `zero_dct.wasm` (SIMD128, PoW Tar-pit) | `core/zero_dct.wasm` | 🟢 Active (Bare-metal WASM) |
-| **Tier 2** | `ozos-engine.js` (2D-DCT, FSK Audio, QR) | `ozos-engine.js` | 🟢 Active (Air-Gapped 3 Limbs) |
-| **Tier 3 & 4** | `genesis-shield.js` (80B Packet, Nonce) | `core/genesis-shield.js` | 🟢 Active (Tripwire Audit) |
-| **Tier 5** | `index.html` (6-Station Cockpit) | `index.html` | 🟢 Active (Local Port 8899) |
-| **Tier 6** | `TelemetryRadar` (0-Byte Egress Audit) | `ozos-engine.js` | 🟢 Active (0 Bytes Monitored) |
+| **Tier 2** | `ozos-engine.js` (2D-DCT, FSK Audio, QR) | `contrib/web-cockpit/ozos-engine.js` | 🟢 Active (Air-Gapped 3 Limbs) |
+| **Tier 3 & 4** | `genesis-shield.js` (80B Packet, Nonce) | `contrib/web-cockpit/genesis-shield.js` | 🟢 Active (Tripwire Audit) |
+| **Tier 5** | `index.html` (6-Station Cockpit) | `contrib/web-cockpit/index.html` | 🟢 Active (Local Port 8899) |
+| **Tier 6** | `TelemetryRadar` (0-Byte Egress Audit) | `contrib/web-cockpit/ozos-engine.js` | 🟢 Active (0 Bytes Monitored) |
 | **Tier 7** | `ozos_hardened_core.cpp` (Anti-DFA, CPA, UB) | `core/ozos_hardened_core.cpp`| 🟢 Hardened C++ Source |
-| **Tier 8 — 11** | `HardwareEnclaveSimulation` (Anti-Glitch) | `ozos-engine.js` | 🟢 Active in Engine |
-| **Tier 12** | `MerkleStateEngine` ($O(\log N)$ Tree) | `ozos-engine.js` | 🟢 Active (Anti-Rollback) |
-| **Tier 13 & 14**| `QuantumLatticeEnclave` (PQC/FHE stub) | `ozos-engine.js` | 🟢 Mathematical Formalism |
+| **Tier 8 — 11** | `HardwareEnclaveSimulation` (Anti-Glitch) | `contrib/web-cockpit/ozos-engine.js` | 🟢 Active in Engine |
+| **Tier 12** | `MerkleStateEngine` ($O(\log N)$ Tree) | `contrib/web-cockpit/ozos-engine.js` | 🟢 Active (Anti-Rollback) |
+| **Tier 13 & 14**| `QuantumLatticeEnclave` (PQC/FHE stub) | `contrib/web-cockpit/ozos-engine.js` | 🟢 Mathematical Formalism |
 
 ---
-**BẢN THIẾT KẾ ĐÃ ĐƯỢC CHỐT HẠ VÀ BAN HÀNH ĐỘC LẬP TẠI TRẠM TÁC CHIẾN O.Z.O.S.**
+**ARCHITECTURAL SPECIFICATION FORMALLY RATIFIED AND PUBLISHED FOR O.Z.O.S.**

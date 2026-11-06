@@ -11,14 +11,14 @@ Following the exhaustive 13-round adversarial audit gauntlet conducted by the Re
 
 ## Part I: Post-Mortem Retrospective & Core Lessons (Rounds 1–13)
 
-### 1. The Glue Code & Coercion Trap (Lỗ Hổng Nằm Ở Mép Nối)
+### 1. The Glue Code & Coercion Trap (Perimeter Boundary Vulnerabilities)
 * **Empirical Fact:** Cryptographic primitives (Ed25519, X25519, Poly1305, 2D-DCT) were never broken mathematically. Vulnerabilities emerged exclusively at platform boundaries:
   - Language type coercion (e.g., Python `isinstance(True, int) == True`, JS silent fallback on unparseable floors).
   - Unbounded integer wraps (e.g., JS `DataView.setBigUint64` wrapping modulo $2^{64}$ without exceptions).
   - Permissive CLI flag parsers silently swallowing misspelled options (e.g., `--pinned-peer-pubky`).
 * **Sovereign Invariant:** Every boundary must operate on a **strict fail-closed parsing model**. Any unexpected character, boolean coercion, or malformed flag must immediately abort execution with exit code 1.
 
-### 2. Elimination of "Security Theater" (Tuyệt Đối Không Trấn An Giả Tạo)
+### 2. Elimination of "Security Theater" (Zero Deceptive Assurance)
 * **Empirical Fact:** Verification tools that note anomalies without non-zero exit codes (e.g., audit scripts alerting on source drift while returning 0) create false confidence worse than missing features. Similarly, displaying "VERIFIED" verdicts before validating pinned trust anchors creates fatal blind spots.
 * **Sovereign Invariant:** If an integrity condition is not 100% verified, the system must fail deadly. Documentation and runtime outputs must disclose exact cryptographic states without aspirational claims.
 
@@ -26,7 +26,7 @@ Following the exhaustive 13-round adversarial audit gauntlet conducted by the Re
 * **Empirical Fact:** Hann-windowed near-ultrasound (18.1–19.8 kHz) is inaudible to human ears, but perfectly audible to recording sensors, loudspeakers, and RF/acoustic transceivers. Unauthenticated acoustic handshakes permit trivial replay, spoofing, and selective jamming.
 * **Sovereign Invariant:** Physical acoustic links must always be treated as unauthenticated, adversarial broadcast media. Mutual peer authentication via pinned public keys (`--pinned-peer-pubkey`) and Perfect Forward Secrecy (PFS) are mandatory for unattended environments.
 
-### 4. The Fail-Deadly Principle (Chết Sạch Để Bảo Vệ Chủ Quyền)
+### 4. The Fail-Deadly Principle (Total Sanitization to Protect Sovereignty)
 * **Empirical Fact:** Attempting to recover from fault injections (laser glitches, clock glitches, corrupted Merkle roots) risks leaking intermediate key residue.
 * **Sovereign Invariant:** Upon detecting state corruption, the microkernel executes emergency volatile RAM zeroization (NIST SP 800-88 compliant 3-pass purge), asserts hardware crowbar resets, and collapses execution to void.
 
@@ -51,7 +51,7 @@ flowchart TD
 
 ---
 
-### Pillar 1: Freestanding RISC-V Hardware Token (Thoát Ly Khỏi Host OS)
+### Pillar 1: Freestanding RISC-V Hardware Token (Decoupled from Host OS)
 * **Objective:** Decouple O.Z.O.S from host OS dependencies (Windows/Linux/macOS) by compiling the C99 microkernel into a freestanding, zero-libc (`-nostdlib`) firmware image.
 * **Target Platforms:** Ultra-low-cost, auditable RISC-V microcontrollers (e.g. ESP32-S3 with hardware crypto accelerators, CH32V series).
 * **Hardware Form Factor:**

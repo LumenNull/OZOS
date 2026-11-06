@@ -27,7 +27,7 @@ int main(void) {
     /* -------------------------------------------------------------------------
        TEST 1: Fast Radix-2 FFT/IFFT Inversion & Precision
        ------------------------------------------------------------------------- */
-    printf("[TEST 1/5] Kiem Tra FFT/IFFT Radix-2 C99 Bare-Metal Precision...\n");
+    printf("[TEST 1/5] Radix-2 Cooley-Tukey FFT/IFFT C99 Precision...\n");
     {
         float real[OZOS_OMNI_FFT_N];
         float imag[OZOS_OMNI_FFT_N];
@@ -58,7 +58,7 @@ int main(void) {
     /* -------------------------------------------------------------------------
        TEST 2: Optical Glyph 32x32 Matrix Encoding & Decoding (16ms)
        ------------------------------------------------------------------------- */
-    printf("\n[TEST 2/5] Kiem Tra Optical Glyph 32x32 Matrix (Quang Hoc 16ms)...\n");
+    printf("\n[TEST 2/5] Optical Glyph 32x32 Matrix & CRC32-IEEE (16ms Latency)...\n");
     {
         uint8_t packet[80];
         for (int i = 0; i < 80; ++i) packet[i] = (uint8_t)(0x5A ^ i);
@@ -82,7 +82,7 @@ int main(void) {
         matrix[10][10] ^= 1;
         int tamper_rc = ozos_glyph_decode(matrix, rec_packet, &rec_len);
         if (tamper_rc != 0) {
-            printf("  -> [PASS] Phat hien lat 1 bit trong Optical Matrix: BI TU CHOI (rc=%d)\n", tamper_rc);
+            printf("  -> [PASS] Detected 1-bit mutation in Optical Matrix: REJECTED (rc=%d)\n", tamper_rc);
         } else {
             printf("  -> [FAIL] Khong phat hien tamper tren Optical Matrix!\n");
             failed++;
@@ -92,7 +92,7 @@ int main(void) {
     /* -------------------------------------------------------------------------
        TEST 3: Optical Glyph BMP File Export & Image Scanning
        ------------------------------------------------------------------------- */
-    printf("\n[TEST 3/5] Kiem Tra Optical Glyph BMP Render & Camera Scan Simulation...\n");
+    printf("\n[TEST 3/5] Optical Glyph BMP 256x256 Render & Spatial Pixel Sampling...\n");
     {
         uint8_t packet[80];
         for (int i = 0; i < 80; ++i) packet[i] = (uint8_t)(0xC3 + i);
@@ -121,7 +121,7 @@ int main(void) {
     /* -------------------------------------------------------------------------
        TEST 4: Acoustic OFDM & Ambient Steganography (< 0.4s Transmission)
        ------------------------------------------------------------------------- */
-    printf("\n[TEST 4/5] Kiem Tra Acoustic OFDM & Ambient Steganography (< 0.4s)...\n");
+    printf("\n[TEST 4/5] Acoustic Multi-Carrier OFDM & Ambient Steganography (< 40ms)...\n");
     {
         uint8_t packet[80];
         for (int i = 0; i < 80; ++i) packet[i] = (uint8_t)(0x42 + i * 3);
@@ -163,7 +163,7 @@ int main(void) {
     /* -------------------------------------------------------------------------
        TEST 5: Long-Range LoRa Sub-GHz Framing (84-byte Serial Adapter)
        ------------------------------------------------------------------------- */
-    printf("\n[TEST 5/5] Kiem Tra Long-Range LoRa Sub-GHz Framing (84-byte Frame)...\n");
+    printf("\n[TEST 5/5] Long-Range LoRa Sub-GHz 84-Byte Frame & CRC16-CCITT...\n");
     {
         uint8_t packet[80];
         for (int i = 0; i < 80; ++i) packet[i] = (uint8_t)(0x77 ^ i);
@@ -189,7 +189,7 @@ int main(void) {
         frame[40] ^= 0x01;
         int lora_tamper_rc = ozos_lora_frame_unpack(frame, frame_len, unpacked, &unpacked_len);
         if (lora_tamper_rc != 0) {
-            printf("  -> [PASS] Phat hien sua doi 1 bit tren LoRa Frame: BI TU CHOI (rc=%d)\n", lora_tamper_rc);
+            printf("  -> [PASS] Detected 1-bit mutation on LoRa Frame: REJECTED (rc=%d)\n", lora_tamper_rc);
         } else {
             printf("  -> [FAIL] Khong phat hien sua doi LoRa frame!\n");
             failed++;
@@ -198,7 +198,7 @@ int main(void) {
 
     printf("\n=================================================================\n");
     if (failed == 0) {
-        printf("  🏆 KẾT QUẢ: 5/5 BÀI THI OMNI-SPECTRUM COGNITIVE PHY PASS 100%%!\n");
+        printf("  [RESULT] 5/5 OMNI-SPECTRUM COGNITIVE PHY SUITE TESTS PASSED 100%%!\n");
         printf("  SUCCESSFULLY IMPLEMENTED 3 TIERS: OPTICAL, OFDM & LORA (TIER 4 SKYWAVE PLANNED).\n");
         printf("=================================================================\n");
         return 0;

@@ -86,8 +86,8 @@ class OZOSEngine {
         this.rxState = 'IDLE'; // IDLE, PREAMBLE, RECEIVING
         
         // Upgraded Orthogonal Dual-Nibble 16-FSK Parameters (Anti-Drift & Anti-Collision)
-        this.FREQ_CH0_BASE = 1600;       // Kênh 0 (Low Nibble 0..15): 1600 Hz - 2560 Hz
-        this.FREQ_CH1_BASE = 2800;       // Kênh 1 (High Nibble 0..15): 2800 Hz - 3760 Hz
+        this.FREQ_CH0_BASE = 1600;       // Channel 0 (Low Nibble 0..15): 1600 Hz - 2560 Hz
+        this.FREQ_CH1_BASE = 2800;       // Channel 1 (High Nibble 0..15): 2800 Hz - 3760 Hz
         this.FREQ_STEP_64 = 64;          // 64 Hz step (> 3x FFT bin 21.5 Hz -> Zero collision)
         this.FREQ_PREAMBLE_LO = 1350;    // Preamble Tone Lo
         this.FREQ_PREAMBLE_HI = 4050;    // Preamble Tone Hi
@@ -97,8 +97,8 @@ class OZOSEngine {
         this.PREAMBLE_DURATION_SEC = 0.12; // 120ms
 
         // Near-Ultrasound Inaudible Air-Gap Parameters (18 kHz - 20 kHz)
-        this.STEALTH_CH0_BASE = 18100;     // Kênh 0 (Low Nibble 0..15): 18,100 Hz - 18,850 Hz
-        this.STEALTH_CH1_BASE = 19000;     // Kênh 1 (High Nibble 0..15): 19,000 Hz - 19,750 Hz
+        this.STEALTH_CH0_BASE = 18100;     // Channel 0 (Low Nibble 0..15): 18,100 Hz - 18,850 Hz
+        this.STEALTH_CH1_BASE = 19000;     // Channel 1 (High Nibble 0..15): 19,000 Hz - 19,750 Hz
         this.STEALTH_STEP_HZ = 50;         // 50 Hz step
         this.STEALTH_PREAMBLE_LO = 17900;  // Stealth Preamble Lo
         this.STEALTH_PREAMBLE_HI = 19900;  // Stealth Preamble Hi
@@ -112,8 +112,8 @@ class OZOSEngine {
     }
 
     /**
-     * Khởi tạo Lõi WASM (Tier 0 & Tier 1)
-     * Ưu tiên nạp Bytecode nhúng trực tiếp trong RAM (Zero Network Fetch, Zero CORS Error)
+     * Initialize WASM Core (Tier 0 & Tier 1)
+     * Prioritizes bytecode embedded directly in RAM (Zero Network Fetch, Zero CORS Error)
      */
     async init() {
         if (this.isReady) return true;
@@ -135,7 +135,7 @@ class OZOSEngine {
                              (typeof window !== 'undefined' && window.createZeroDctModule ? window.createZeroDctModule : null);
             
             if (!createFn) {
-                throw new Error("Lõi createZeroDctModule không tìm thấy.");
+                throw new Error("createZeroDctModule core not found.");
             }
 
             const moduleConfig = wasmBinary ? { 
@@ -154,61 +154,61 @@ class OZOSEngine {
             if (this.wasm._dct_init) this.wasm._dct_init();
             return true;
         } catch (e) {
-            console.error("[OZOS] Lỗi khởi tạo lõi WASM:", e);
+            console.error("[OZOS] WASM core initialization error:", e);
             throw e;
         }
     }
 
     // =========================================================================
-    // 1. TẦNG BẢO MẬT & ĐÓNG GÓI NHỊ PHÂN 80-BYTE (GENESIS PACKET PROTOCOL)
+    // 1. 80-BYTE BINARY FRAMING & SECURITY TIER (GENESIS PACKET PROTOCOL)
     // =========================================================================
     
     static _parseStrictNonce(val, paramName = "Nonce") {
         if (val === null || val === undefined) return null;
         if (typeof val === 'boolean' || Array.isArray(val) || typeof val === 'symbol' || (typeof val === 'object' && val !== null)) {
-            throw new TypeError(`${paramName} không hợp lệ: Không chấp nhận kiểu dữ liệu không chuẩn (${typeof val}).`);
+            throw new TypeError(`${paramName} invalid: Non-standard data type rejected (${typeof val}).`);
         }
         if (typeof val === 'string') {
             if (!/^\d+$/.test(val)) {
-                throw new TypeError(`${paramName} dạng chuỗi phải chứa toàn bộ chữ số nguyên dương thập phân (không chứa dấu cách, chữ cái hoặc số âm).`);
+                throw new TypeError(`${paramName} string format must contain positive decimal digits only.`);
             }
         } else if (typeof val === 'number') {
             if (!Number.isSafeInteger(val) || val < 0 || Object.is(val, -0)) {
-                throw new RangeError(`${paramName} dạng số phải là số nguyên an toàn không âm (không phải float, NaN, Infinity hoặc số âm).`);
+                throw new RangeError(`${paramName} numeric format must be a non-negative safe integer.`);
             }
         } else if (typeof val !== 'bigint') {
-            throw new TypeError(`${paramName} không hợp lệ: Kiểu dữ liệu không được hỗ trợ.`);
+            throw new TypeError(`${paramName} invalid: Unsupported data type.`);
         }
 
         let parsed;
         try {
             parsed = BigInt(val);
         } catch (e) {
-            throw new TypeError(`${paramName} không thể chuyển đổi thành BigInt: ` + e.message);
+            throw new TypeError(`${paramName} cannot be converted to BigInt: ` + e.message);
         }
         if (parsed < 0n || parsed > 0xFFFFFFFFFFFFFFFFn) {
-            throw new RangeError(`${paramName} nằm ngoài phạm vi 64-bit không dấu [0, 2^64-1]: ${parsed}`);
+            throw new RangeError(`${paramName} out of unsigned 64-bit range [0, 2^64-1]: ${parsed}`);
         }
         return parsed;
     }
 
     buildPacket(payloadStr, customNonce = null, magic = 0x47454E01) {
         if (typeof payloadStr === 'symbol') {
-            throw new TypeError("Payload không được phép là kiểu Symbol.");
+            throw new TypeError("Payload type Symbol is not permitted.");
         }
         const payloadBytes = (payloadStr instanceof Uint8Array)
             ? payloadStr
             : new TextEncoder().encode(payloadStr === undefined || payloadStr === null ? "" : String(payloadStr));
         if (payloadBytes.length > 65535) {
-            throw new RangeError(`Payload vượt quá giới hạn tối đa của khung dữ liệu 16-bit (${payloadBytes.length} > 65535 bytes).`);
+            throw new RangeError(`Payload exceeds maximum 16-bit framing limit (${payloadBytes.length} > 65535 bytes).`);
         }
 
         let nextNonce;
         if (customNonce !== null && customNonce !== undefined) {
-            nextNonce = OZOSEngine._parseStrictNonce(customNonce, "Nonce tùy chỉnh");
+            nextNonce = OZOSEngine._parseStrictNonce(customNonce, "Custom nonce");
         } else {
             if (this.currentNonce >= 0xFFFFFFFFFFFFFFFFn) {
-                throw new Error("Tràn bộ đếm Nonce (Nonce đạt cực đại 2^64-1). Yêu cầu thiết lập lại Nonce chủ quyền.");
+                throw new Error("Nonce counter overflow (reached 2^64-1 maximum). Reset required.");
             }
             nextNonce = this.currentNonce + 1n;
         }
@@ -227,11 +227,11 @@ class OZOSEngine {
         view.setBigUint64(4, this.currentNonce, true);
 
         // 3. Cognitive Fingerprint / Reserved (64 bytes, offset 12..75)
-        // 15 hệ số nhận thức (slots 0..14)
+        // 15 perceptual fingerprint coefficients (slots 0..14)
         for (let i = 0; i < 15; i++) {
             view.setFloat32(12 + i * 4, 1.0 + (i * 0.1), true);
         }
-        // Slot 15 (Offset 72 - 75): FNV-1a 32-bit payload checksum (tương thích GenesisShield)
+        // Slot 15 (Offset 72 - 75): FNV-1a 32-bit payload checksum (GenesisShield compatible)
         let payloadChecksum = 0x811C9DC5;
         for (let i = 0; i < payloadBytes.length; i++) {
             payloadChecksum = Math.imul(payloadChecksum ^ payloadBytes[i], 0x01000193) >>> 0;
@@ -254,12 +254,12 @@ class OZOSEngine {
 
     validatePacket(packetUint8, lastSeenNonce = null) {
         if (!packetUint8 || !(packetUint8 instanceof Uint8Array) || packetUint8.length < 80) {
-            return { valid: false, code: -1, error: "Gói tin không hợp lệ hoặc nhỏ hơn 80 bytes (Kích thước tối thiểu)." };
+            return { valid: false, code: -1, error: "Invalid packet or smaller than 80 bytes (minimum size)." };
         }
 
-        // BẮT BUỘC: Lõi WASM phải được khởi tạo thành công trước khi thẩm định
+        // ENFORCED: WASM core must be initialized before validation
         if (!this.wasm || !this.wasm._parse_and_validate_packet) {
-            return { valid: false, code: -1, error: "Lõi WASM chưa được khởi tạo. Từ chối thẩm định bảo vệ chủ quyền." };
+            return { valid: false, code: -1, error: "WASM core not initialized. Validation rejected fail-closed." };
         }
 
         let parsedNonce = null;
@@ -274,15 +274,15 @@ class OZOSEngine {
             ? parsedNonce
             : this.lastSeenPeerNonce;
         if (effectiveLastNonce < 0n || effectiveLastNonce > 0xFFFFFFFFFFFFFFFFn) {
-            return { valid: false, code: 3, error: `Giá trị Nonce không hợp lệ (nằm ngoài phạm vi 64-bit không dấu [0, 2^64-1]): ${effectiveLastNonce}` };
+            return { valid: false, code: 3, error: `Invalid Nonce value (out of unsigned 64-bit range [0, 2^64-1]): ${effectiveLastNonce}` };
         }
 
-        // Kiểm tra hệ số chấm động độc hại trong fingerprint slots (NaN / Infinity)
+        // Validate fingerprint slots against poisoned floats (NaN / Infinity)
         const viewInitial = new DataView(packetUint8.buffer, packetUint8.byteOffset, packetUint8.byteLength);
         for (let i = 0; i < 15; i++) {
             const val = viewInitial.getFloat32(12 + i * 4, true);
             if (!Number.isFinite(val)) {
-                return { valid: false, code: 7, error: "Phát hiện hệ số chấm động độc hại (NaN hoặc Infinity trong fingerprint slots)" };
+                return { valid: false, code: 7, error: "Poisoned float detected (NaN or Infinity in fingerprint slots)" };
             }
         }
 
@@ -297,30 +297,30 @@ class OZOSEngine {
         this.wasm._free(ptr);
 
         if (resCode !== 0) {
-            let errDesc = "Lỗi xác thực gói tin WASM";
-            if (resCode === 1) errDesc = "Mã định danh Magic Header không hợp lệ (Giả mạo gói tin)";
-            if (resCode === 2) errDesc = "Độ dài gói tin không khớp với Payload Length";
-            if (resCode === 3) errDesc = `Tấn công phát lại (Replay Attack): Nonce <= Nonce cũ (${effectiveLastNonce})`;
+            let errDesc = "WASM packet verification failure";
+            if (resCode === 1) errDesc = "Invalid Magic Header (spoofed packet)";
+            if (resCode === 2) errDesc = "Packet size mismatch with Payload Length";
+            if (resCode === 3) errDesc = `Replay Attack: Nonce <= previous nonce (${effectiveLastNonce})`;
             return { valid: false, code: resCode, error: errDesc };
         }
 
-        // Bóc tách dữ liệu
+        // Extract payload
         const view = new DataView(packetUint8.buffer, packetUint8.byteOffset, packetUint8.byteLength);
         const incomingNonce = view.getBigUint64(4, true);
         const payloadLen = view.getUint32(76, true);
 
-        // Chống tràn số học (WASM32 wrap) & giới hạn độ dài
+        // Prevent integer overflow (WASM32 wrap) & enforce length bounds
         if (payloadLen > 65535 || 80 + payloadLen > packetUint8.length) {
-            return { valid: false, code: 2, error: "Payload length không hợp lệ hoặc bị cắt cụt." };
+            return { valid: false, code: 2, error: "Payload length invalid or truncated." };
         }
 
-        // Chống rác nối đuôi (Trailing garbage)
+        // Detect trailing garbage
         if (packetUint8.length > 80 + payloadLen) {
-            return { valid: false, code: 4, error: "Phát hiện rác nối đuôi bất thường (Trailing garbage detected)." };
+            return { valid: false, code: 4, error: "Trailing garbage detected." };
         }
 
-        // Kiểm tra toàn vẹn Payload chống sửa đổi tại chỗ (FNV-1a 32-bit tương thích GenesisShield)
-        // Triệt tiêu hoàn toàn lỗ hổng bypass khi kẻ tấn công set slot 15 = 0
+        // Verify payload integrity against in-place tampering (FNV-1a 32-bit GenesisShield compatible)
+        // Completely eliminate bypass vulnerability when slot 15 is set to zero
         const expectedChecksum = view.getUint32(72, true);
         if (payloadLen > 0 || expectedChecksum === 0) {
             let calcChecksum = 0x811C9DC5;
@@ -328,14 +328,14 @@ class OZOSEngine {
                 calcChecksum = Math.imul(calcChecksum ^ packetUint8[80 + i], 0x01000193) >>> 0;
             }
             if (calcChecksum !== expectedChecksum) {
-                return { valid: false, code: 5, error: "Dữ liệu payload bị sửa đổi hoặc thiếu chữ ký toàn vẹn (Checksum FNV-1a không khớp)." };
+                return { valid: false, code: 5, error: "Payload data tampered or missing integrity checksum (FNV-1a mismatch)." };
             }
         }
 
         const payloadBytes = packetUint8.slice(80, 80 + payloadLen);
         const payloadText = new TextDecoder().decode(payloadBytes);
 
-        // Chỉ cập nhật nonce sau khi vượt qua toàn bộ kiểm duyệt; TUYỆT ĐỐI không bao giờ lùi state đã lưu
+        // Only advance nonce after passing all verification gates; strictly monotonic
         if (incomingNonce > this.lastSeenPeerNonce) {
             this.lastSeenPeerNonce = incomingNonce;
         }
@@ -351,22 +351,22 @@ class OZOSEngine {
     }
 
     // =========================================================================
-    // 2. TẦNG RÈN GIÁP CCCD & THỦY VÂN 2D-DCT (ZEROSTUDIO FORTRESS)
+    // 2. IDENTITY DOCUMENT SECURITY & 2D-DCT STEGANOGRAPHY
     // =========================================================================
 
     renderProtectedCanvas(options = {}) {
         const {
             canvas,
             baseImage,
-            purpose = "HỒ SƠ XIN VIỆC",
-            recipient = "CÔNG TY CÔNG NGHỆ O.Z.O.S",
+            purpose = "JOB APPLICATION",
+            recipient = "O.Z.O.S TECHNOLOGIES",
             signer = "SOVEREIGN CITIZEN #000000",
             dateStr = new Date().toLocaleDateString('vi-VN'),
             enableGuilloche = true,
             enableCrossStamps = true
         } = options;
 
-        if (!canvas) throw new Error("Canvas không hợp lệ.");
+        if (!canvas) throw new Error("Invalid canvas.");
         const ctx = canvas.getContext('2d');
         const w = canvas.width;
         const h = canvas.height;
@@ -381,10 +381,10 @@ class OZOSEngine {
             ctx.fillStyle = "#64748b";
             ctx.font = "bold 20px monospace";
             ctx.textAlign = "center";
-            ctx.fillText("[KHUNG HÌNH CCCD GỐC]", w / 2, h / 2);
+            ctx.fillText("[ORIGINAL DOCUMENT FRAME]", w / 2, h / 2);
         }
 
-        // 1. Lưới vi mô Guilloche
+        // 1. Micro-scale Guilloche pattern
         if (enableGuilloche) {
             ctx.save();
             ctx.strokeStyle = "rgba(16, 185, 129, 0.12)";
@@ -401,7 +401,7 @@ class OZOSEngine {
             ctx.restore();
         }
 
-        // 2. Dải niêm phong pháp lý 45 độ cắt qua đồng tử mắt (Anti-Deepfake)
+        // 2. 45-degree diagonal tamper-evident seal band (Anti-Deepfake)
         if (enableCrossStamps) {
             ctx.save();
             ctx.translate(w * 0.28, h * 0.45);
@@ -417,14 +417,14 @@ class OZOSEngine {
             ctx.fillStyle = "#fef08a";
             ctx.font = "bold 13px sans-serif";
             ctx.textAlign = "center";
-            ctx.fillText(`CHỈ DÙNG CHO: ${purpose.toUpperCase()}`, 0, -5);
+            ctx.fillText(`FOR: ${purpose.toUpperCase()} ONLY`, 0, -5);
             ctx.font = "11px sans-serif";
             ctx.fillStyle = "#ffffff";
-            ctx.fillText(`ĐƠN VỊ: ${recipient} | NGÀY: ${dateStr}`, 0, 14);
+            ctx.fillText(`ISSUED TO: ${recipient} | DATE: ${dateStr}`, 0, 14);
 
             ctx.restore();
 
-            // Mộc số góc dưới
+            // Security stamp corner seal
             ctx.save();
             ctx.fillStyle = "rgba(15, 23, 42, 0.85)";
             ctx.fillRect(10, h - 35, w - 20, 25);
@@ -441,7 +441,7 @@ class OZOSEngine {
     }
 
     // =========================================================================
-    // 2. TẦNG RÈN GIÁP THỦY VÂN 2D-DCT TOÁN HỌC KHÉP KÍN (TIER 02 & TIER 09)
+    // 2. MATHEMATICAL 2D-DCT WATERMARK SECURITY TIER (TIER 02 & TIER 09)
     // =========================================================================
 
     _initDctBasis() {
@@ -557,7 +557,7 @@ class OZOSEngine {
         const totalBlocks = blocksH * blocksW;
         if (totalBlocks < bits.length) return false;
 
-        const delta = 36.0; // Biên độ điều chế tần số đối xứng (chống JPEG Q=75 -> Q=45)
+        const delta = 36.0; // Symmetric modulation amplitude (robust against JPEG Q=75 -> Q=45)
         const block = new Float64Array(64);
         let bitIdx = 0;
 
@@ -565,7 +565,7 @@ class OZOSEngine {
             for (let c = 0; c < blocksW; c++) {
                 const currentBit = bits[bitIdx % bits.length];
                 
-                // Trích xuất kênh Luminance Y = 0.299R + 0.587G + 0.114B
+                // Extract Luminance channel Y = 0.299R + 0.587G + 0.114B
                 for (let y = 0; y < 8; y++) {
                     for (let x = 0; x < 8; x++) {
                         const pxIdx = ((r * 8 + y) * w + (c * 8 + x)) * 4;
@@ -573,7 +573,7 @@ class OZOSEngine {
                     }
                 }
 
-                // 2D-DCT Biến đổi miền tần số
+                // 2D-DCT frequency domain transform
                 const dBlock = this._dct8x8(block);
                 const idx1 = 26; // (3, 2)
                 const idx2 = 19; // (2, 3)
@@ -594,7 +594,7 @@ class OZOSEngine {
                     }
                 }
 
-                // 2D-IDCT Tái thiết lập điểm ảnh
+                // 2D-IDCT spatial pixel reconstruction
                 const reconY = this._idct8x8(dBlock);
                 for (let y = 0; y < 8; y++) {
                     for (let x = 0; x < 8; x++) {
@@ -626,7 +626,7 @@ class OZOSEngine {
         const blocksW = Math.floor(w / 8);
         const totalBlocks = blocksH * blocksW;
         if (totalBlocks < 64) {
-            return { success: false, text: "Khung hình quá nhỏ để trích xuất 2D-DCT." };
+            return { success: false, text: "Image frame too small to extract 2D-DCT watermark." };
         }
 
         const rawBits = [];
@@ -645,7 +645,7 @@ class OZOSEngine {
             }
         }
 
-        // Tái tạo byte và giải mã Majority Voting
+        // Reconstruct bytes and decode via Majority Voting
         const rawBytes = [];
         for (let i = 0; i + 8 <= rawBits.length; i += 8) {
             let val = 0;
@@ -724,18 +724,18 @@ class OZOSEngine {
         return {
             success: false,
             text: null,
-            error: "Không tìm thấy thủy vân số 2D-DCT hợp lệ (Thiếu Magic 0x5AA5).",
+            error: "Valid 2D-DCT watermark not found (Missing Magic 0x5AA5).",
             method: "2D-DCT Mid-Frequency Symmetry"
         };
     }
 
     // =========================================================================
-    // 3. KÊNH VẬT LÝ SÓNG ÂM AIR-GAPPED (ORTHOGONAL DUAL-NIBBLE 16-FSK & STEALTH)
+    // 3. AIR-GAPPED ACOUSTIC PHYSICAL LAYER (ORTHOGONAL DUAL-NIBBLE 16-FSK & STEALTH)
     // =========================================================================
 
     async transmitSonicFSK(dataBytes, onProgress = null, mode = this.audioMode) {
         const AudioContext = window.AudioContext || window.webkitAudioContext;
-        if (!AudioContext) throw new Error("Trình duyệt không hỗ trợ Web Audio API.");
+        if (!AudioContext) throw new Error("Browser does not support Web Audio API.");
         
         const ctx = new AudioContext();
         await ctx.resume();
@@ -750,9 +750,9 @@ class OZOSEngine {
         const stepHz = isStealth ? this.STEALTH_STEP_HZ : this.FREQ_STEP_64;
 
         let curTime = ctx.currentTime + 0.08;
-        const rampSec = 0.005; // 5ms Hann ramp triệt tiêu tiếng click/pop âm học 100%
+        const rampSec = 0.005; // 5ms Hann window ramp eliminating acoustic click/pop
 
-        // 1. Dual-Tone Preamble với Cửa sổ làm mượt 5ms
+        // 1. Dual-Tone Preamble with 5ms smoothing window
         const oscPre0 = ctx.createOscillator();
         const oscPre1 = ctx.createOscillator();
         const gainPre = ctx.createGain();
@@ -775,7 +775,7 @@ class OZOSEngine {
         oscPre1.stop(curTime + this.PREAMBLE_DURATION_SEC);
         curTime += this.PREAMBLE_DURATION_SEC + 0.02;
 
-        // 2. Parallel Dual-Tone Data Symbols với Cửa sổ làm mượt 5ms
+        // 2. Parallel Dual-Tone Data Symbols with 5ms smoothing window
         const total = dataBytes.length;
         for (let i = 0; i < total; i++) {
             const byteVal = dataBytes[i];
@@ -811,7 +811,7 @@ class OZOSEngine {
             if (onProgress) onProgress(i + 1, total);
         }
 
-        // 3. Dual-Tone Postamble với Cửa sổ làm mượt 5ms
+        // 3. Dual-Tone Postamble with 5ms smoothing window
         const oscPost0 = ctx.createOscillator();
         const oscPost1 = ctx.createOscillator();
         const gainPost = ctx.createGain();
@@ -856,7 +856,7 @@ class OZOSEngine {
         this.isListening = true;
         this.audioRxBuffer = [];
         this.rxState = 'IDLE';
-        this.rxDetectedMode = 'stealth'; // Tự động nhận diện Stealth vs Audible
+        this.rxDetectedMode = 'stealth'; // Auto-detect Stealth vs Audible
 
         const bufferLength = this.analyser.frequencyBinCount;
         const dataArray = new Float32Array(bufferLength);
@@ -882,12 +882,12 @@ class OZOSEngine {
 
             this.analyser.getFloatFrequencyData(dataArray);
 
-            // 1. Quét Preamble Stealth (17.9 kHz + 19.9 kHz)
+            // 1. Scan Stealth Preamble (17.9 kHz + 19.9 kHz)
             const peakStealthPreLo = findPeakInBand(17800, 18000);
             const peakStealthPreHi = findPeakInBand(19800, 20000);
             const peakStealthPostHi = findPeakInBand(20000, 20200);
 
-            // 2. Quét Preamble Audible (1350 Hz + 4050 Hz)
+            // 2. Scan Audible Preamble (1350 Hz + 4050 Hz)
             const peakAudiblePreLo = findPeakInBand(1300, 1400);
             const peakAudiblePreHi = findPeakInBand(4000, 4100);
             const peakAudiblePostHi = findPeakInBand(4200, 4300);
@@ -954,26 +954,26 @@ class OZOSEngine {
     }
 
     // =========================================================================
-    // 4. MA TRẬN 15 TẦNG PHÒNG THỦ KHÉP KÍN (TIER 0 - TIER 14 ARCHITECTURE)
+    // 4. 15-TIER DEFENSE IN-DEPTH MATRIX (TIER 0 - TIER 14 ARCHITECTURE)
     // =========================================================================
 
     static get TIERS_15_REGISTRY() {
         return [
-            { id: "TIER_00", name: "Cốt Thép Toán Học", tech: "seL4 Microkernel & Formal Verification", layer: "Kernel / Hardware", status: "VERIFIED" },
-            { id: "TIER_01", name: "Não Bộ Độc Lập", tech: "Phantom WASM Core & Tar-pit PoW Nonce", layer: "WASM Runtime", status: "ACTIVE" },
-            { id: "TIER_02", name: "Giao Thức Tàng Hình", tech: "2D-DCT Steganography & FSK Audio Modem", layer: "Physical Air-Gap", status: "ACTIVE" },
-            { id: "TIER_03", name: "Kẻ Gác Cổng & Oracle", tech: "Zero-Knowledge Identity Oracle API", layer: "Gatekeeper BaaS", status: "ENFORCED" },
-            { id: "TIER_04", name: "Mỏ Neo Phần Cứng", tech: "Hardware USB Token & Kill-Switch", layer: "Physical Silicon", status: "ANCHORED" },
-            { id: "TIER_05", name: "Trạm Chỉ Huy Tác Chiến", tech: "Sovereign Command Cockpit (Port 8899)", layer: "Command UI", status: "ACTIVE" },
-            { id: "TIER_06", name: "Viễn Trắc Mã Hóa Cục Bộ", tech: "0-Byte Egress Telemetry & Encrypted Dumps", layer: "Audit & Network", status: "MONITORED" },
-            { id: "TIER_07", name: "Phòng Thủ Bán Dẫn", tech: "Dual-Path Anti-DFA & Anti-CPA Masking", layer: "Microarchitecture", status: "HARDENED" },
-            { id: "TIER_08", name: "Kiên Cố Vật Lý", tech: "Faraday Shielding & Anti-Tamper Mesh", layer: "Physical Chassis", status: "RESILIENT" },
-            { id: "TIER_09", name: "Hậu Cần Kháng Kiểm Duyệt", tech: "Optical-Sonic Mesh & Stego Carrier", layer: "Logistics", status: "UNBLOCKABLE" },
-            { id: "TIER_10", name: "Vòng Lặp Kinh Tế Tự Trị", tech: "Sovereign Identity BaaS Closed Loop", layer: "Economics", status: "AUTONOMOUS" },
-            { id: "TIER_11", name: "Phòng Lab Đối Kháng", tech: "Continuous Red Teaming & Fault Injection", layer: "Adversarial Lab", status: "OPERATIONAL" },
-            { id: "TIER_12", name: "Cây Trạng Thái Merkle", tech: "O(log N) Merkle Tree & Anti-Rollback", layer: "State Ledger", status: "MATHEMATICAL" },
-            { id: "TIER_13", name: "Mật Mã Kháng Lượng Tử", tech: "Post-Quantum Crystals-Kyber & MPC Shamir", layer: "Cryptography", status: "FUTURE_PROOF" },
-            { id: "TIER_14", name: "Tính Toán Vùng Tối", tech: "Fully Homomorphic Encryption (FHE)", layer: "Blind Enclave", status: "PROVEN" }
+            { id: "TIER_00", name: "Mathematical Formal Armor", tech: "seL4 Microkernel & Formal Verification", layer: "Kernel / Hardware", status: "VERIFIED" },
+            { id: "TIER_01", name: "Autonomous Brain", tech: "Phantom WASM Core & Tar-pit PoW Nonce", layer: "WASM Runtime", status: "ACTIVE" },
+            { id: "TIER_02", name: "Stealth Frequency Protocol", tech: "2D-DCT Steganography & FSK Audio Modem", layer: "Physical Air-Gap", status: "ACTIVE" },
+            { id: "TIER_03", name: "Tripwire Gatekeeper & Oracle", tech: "Zero-Knowledge Identity Oracle API", layer: "Gatekeeper BaaS", status: "ENFORCED" },
+            { id: "TIER_04", name: "Hardware Root of Trust", tech: "Hardware USB Token & Kill-Switch", layer: "Physical Silicon", status: "ANCHORED" },
+            { id: "TIER_05", name: "Tactical Command Station", tech: "Sovereign Command Cockpit (Port 8899)", layer: "Command UI", status: "ACTIVE" },
+            { id: "TIER_06", name: "Encrypted Local Telemetry", tech: "0-Byte Egress Telemetry & Encrypted Dumps", layer: "Audit & Network", status: "MONITORED" },
+            { id: "TIER_07", name: "Microarchitectural Silicon Defense", tech: "Dual-Path Anti-DFA & Anti-CPA Masking", layer: "Microarchitecture", status: "HARDENED" },
+            { id: "TIER_08", name: "Physical Enclosure Hardening", tech: "Faraday Shielding & Anti-Tamper Mesh", layer: "Physical Chassis", status: "RESILIENT" },
+            { id: "TIER_09", name: "Censorship-Resistant Logistics", tech: "Optical-Sonic Mesh & Stego Carrier", layer: "Logistics", status: "UNBLOCKABLE" },
+            { id: "TIER_10", name: "Autonomous Economic Loop", tech: "Sovereign Identity BaaS Closed Loop", layer: "Economics", status: "AUTONOMOUS" },
+            { id: "TIER_11", name: "Adversarial Red Team Lab", tech: "Continuous Red Teaming & Fault Injection", layer: "Adversarial Lab", status: "OPERATIONAL" },
+            { id: "TIER_12", name: "Merkle State Accumulator", tech: "O(log N) Merkle Tree & Anti-Rollback", layer: "State Ledger", status: "MATHEMATICAL" },
+            { id: "TIER_13", name: "Post-Quantum Cryptography", tech: "Post-Quantum Crystals-Kyber & MPC Shamir", layer: "Cryptography", status: "FUTURE_PROOF" },
+            { id: "TIER_14", name: "Blind Enclave Computation", tech: "Fully Homomorphic Encryption (FHE)", layer: "Blind Enclave", status: "PROVEN" }
         ];
     }
 
@@ -987,30 +987,30 @@ class OZOSEngine {
     }
 
     /**
-     * Tầng 7: Tạo gói tin Zero-Padding SIMD Aligned (80 Bytes)
-     * MAC16 bao phủ toàn vẹn cả Header (0..77) VÀ Payload (80..80+len)
+     * Tier 7: Generate Zero-Padding SIMD Aligned Packet (80 Bytes)
+     * MAC16 covers integrity of both Header (0..77) AND Payload (80..80+len)
      */
     buildAligned80BytePacket(payloadStr, customNonce = null, secretSeed = 0xA5A5A5A5n) {
         if (typeof payloadStr === 'symbol') {
-            throw new TypeError("Payload không được phép là kiểu Symbol.");
+            throw new TypeError("Payload type Symbol is not permitted.");
         }
         let safeSeed = 0xA5A5A5A5n;
         if (secretSeed !== null && secretSeed !== undefined) {
-            safeSeed = OZOSEngine._parseStrictNonce(secretSeed, "Khóa secretSeed");
+            safeSeed = OZOSEngine._parseStrictNonce(secretSeed, "secretSeed key");
         }
         const payloadBytes = (payloadStr instanceof Uint8Array)
             ? payloadStr
             : new TextEncoder().encode(payloadStr === undefined || payloadStr === null ? "" : String(payloadStr));
         if (payloadBytes.length > 65535) {
-            throw new Error(`Payload vượt quá giới hạn tối đa của khung dữ liệu 16-bit (${payloadBytes.length} > 65535 bytes).`);
+            throw new Error(`Payload exceeds maximum 16-bit framing limit (${payloadBytes.length} > 65535 bytes).`);
         }
 
         let nextNonce;
         if (customNonce !== null && customNonce !== undefined) {
-            nextNonce = OZOSEngine._parseStrictNonce(customNonce, "Nonce tùy chỉnh");
+            nextNonce = OZOSEngine._parseStrictNonce(customNonce, "Custom nonce");
         } else {
             if (this.currentNonce >= 0xFFFFFFFFFFFFFFFFn) {
-                throw new Error("Tràn bộ đếm Nonce (Nonce đạt cực đại 2^64-1). Yêu cầu thiết lập lại Nonce chủ quyền.");
+                throw new Error("Nonce counter overflow (reached 2^64-1 maximum). Reset required.");
             }
             nextNonce = this.currentNonce + 1n;
         }
@@ -1019,24 +1019,24 @@ class OZOSEngine {
         const packet = new Uint8Array(totalSize);
         const view = new DataView(packet.buffer);
 
-        // 1. 16 float32 dct_coeffs đặt tại Offset 0x00 - 0x3F (Căn chỉnh 16-byte cho SIMD)
+        // 1. 16 float32 dct_coeffs at Offset 0x00 - 0x3F (16-byte aligned for SIMD)
         for (let i = 0; i < 16; i++) {
             view.setFloat32(i * 4, 1.5 + (i * 0.25), true); // little-endian
         }
 
-        // 2. Nonce 8 bytes tại Offset 0x40 - 0x47 (Căn chỉnh 8-byte)
+        // 2. Nonce 8 bytes at Offset 0x40 - 0x47 (8-byte aligned)
         view.setBigUint64(64, this.currentNonce, true);
 
-        // 3. Magic 4 bytes tại Offset 0x48 - 0x4B (0x47454E01)
+        // 3. Magic 4 bytes at Offset 0x48 - 0x4B (0x47454E01)
         view.setUint32(72, 0x47454E01, true);
 
-        // 4. Payload Length 2 bytes tại Offset 0x4C - 0x4D
+        // 4. Payload Length 2 bytes at Offset 0x4C - 0x4D
         view.setUint16(76, payloadBytes.length, true);
 
-        // 5. Payload Content từ Offset 80 trở đi
+        // 5. Payload Content from Offset 80 onwards
         packet.set(payloadBytes, 80);
 
-        // 6. Tính toán Tripwire MAC 16-bit cho Header (0..77) VÀ Payload (80..80+len) bằng SipHash-2-4
+        // 6. Compute 16-bit Tripwire MAC for Header (0..77) AND Payload (80..80+len) via SipHash-2-4
         const macInput = new Uint8Array(78 + payloadBytes.length);
         macInput.set(packet.subarray(0, 78), 0);
         macInput.set(payloadBytes, 78);
@@ -1053,42 +1053,42 @@ class OZOSEngine {
     }
 
     /**
-     * Tầng 7: Xác thực gói tin Aligned 80B kèm Dry-Run Nonce & Tripwire MAC16
-     * Bảo vệ toàn vẹn Header lẫn Payload chống sửa đổi tại chỗ trong Vault
+     * Tier 7: Validate Aligned 80B packet with Dry-Run Nonce & Tripwire MAC16
+     * Protects integrity of Header and Payload against in-place Vault tampering
      */
     validateAligned80BytePacket(packetUint8, lastSeenNonce = null, secretSeed = 0xA5A5A5A5n) {
         if (!packetUint8 || !(packetUint8 instanceof Uint8Array) || packetUint8.length < 80) {
-            return { valid: false, code: -1, reason: "Gói tin không hợp lệ hoặc nhỏ hơn 80 bytes" };
+            return { valid: false, code: -1, reason: "Invalid packet size (< 80 bytes)" };
         }
         const view = new DataView(packetUint8.buffer, packetUint8.byteOffset, packetUint8.byteLength);
 
-        // 0. Kiểm tra hệ số chấm động độc hại (NaN / Infinity)
+        // 0. Validate poisoned floats (NaN / Infinity)
         for (let i = 0; i < 16; i++) {
             const val = view.getFloat32(i * 4, true);
             if (!Number.isFinite(val)) {
-                return { valid: false, code: 7, reason: "Phát hiện hệ số chấm động độc hại (NaN hoặc Infinity trong dct_coeffs)" };
+                return { valid: false, code: 7, reason: "Poisoned float detected (NaN or Infinity in dct_coeffs)" };
             }
         }
 
-        // 1. Kiểm tra Magic (Offset 72)
+        // 1. Magic Header validation (Offset 72)
         const magic = view.getUint32(72, true);
         if (magic !== 0x47454E01) {
-            return { valid: false, code: 1, reason: `Magic không hợp lệ (0x${magic.toString(16)})` };
+            return { valid: false, code: 1, reason: `Invalid Magic Header (0x${magic.toString(16)})` };
         }
 
         const payloadLen = view.getUint16(76, true);
         if (packetUint8.length < 80 + payloadLen) {
-            return { valid: false, code: 5, reason: "Khung dữ liệu bị cắt cụt (Truncated payload)" };
+            return { valid: false, code: 5, reason: "Truncated payload frame" };
         }
         if (packetUint8.length > 80 + payloadLen) {
-            return { valid: false, code: 4, reason: "Phát hiện rác nối đuôi (Trailing garbage detected)" };
+            return { valid: false, code: 4, reason: "Trailing garbage detected" };
         }
 
-        // 2. Kiểm tra Tripwire MAC 16-bit (Offset 78) bao phủ Header (0..77) VÀ Payload (80..80+len) bằng SipHash-2-4
+        // 2. Tripwire MAC 16-bit (Offset 78) check covering Header (0..77) AND Payload (80..80+len) via SipHash-2-4
         let safeSeed = 0xA5A5A5A5n;
         if (secretSeed !== null && secretSeed !== undefined) {
             try {
-                safeSeed = OZOSEngine._parseStrictNonce(secretSeed, "Khóa secretSeed");
+                safeSeed = OZOSEngine._parseStrictNonce(secretSeed, "secretSeed key");
             } catch (e) {
                 return { valid: false, code: -1, reason: e.message };
             }
@@ -1099,7 +1099,7 @@ class OZOSEngine {
         macInput.set(packetUint8.subarray(80, 80 + payloadLen), 78);
         const expectedMac = OZOSEngine.computeFastGateMac(macInput, safeSeed);
 
-        // Hỗ trợ tương thích chuẩn tắc đa nền tảng với Sub-profile A1 (CRC16-CCITT Bare-Metal C99)
+        // Cross-platform standard compatibility with Sub-profile A1 (CRC16-CCITT Bare-Metal C99)
         let crc = 0xFFFF;
         for (let i = 0; i < 78; i++) {
             crc ^= (packetUint8[i] << 8);
@@ -1116,11 +1116,11 @@ class OZOSEngine {
         const isA1 = (safeSeed === 0xA5A5A5A5n && incomingMac === crc);
 
         if (!isA2 && !isA1) {
-            return { valid: false, code: 3, reason: `Tripwire MAC16 thất bại: Header hoặc Payload đã bị sửa đổi (Nhận 0x${incomingMac.toString(16)} vs Kỳ vọng 0x${expectedMac.toString(16)})` };
+            return { valid: false, code: 3, reason: `Tripwire MAC16 failure: Header or Payload was tampered (Received 0x${incomingMac.toString(16)} vs Expected 0x${expectedMac.toString(16)})` };
         }
 
         if (isA1 && !isA2 && payloadLen > 0) {
-            return { valid: false, code: 6, reason: "Từ chối Sub-Profile A1 cho gói tin có payload (MAC16 CRC16 không bảo vệ toàn vẹn payload)" };
+            return { valid: false, code: 6, reason: "Rejected Sub-Profile A1 for packet with payload (MAC16 CRC16 does not authenticate payload)" };
         }
 
         // 3. Stateful Nonce Anti-Replay
@@ -1136,12 +1136,12 @@ class OZOSEngine {
             ? parsedNonce
             : this.lastSeenAlignedNonce;
         if (effectiveLastNonce < 0n || effectiveLastNonce > 0xFFFFFFFFFFFFFFFFn) {
-            return { valid: false, code: 2, reason: `Nonce không hợp lệ (phải nằm trong [0, 2^64-1]): ${effectiveLastNonce}` };
+            return { valid: false, code: 2, reason: `Invalid Nonce (must be within [0, 2^64-1]): ${effectiveLastNonce}` };
         }
 
         const incomingNonce = view.getBigUint64(64, true);
         if (incomingNonce <= effectiveLastNonce) {
-            return { valid: false, code: 2, reason: `Tấn công phát lại (Nonce ${incomingNonce} <= ${effectiveLastNonce})` };
+            return { valid: false, code: 2, reason: `Replay Attack (Nonce ${incomingNonce} <= ${effectiveLastNonce})` };
         }
 
         const payloadBytes = packetUint8.slice(80, 80 + payloadLen);
@@ -1160,21 +1160,21 @@ class OZOSEngine {
     }
 
     /**
-     * Tầng 7: Kiểm định Dual-Path FPU vs ALU đối kháng chống Bắn tia Laser (Anti-DFA)
+     * Tier 7: Dual-Path FPU vs ALU Laser Fault Injection Validation (Anti-DFA)
      */
     verifyDualPathAntiDFA(aFloats, bFloats, threshold = 0.5) {
         if (!aFloats || !bFloats || aFloats.length !== 16 || bFloats.length !== 16) {
-            throw new Error("Mảng hệ số đầu vào phải đủ 16 phần tử float32.");
+            throw new Error("Input coefficient array must have exactly 16 float32 elements.");
         }
 
-        // Luồng 1: FPU duyệt xuôi 0 -> 15
+        // Path 1: FPU forward scan 0 -> 15
         let fpuDist = 0.0;
         for (let i = 0; i < 16; i++) {
             let diff = aFloats[i] - bFloats[i];
             fpuDist += diff * diff;
         }
 
-        // Luồng 2: ALU số nguyên Q15.16 duyệt ngược 15 -> 0
+        // Path 2: ALU integer Q15.16 reverse scan 15 -> 0
         let aluSum = 0;
         for (let i = 15; i >= 0; i--) {
             let ia = Math.floor(Math.max(-500000, Math.min(500000, aFloats[i] * 4096.0)));
@@ -1194,7 +1194,7 @@ class OZOSEngine {
     }
 
     /**
-     * Tầng 12: Cây Trạng Thái Merkle O(log N)
+     * Tier 12: Merkle Tree State Accumulator O(log N)
      */
     static computeMerkleRoot(leavesHexArray) {
         if (!leavesHexArray || leavesHexArray.length === 0) return "00000000000000000000000000000000";
@@ -1217,38 +1217,38 @@ class OZOSEngine {
     }
 
     /**
-     * Tầng 6 & 12: Niêm phong Local Vault an toàn với Gói 80-byte Aligned
+     * Tier 6 & 12: Seal Local Vault with Aligned 80-byte Packet
      *
-     * Invariant thiết kế:
-     * - Tripwire MAC16 mặc định (seed 0xA5A5A5A5) là cơ chế kiểm định toàn vẹn siêu tốc độ phần cứng (<20ns),
-     *   chống suy thoái bộ nhớ (bit-flip) và can thiệp ngoài ý muốn.
-     * - Khi bảo mật chống kẻ tấn công có chủ đích biết trước thuật toán, cung cấp `vaultKey` bí mật.
-     *   Seed MAC16 sẽ được dẫn xuất từ `vaultKey` thành Keyed Tripwire (Domain-separated 64-bit FNV-1a), ngăn kẻ tấn công
-     *   tính lại MAC nếu không có khóa bí mật.
+     * Design Invariants:
+     * - Default Tripwire MAC16 (seed 0xA5A5A5A5) is ultra-fast hardware verification (<20ns),
+     *   shielding against memory bit-flips and corruption.
+     * - For deliberate attacker defense, supply secret `vaultKey`.
+     *   MAC16 seed derives from `vaultKey` into Keyed Tripwire (Domain-separated 64-bit FNV-1a), preventing adversaries
+     *   preventing forgery without the secret key.
      */
     saveLocalVault(dataObj, vaultKey = null) {
         if (dataObj === undefined || dataObj === null) {
-            return { success: false, error: "Dữ liệu Vault không được để trống (undefined hoặc null)." };
+            return { success: false, error: "Vault data must not be empty (undefined or null)." };
         }
         let rawStr;
         try {
             rawStr = JSON.stringify(dataObj);
         } catch (e) {
-            return { success: false, error: "Dữ liệu Vault chứa tham chiếu vòng hoặc không thể tuần tự hóa JSON: " + e.message };
+            return { success: false, error: "Vault data contains circular references or cannot serialize JSON: " + e.message };
         }
         if (rawStr === undefined) {
-            return { success: false, error: "Dữ liệu Vault không thể tuần tự hóa JSON (hàm hoặc Symbol)." };
+            return { success: false, error: "Vault data cannot serialize JSON (function or Symbol)." };
         }
         const testLen = new TextEncoder().encode(rawStr).length;
         if (testLen > 65535) {
-            return { success: false, error: `Dữ liệu Vault JSON vượt quá giới hạn kích thước tối đa (${testLen} > 65535 bytes).` };
+            return { success: false, error: `Vault JSON data exceeds maximum size limit (${testLen} > 65535 bytes).` };
         }
         if (vaultKey !== null && vaultKey !== undefined) {
             if (typeof vaultKey !== 'string') {
-                return { success: false, error: "Khóa két sắt (vaultKey) phải là chuỗi ký tự (string)." };
+                return { success: false, error: "vaultKey must be a string." };
             }
             if (vaultKey.length < 8) {
-                return { success: false, error: "Mật khẩu két sắt (vaultKey) phải có độ dài tối thiểu 8 ký tự để bảo đảm entropy phòng thủ duyệt vét cạn." };
+                return { success: false, error: "Vault passphrase (vaultKey) must have minimum length of 8 characters for brute-force resistance." };
             }
         }
         let secretSeed = 0xA5A5A5A5n;
@@ -1274,15 +1274,15 @@ class OZOSEngine {
     }
 
     /**
-     * Tầng 6 & 12: Mở và xác thực Local Vault
-     * Hỗ trợ xác thực với vaultKey bí mật (Keyed Tripwire)
+     * Tier 6 & 12: Open and authenticate Local Vault
+     * Supports authentication with secret vaultKey (Keyed Tripwire)
      */
     verifyLocalVault(vaultRecord, lastKnownNonce = 0n, vaultKey = null) {
         if (!vaultRecord || !vaultRecord.base64) {
-            return { valid: false, error: "Dữ liệu Vault rỗng" };
+            return { valid: false, error: "Vault data is empty" };
         }
         if (vaultKey !== null && vaultKey !== undefined && typeof vaultKey !== 'string') {
-            return { valid: false, error: "Khóa két sắt (vaultKey) phải là chuỗi ký tự (string)." };
+            return { valid: false, error: "vaultKey must be a string." };
         }
         let secretSeed = 0xA5A5A5A5n;
         if (vaultKey !== null && vaultKey !== undefined) {
@@ -1293,14 +1293,14 @@ class OZOSEngine {
             }
             secretSeed = h;
         } else if (vaultRecord.keyed) {
-            return { valid: false, error: "Bản ghi Vault yêu cầu khóa bí mật vaultKey để xác thực (Keyed Tripwire)." };
+            return { valid: false, error: "Vault record requires secret vaultKey for authentication (Keyed Tripwire)." };
         }
 
         let bytes;
         try {
             bytes = this.base64ToBytes(vaultRecord.base64);
         } catch (e) {
-            return { valid: false, error: "Dữ liệu Vault Base64 bị hỏng hoặc sai định dạng." };
+            return { valid: false, error: "Vault Base64 data corrupted or malformed." };
         }
         const res = this.validateAligned80BytePacket(bytes, lastKnownNonce, secretSeed);
         if (!res.valid) {
@@ -1310,13 +1310,13 @@ class OZOSEngine {
             const parsed = JSON.parse(res.payload);
             return { valid: true, data: parsed, nonce: res.nonce };
         } catch (e) {
-            // TUYỆT ĐỐI KHÔNG nuốt lỗi khi JSON bị can thiệp
-            return { valid: false, error: "Dữ liệu Vault đã bị can thiệp hoặc sai cấu trúc JSON." };
+            // Strictly reject tampered JSON payload
+            return { valid: false, error: "Vault data tampered or malformed JSON structure." };
         }
     }
 
     // =========================================================================
-    // 5. TIỆN ÍCH HỆ THỐNG
+    // 5. SYSTEM UTILITIES
     // =========================================================================
     bytesToBase64(uint8) {
         let binary = '';
@@ -1338,7 +1338,7 @@ class OZOSEngine {
     }
 
     /**
-     * Tầng 5 & 7: Bộ Thanh Tra Dữ Liệu Thô Chuẩn xxd (16-Byte Hex Dump Inspector)
+     * Tier 5 & 7: Standard xxd 16-Byte Hex Dump Inspector
      */
     generateHexDump(uint8Array) {
         if (!uint8Array || uint8Array.length === 0) return [];
@@ -1371,7 +1371,7 @@ class OZOSEngine {
     }
 
     /**
-     * Tầng 2: Vẽ Thác Nước Quang Phổ Âm Thanh Thời Gian Thực (Waterfall Spectrogram 60fps)
+     * Tier 2: Real-Time 60fps Waterfall Spectrogram
      */
     renderWaterfallStep(canvas, freqDataArray, sampleRate = 44100, minHz = 800, maxHz = 3800) {
         if (!canvas || !freqDataArray) return;
@@ -1421,7 +1421,7 @@ class OZOSEngine {
     }
 
     /**
-     * Tầng 4: Xóa Trắng Khẩn Cấp Bộ Nhớ Tác Chiến (Emergency Zeroize Kill-Switch)
+     * Tier 4: Tactical Emergency Zeroize Kill-Switch
      */
     emergencyZeroize() {
         if (this.audioRxBuffer) {
@@ -1443,7 +1443,7 @@ class OZOSEngine {
     }
 }
 
-// Xuất ra môi trường
+// Export module
 if (typeof module !== 'undefined' && module.exports) {
     module.exports = OZOSEngine;
 } else {

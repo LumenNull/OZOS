@@ -67,50 +67,50 @@ const OZOSEngine = require(enginePath);
 
 async function runTests() {
     console.log("=================================================================");
-    console.log("   🛡️ O.Z.O.S - AUTOMATED HEADLESS VERIFICATION HARNESS 🛡️");
+    console.log("   [O.Z.O.S] AUTOMATED HEADLESS VERIFICATION HARNESS");
     console.log("=================================================================");
 
     const engine = new OZOSEngine();
     await engine.init();
-    console.log("✅ [1/5] Lõi WASM Core (C++ / SIMD128) khởi tạo thành công 100%!");
+    console.log("✅ [1/5] WASM Core (C++ / SIMD128) initialized successfully 100%!");
 
-    // Test 1: Đóng gói và kiểm định Genesis Packet 80-byte
+    // Test 1: Frame and verify Genesis 80-byte packet
     const secretMessage = "O.Z.O.S_SOVEREIGN_AIR_GAP_TOP_SECRET_PAYLOAD_2026";
     const packet = engine.buildPacket(secretMessage, 1005n);
-    console.log(`✅ [2/5] Đã đóng gói Genesis Packet 80-byte: Total size = ${packet.packetBytes.length} bytes (Payload: ${new TextEncoder().encode(secretMessage).length} bytes)`);
+    console.log(`[PASS] [2/5] Framed Genesis 80-byte packet: Total size = ${packet.packetBytes.length} bytes (Payload: ${new TextEncoder().encode(secretMessage).length} bytes)`);
 
-    // Test 2: Xác thực gói tin hợp lệ
+    // Test 2: Validate authentic packet
     const valResult = engine.validatePacket(packet.packetBytes);
-    console.log("✅ [3/5] Xác thực gói tin qua C++ lõi:");
-    console.log("      • Hợp lệ:", valResult.valid);
+    console.log("[PASS] [3/5] Packet verification via native C++ kernel:");
+    console.log("      • Valid:", valResult.valid);
     console.log("      • Nonce:", valResult.nonce);
-    console.log("      • Payload giải mã:", valResult.payloadText);
+    console.log("      • Decoded payload:", valResult.payloadText);
     if (!valResult.valid || valResult.payloadText !== secretMessage) {
-        throw new Error("Lỗi giải mã gói tin!");
+        throw new Error("Packet decoding error!");
     }
 
-    // Test 3: Bẫy Replay Attack (Gửi lại gói tin có Nonce cũ)
+    // Test 3: Anti-Replay Attack trap (replay packet with stale nonce)
     const replayPacket = engine.buildPacket("HACKER_REPLAY_ATTACK", 1000n); // 1000 <= 1005
     const replayResult = engine.validatePacket(replayPacket.packetBytes);
-    console.log("✅ [4/5] Kiểm thử bẫy Replay Attack:");
-    console.log("      • Bị chặn đứng:", !replayResult.valid);
-    console.log("      • Thông điệp bẫy:", replayResult.error);
+    console.log("[PASS] [4/5] Anti-Replay Attack trap verification:");
+    console.log("      • Blocked:", !replayResult.valid);
+    console.log("      • Trap error:", replayResult.error);
     if (replayResult.valid) {
-        throw new Error("Replay Attack không bị chặn!");
+        throw new Error("Replay attack was not blocked!");
     }
 
-    // Test 4: Phép biến đổi 2D-DCT 8x8 qua WASM
+    // Test 4: 2D-DCT 8x8 spectral transform via WASM
     const testBlock = new Float32Array(64);
     for (let i = 0; i < 64; i++) testBlock[i] = Math.sin(i * 0.1) * 128.0;
     const dctResult = engine.dct8x8(testBlock, true);
-    console.log(`✅ [5/5] Tính toán biến đổi phổ 2D-DCT 8x8 thành công (DC Component = ${dctResult[0].toFixed(2)})`);
+    console.log(`✅ [5/5] 2D-DCT 8x8 spectral transform computed successfully (DC Component = ${dctResult[0].toFixed(2)})`);
 
     console.log("=================================================================");
-    console.log("🎉 TẤT CẢ 5/5 BÀI TEST LÕI O.Z.O.S ĐÃ VƯỢT QUA VỚI ĐỘ CHÍNH XÁC TUYỆT ĐỐI!");
+    console.log("🎉 ALL 5/5 O.Z.O.S WASM CORE TESTS PASSED WITH BIT-EXACT PRECISION!");
     console.log("=================================================================");
 }
 
 runTests().catch(err => {
-    console.error("❌ Test thất bại:", err);
+    console.error("❌ Test failed:", err);
     process.exit(1);
 });

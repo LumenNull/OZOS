@@ -69,44 +69,44 @@ extern "C" {
 #define OZOS_PACKET_HEADER_SIZE  80U
 #define OZOS_PI_F                3.14159265358979323846f
 
-/* Sóng âm Dual-Nibble 16-FSK (Kênh vật lý Air-Gap) */
-#define OZOS_AUDIO_MODE_AUDIBLE  0U          /* Kênh âm thanh nghe được (1.6 - 3.8 kHz) */
-#define OZOS_AUDIO_MODE_STEALTH  1U          /* Kênh cận siêu âm vô thanh (18.1 - 19.8 kHz) */
+/* Dual-Nibble 16-FSK Acoustic PHY (Physical Air-Gap Channel) */
+#define OZOS_AUDIO_MODE_AUDIBLE  0U          /* Audible Acoustic Channel (1.6 - 3.8 kHz) */
+#define OZOS_AUDIO_MODE_STEALTH  1U          /* Inaudible Near-Ultrasound Channel (18.1 - 19.8 kHz) */
 
-/* Kênh 1.6 - 3.8 kHz tiêu chuẩn */
-#define OZOS_FSK_CH0_BASE        1600.0f     /* Kênh 0 (Low Nibble 0..15): 1600 - 2560 Hz */
-#define OZOS_FSK_CH1_BASE        2800.0f     /* Kênh 1 (High Nibble 0..15): 2800 - 3760 Hz */
-#define OZOS_FSK_STEP_HZ         64.0f       /* Bước nhảy tần số 64 Hz (> 3x bin FFT) */
-#define OZOS_FSK_PREAMBLE_LO     1350.0f     /* Tần số Preamble thấp */
-#define OZOS_FSK_PREAMBLE_HI     4050.0f     /* Tần số Preamble cao */
-#define OZOS_FSK_POSTAMBLE_LO    1350.0f     /* Tần số Postamble thấp */
-#define OZOS_FSK_POSTAMBLE_HI    4250.0f     /* Tần số Postamble cao */
+/* Standard 1.6 - 3.8 kHz Channel */
+#define OZOS_FSK_CH0_BASE        1600.0f     /* Channel 0 (Low Nibble 0..15): 1600 - 2560 Hz */
+#define OZOS_FSK_CH1_BASE        2800.0f     /* Channel 1 (High Nibble 0..15): 2800 - 3760 Hz */
+#define OZOS_FSK_STEP_HZ         64.0f       /* Frequency Step 64 Hz (> 3x FFT bin resolution) */
+#define OZOS_FSK_PREAMBLE_LO     1350.0f     /* Low Preamble Frequency */
+#define OZOS_FSK_PREAMBLE_HI     4050.0f     /* High Preamble Frequency */
+#define OZOS_FSK_POSTAMBLE_LO    1350.0f     /* Low Postamble Frequency */
+#define OZOS_FSK_POSTAMBLE_HI    4250.0f     /* High Postamble Frequency */
 
-/* Kênh Cận Siêu Âm Vô Thanh (Stealth Near-Ultrasound 18.0 - 20.0 kHz) */
-#define OZOS_STEALTH_CH0_BASE    18100.0f    /* Kênh 0 (Low Nibble 0..15): 18,100 - 18,850 Hz (step 50Hz) */
-#define OZOS_STEALTH_CH1_BASE    19000.0f    /* Kênh 1 (High Nibble 0..15): 19,000 - 19,750 Hz (step 50Hz) */
-#define OZOS_STEALTH_STEP_HZ     50.0f       /* Bước nhảy tần số 50 Hz */
-#define OZOS_STEALTH_PRE_LO      17900.0f    /* Preamble Tone Thấp */
-#define OZOS_STEALTH_PRE_HI      19900.0f    /* Preamble Tone Cao */
-#define OZOS_STEALTH_POST_LO     17900.0f    /* Postamble Tone Thấp */
-#define OZOS_STEALTH_POST_HI     20100.0f    /* Postamble Tone Cao */
+/* Inaudible Near-Ultrasound Channel (Stealth 18.0 - 20.0 kHz) */
+#define OZOS_STEALTH_CH0_BASE    18100.0f    /* Channel 0 (Low Nibble 0..15): 18,100 - 18,850 Hz (step 50Hz) */
+#define OZOS_STEALTH_CH1_BASE    19000.0f    /* Channel 1 (High Nibble 0..15): 19,000 - 19,750 Hz (step 50Hz) */
+#define OZOS_STEALTH_STEP_HZ     50.0f       /* Frequency Step 50 Hz */
+#define OZOS_STEALTH_PRE_LO      17900.0f    /* Low Preamble Tone */
+#define OZOS_STEALTH_PRE_HI      19900.0f    /* High Preamble Tone */
+#define OZOS_STEALTH_POST_LO     17900.0f    /* Low Postamble Tone */
+#define OZOS_STEALTH_POST_HI     20100.0f    /* High Postamble Tone */
 
-/* Thủy vân vô hình 2D-DCT (Kênh quang học Air-Gap) */
-#define OZOS_STEGO_DELTA         36.0f       /* Biên độ tương quan đối xứng C(3,2) vs C(2,3) */
+/* Invisible 2D-DCT Steganography (Optical Air-Gap Channel) */
+#define OZOS_STEGO_DELTA         36.0f       /* Symmetric Correlation Modulation Amplitude C(3,2) vs C(2,3) */
 #define OZOS_DCT_BLOCK_SIZE      8U
-#define OZOS_DCT_COEFF_IDX1      26U         /* Tọa độ (3, 2): Hàng 3 Cột 2 (Flat 26) */
-#define OZOS_DCT_COEFF_IDX2      19U         /* Tọa độ (2, 3): Hàng 2 Cột 3 (Flat 19) */
+#define OZOS_DCT_COEFF_IDX1      26U         /* Coordinate (3, 2): Row 3 Col 2 (Flat Index 26) */
+#define OZOS_DCT_COEFF_IDX2      19U         /* Coordinate (2, 3): Row 2 Col 3 (Flat Index 19) */
 
 /* =============================================================================
-   3. CẤU TRÚC GÓI TIN 80-BYTE CĂN CHỈNH SIMD (OZOS-80 WIRE PROTOCOL)
+   3. 80-BYTE SIMD-ALIGNED PACKET FRAMING (OZOS-80 WIRE PROTOCOL)
    ============================================================================= */
 
 #pragma pack(push, 1)
 typedef struct OZOS_ALIGN16 {
-    float    dct_coeffs[16];   /* 64 Bytes: Offset 0x00 - 0x3F (Căn chỉnh 16-byte cho v128 SIMD) */
+    float    dct_coeffs[16];   /* 64 Bytes: Offset 0x00 - 0x3F (16-byte aligned for v128 SIMD) */
     uint64_t nonce;            /* 8 Bytes : Offset 0x40 - 0x47 (Monotonic Replay counter) */
     uint32_t magic;            /* 4 Bytes : Offset 0x48 - 0x4B (0x47454E01) */
-    uint16_t payload_len;      /* 2 Bytes : Offset 0x4C - 0x4D (Độ dài dữ liệu đính kèm) */
+    uint16_t payload_len;      /* 2 Bytes : Offset 0x4C - 0x4D (Length of attached payload) */
     uint16_t header_mac16;     /* 2 Bytes : Offset 0x4E - 0x4F (First-Stage Tripwire Gatekeeper) */
 } ozos_packet80_t;
 #pragma pack(pop)
@@ -125,11 +125,11 @@ typedef enum {
 } ozos_status_t;
 
 /* =============================================================================
-   4. TẦNG 07: BỘ NHỚ AN TOÀN & PHÒNG THỦ BÁN DẪN VI KIẾN TRÚC
+   4. TIER 07: SECURE MEMORY & MICROARCHITECTURAL SILICON DEFENSE
    ============================================================================= */
 
 /**
- * Xóa sạch bộ nhớ 3 tầng (0xAA -> 0x55 -> 0x00) triệt tiêu tàn dư Cold-Boot Attack.
+ * Zeroizes memory across 3 passes (0xAA -> 0x55 -> 0x00) eliminating Cold-Boot remanence.
  */
 OZOS_INLINE void ozos_secure_zeroize(void* ptr, size_t size) {
     volatile uint8_t* p = (volatile uint8_t*)ptr;
@@ -142,7 +142,7 @@ OZOS_INLINE void ozos_secure_zeroize(void* ptr, size_t size) {
 }
 
 /**
- * Lọc số chấm động IEEE-754 Subnormal / NaN (Bitwise DAZ / FTZ).
+ * Filters IEEE-754 Subnormal / NaN floating point numbers (Bitwise DAZ / FTZ).
  */
 OZOS_INLINE float ozos_sanitize_float(float val) {
     union { float f; uint32_t u; } pun;
@@ -153,7 +153,7 @@ OZOS_INLINE float ozos_sanitize_float(float val) {
 }
 
 /**
- * Kẹp số mũ an toàn chống Undefined Behavior khi ép kiểu từ FPU sang ALU Q15.16.
+ * Safe exponent clamp preventing Undefined Behavior during FPU to ALU Q15.16 casting.
  */
 OZOS_INLINE int32_t ozos_safe_f32_to_q15_16(float f) {
     union { float f_val; uint32_t u_val; } pun;
@@ -167,7 +167,7 @@ OZOS_INLINE int32_t ozos_safe_f32_to_q15_16(float f) {
 }
 
 /**
- * Thực thi kép FPU SIMD vs ALU Q15.16 phát hiện đòn tấn công bắn tia laser (Anti-DFA).
+ * Dual-execution FPU SIMD vs ALU Q15.16 detecting laser fault injection attacks (Anti-DFA).
  */
 OZOS_INLINE bool ozos_verify_dual_path_dfa(const float* a, const float* b, float threshold) {
     float fpu_dist = 0.0f;
@@ -192,18 +192,18 @@ OZOS_INLINE bool ozos_verify_dual_path_dfa(const float* a, const float* b, float
     float drift = (fpu_dist > alu_dist) ? (fpu_dist - alu_dist) : (alu_dist - fpu_dist);
 
     if (drift > 0.15f) {
-        return false; /* Báo động: Bắn tia laser lật bit vi kiến trúc! */
+        return false; /* Alert: Microarchitectural bit-flip laser fault injection detected! */
     }
     return (fpu_dist <= threshold);
 }
 
 /* =============================================================================
-   5. TẦNG 03: CỔNG GÁC TRIPWIRE MAC16 & KIỂM SOÁT NONCE (ANTI-REPLAY)
+   5. TIER 03: TRIPWIRE MAC16 GATEKEEPER & NONCE CONTROL (ANTI-REPLAY)
    ============================================================================= */
 
 /**
- * Tính toán mã băm Tripwire MAC16 (CRC16-CCITT) trên 78 bytes đầu của gói tin.
- * Tốc độ xử lý: < 20 nanoseconds/gói, bảo vệ CPU trước các cuộc tấn công DDoS ngập lụt.
+ * Computes Tripwire MAC16 (CRC16-CCITT) hash over first 78 bytes of packet framing.
+ * Throughput: < 20 nanoseconds/packet, shielding CPU against flooding DDoS storms.
  */
 OZOS_INLINE uint16_t ozos_compute_mac16(const ozos_packet80_t* pkt) {
     const uint8_t* data = (const uint8_t*)pkt;
@@ -222,7 +222,7 @@ OZOS_INLINE uint16_t ozos_compute_mac16(const ozos_packet80_t* pkt) {
 }
 
 /**
- * Đóng gói hoàn chỉnh một gói tin OZOS-80 (Căn chỉnh 16-byte SIMD, gán MAC16).
+ * Encapsulates complete OZOS-80 packet (16-byte SIMD alignment, assigns MAC16).
  */
 OZOS_INLINE void ozos_packet_build(
     ozos_packet80_t* out_pkt,
@@ -243,10 +243,10 @@ OZOS_INLINE void ozos_packet_build(
 #define OZOS_A2_DOMAIN_CONSTANT      0xA5A5A5A5ULL /* Hang so domain mac dinh cua Sub-Profile A2 */
 
 /**
- * Tính mã xác thực thông điệp nhanh 16-bit (Fast Gatekeeper MAC) dựa trên
- * hàm PRF mật mã học SipHash-2-4 với khóa 128-bit (k0 = secret_seed, k1 = key_high)
- * để lọc gói tin rác tức thì trước khi gọi hàm xác thực Ed25519 / Poly1305.
- * Được định nghĩa và biên dịch trực tiếp từ core/ozos_hardened_core.cpp.
+ * Computes 16-bit Fast Gatekeeper MAC based on
+ * cryptographic PRF SipHash-2-4 with 128-bit key (k0 = secret_seed, k1 = key_high)
+ * to filter garbage packets instantly before invoking Ed25519 / Poly1305 verification.
+ * Defined and compiled directly from core/ozos_hardened_core.cpp.
  */
 #ifdef __cplusplus
 extern "C" {
@@ -309,7 +309,7 @@ OZOS_INLINE void ozos_packet_build_frame(
 }
 
 /**
- * Thẩm định gói tin nhị phân với cổng gác đa tầng và hỗ trợ secret_seed cho Sub-Profile A2 (Zero Dynamic Allocation).
+ * Validates binary packet framing with multi-stage gatekeeper and secret_seed for Sub-Profile A2 (Zero Dynamic Allocation).
  */
 OZOS_INLINE ozos_status_t ozos_packet_validate_ex(
     const uint8_t* buffer,
@@ -327,7 +327,7 @@ OZOS_INLINE ozos_status_t ozos_packet_validate_ex(
         memcpy(out_header, pkt, sizeof(ozos_packet80_t));
     }
 
-    /* 1. Kiểm tra hệ số chấm động độc hại (Poisoned Float / NaN / Inf) */
+    /* 1. Poisoned Float / NaN / Inf Validation */
     for (int i = 0; i < 16; ++i) {
         union { float f; uint32_t u; } p;
         p.f = pkt->dct_coeffs[i];
@@ -337,12 +337,12 @@ OZOS_INLINE ozos_status_t ozos_packet_validate_ex(
         }
     }
 
-    /* 2. Kiểm tra Magic Header */
+    /* 2. Magic Header Validation */
     if (pkt->magic != OZOS_MAGIC_HEADER) {
         return OZOS_ERR_MAGIC_INVALID;
     }
 
-    /* 2. Kiểm tra Cổng gác Tripwire MAC16 (< 20ns): Hỗ trợ cả Sub-profile A1 (CRC16) và Sub-profile A2 (SipHash-2-4) */
+    /* 2. Tripwire MAC16 Gatekeeper (< 20ns): Supports both Sub-profile A1 (CRC16) and Sub-profile A2 (SipHash-2-4) */
     uint16_t expected_mac = ozos_compute_mac16(pkt);
     bool mac_ok = false;
 
@@ -373,17 +373,17 @@ OZOS_INLINE ozos_status_t ozos_packet_validate_ex(
         return OZOS_ERR_MAC16_MISMATCH;
     }
 
-    /* 3. Chống Tấn Công Phát Lại (Anti-Replay Attack) */
+    /* 3. Anti-Replay Defense (Monotonic Nonce Invariant) */
     if (pkt->nonce <= last_seen_nonce) {
         return OZOS_ERR_REPLAY_DETECTED;
     }
 
-    /* 4. Kiểm tra độ dài Payload đính kèm */
+    /* 4. Attached Payload Length Boundary Check */
     if (buffer_size < OZOS_PACKET_HEADER_SIZE + (size_t)pkt->payload_len) {
         return OZOS_ERR_PAYLOAD_TRUNCATED;
     }
 
-    /* 5. Sao chép kết quả ra vùng an toàn */
+    /* 5. Secure Output Copy */
     if (out_header) {
         memcpy(out_header, pkt, sizeof(ozos_packet80_t));
     }
@@ -392,7 +392,7 @@ OZOS_INLINE ozos_status_t ozos_packet_validate_ex(
 }
 
 /**
- * Thẩm định gói tin nhị phân với cổng gác đa tầng (Sub-Profile A2 dùng seed mặc định 0xA5A5A5A5).
+ * Validates binary packet with multi-stage gatekeeper (Sub-Profile A2 uses default seed 0xA5A5A5A5).
  */
 OZOS_INLINE ozos_status_t ozos_packet_validate(
     const uint8_t* buffer,
@@ -404,11 +404,11 @@ OZOS_INLINE ozos_status_t ozos_packet_validate(
 }
 
 /* =============================================================================
-   6. TẦNG 02: TOÁN HỌC TẦN SỐ THỦY VÂN 2D-DCT 8x8 (ORTHONORMAL MATRIX)
+   6. TIER 02: 2D-DCT 8x8 FREQUENCY STEGANOGRAPHY MATHEMATICS (ORTHONORMAL MATRIX)
    ============================================================================= */
 
 /**
- * Sinh ma trận cơ sở trực chuẩn DCT-II 8x8:
+ * Generates orthonormal 8x8 DCT-II basis matrix:
  * C[u][x] = alpha(u) * cos(pi * (2x + 1) * u / 16)
  */
 OZOS_INLINE void ozos_init_dct_basis(float basis[8][8]) {
@@ -424,7 +424,7 @@ OZOS_INLINE void ozos_init_dct_basis(float basis[8][8]) {
 }
 
 /**
- * Biến đổi 2D-DCT-II tách được trên khối 8x8: D = C * B * C^T
+ * Separable 2D-DCT-II transform on 8x8 block: D = C * B * C^T
  */
 OZOS_INLINE void ozos_dct8x8(const float in[64], float out[64], const float basis[8][8]) {
     float tmp[8][8];
@@ -449,7 +449,7 @@ OZOS_INLINE void ozos_dct8x8(const float in[64], float out[64], const float basi
 }
 
 /**
- * Biến đổi ngược 2D-IDCT-II trên khối 8x8: B = C^T * D * C
+ * Inverse 2D-IDCT-II transform on 8x8 block: B = C^T * D * C
  */
 OZOS_INLINE void ozos_idct8x8(const float in[64], float out[64], const float basis[8][8]) {
     float tmp[8][8];
@@ -474,8 +474,8 @@ OZOS_INLINE void ozos_idct8x8(const float in[64], float out[64], const float bas
 }
 
 /**
- * Điều chế tương quan đối xứng 1 bit vào cặp hệ số C(3,2) vs C(2,3) trên khối 8x8.
- * Dấu của hiệu số bất biến trước bảng lượng tử hóa JPEG Luminance.
+ * Modulates 1 bit via symmetric correlation between C(3,2) and C(2,3) on 8x8 block.
+ * Differential sign remains invariant under standard JPEG Luminance quantization.
  */
 OZOS_INLINE void ozos_embed_dct_bit(float d_block[64], uint8_t bit, float delta) {
     float val1 = d_block[OZOS_DCT_COEFF_IDX1]; /* C(3, 2) */
@@ -497,19 +497,19 @@ OZOS_INLINE void ozos_embed_dct_bit(float d_block[64], uint8_t bit, float delta)
 }
 
 /**
- * Trích xuất 1 bit từ khối tần số DCT 8x8.
+ * Extracts 1 bit from 8x8 DCT frequency block.
  */
 OZOS_INLINE uint8_t ozos_extract_dct_bit(const float d_block[64]) {
     return (d_block[OZOS_DCT_COEFF_IDX1] > d_block[OZOS_DCT_COEFF_IDX2]) ? 1U : 0U;
 }
 
 /* =============================================================================
-   7. TẦNG 02 & 09: SÓNG ÂM AIR-GAP (DUAL-NIBBLE 16-FSK & BỘ LỌC GOERTZEL)
+   7. TIER 02 & 09: AIR-GAP ACOUSTIC (DUAL-NIBBLE 16-FSK & GOERTZEL FILTER)
    ============================================================================= */
 
 /**
- * Tính toán công suất tại một tần số mục tiêu bằng Bộ Lọc Goertzel O(N) (Không dùng FFT, Zero RAM).
- * Thích hợp cho vi điều khiển nhúng ESP32 / STM32 với bộ nhớ cực nhỏ.
+ * Computes power at target frequency via Goertzel Filter O(N) (Zero FFT, Zero RAM allocation).
+ * Suitable for embedded microcontrollers (ESP32 / STM32) with constrained memory.
  */
 OZOS_INLINE float ozos_goertzel_power(
     const float* samples,
@@ -536,10 +536,10 @@ OZOS_INLINE float ozos_goertzel_power(
 }
 
 /**
- * Giải mã một Byte từ tín hiệu âm thanh Dual-Nibble 16-FSK bằng 32 bộ lọc Goertzel song song.
- * Hỗ trợ 2 chế độ:
+ * Decodes 1 byte from Dual-Nibble 16-FSK acoustic signal via 32 parallel Goertzel filters.
+ * Supports 2 modes:
  *  - OZOS_AUDIO_MODE_AUDIBLE (1.6 - 3.8 kHz)
- *  - OZOS_AUDIO_MODE_STEALTH (18.1 - 19.8 kHz Cận siêu âm vô thanh)
+ *  - OZOS_AUDIO_MODE_STEALTH (18.1 - 19.8 kHz Inaudible Near-Ultrasound)
  */
 OZOS_INLINE uint8_t ozos_decode_fsk_byte_ex(
     const float* samples,
@@ -554,7 +554,7 @@ OZOS_INLINE uint8_t ozos_decode_fsk_byte_ex(
     float max_p0 = -1.0f;
     uint8_t lo_nibble = 0;
 
-    /* Quét 16 tần số Kênh 0 (Low Nibble) */
+    /* Scan 16 frequencies on Channel 0 (Low Nibble) */
     for (uint8_t k = 0; k < 16; ++k) {
         float freq = base0 + ((float)k * step);
         float p = ozos_goertzel_power(samples, num_samples, freq, sample_rate);
@@ -567,7 +567,7 @@ OZOS_INLINE uint8_t ozos_decode_fsk_byte_ex(
     float max_p1 = -1.0f;
     uint8_t hi_nibble = 0;
 
-    /* Quét 16 tần số Kênh 1 (High Nibble) */
+    /* Scan 16 frequencies on Channel 1 (High Nibble) */
     for (uint8_t k = 0; k < 16; ++k) {
         float freq = base1 + ((float)k * step);
         float p = ozos_goertzel_power(samples, num_samples, freq, sample_rate);
@@ -589,10 +589,10 @@ OZOS_INLINE uint8_t ozos_decode_fsk_byte(
 }
 
 /**
- * Bộ tạo mẫu âm thanh (PCM Synth): Tạo 1 Symbol Dual-Tone tương ứng với 1 byte.
- * Tích hợp Cửa sổ làm mượt Hann (5ms ramp-up, 5ms ramp-down) để triệt tiêu hoàn toàn
- * hiện tượng tán sắc âm học (spectral splatter) và tiếng click/pop chói gắt.
- * Trả về số mẫu âm thanh đã ghi vào output_samples.
+ * PCM Audio Synthesizer: Generates 1 Dual-Tone Symbol corresponding to 1 byte.
+ * Integrates Hann smoothing window (5ms ramp-up, 5ms ramp-down) to completely eliminate
+ * acoustic spectral splatter and audible high-frequency clicks/pops.
+ * Returns number of audio samples written to output_samples.
  */
 OZOS_INLINE size_t ozos_synth_fsk_byte_ex(
     uint8_t byte_val,
@@ -615,7 +615,7 @@ OZOS_INLINE size_t ozos_synth_fsk_byte_ex(
     float f0 = base0 + ((float)lo * step);
     float f1 = base1 + ((float)hi * step);
 
-    /* Cửa sổ làm mượt Hann (5ms ramp) triệt tiêu tiếng click/pop âm học */
+    /* Hann smoothing window (5ms ramp) eliminating audible clicks/pops */
     size_t ramp_samples = (size_t)(sample_rate * 0.005f);
     if (ramp_samples > needed / 2) ramp_samples = needed / 2;
 
@@ -653,11 +653,11 @@ OZOS_INLINE size_t ozos_synth_fsk_byte_pcm(
 }
 
 /* =============================================================================
-   8. TẦNG 12: CÂY TRẠNG THÁI MERKLE O(log N) CHỐNG TUA NGƯỢC (ANTI-ROLLBACK)
+   8. TIER 12: MERKLE TREE STATE ACCUMULATOR O(log N) ANTI-ROLLBACK
    ============================================================================= */
 
 /**
- * Hàm trộn băm 64-bit trực tiếp (Fast SplitMix64 / Invariant Hash Mixer).
+ * Fast 64-bit hash mixer (SplitMix64 / Invariant Hash Mixer).
  */
 OZOS_INLINE uint64_t ozos_hash_combine64(uint64_t a, uint64_t b) {
     uint64_t z = a ^ (b + 0x9e3779b97f4a7c15ULL + (a << 6) + (a >> 2));
@@ -667,13 +667,13 @@ OZOS_INLINE uint64_t ozos_hash_combine64(uint64_t a, uint64_t b) {
 }
 
 /**
- * Tính Merkle Root từ mảng lá N phần tử (O(N) thời gian, O(1) RAM - in-place stack buffer).
+ * Computes Merkle Root from array of N leaves (O(N) time, O(1) RAM - in-place stack buffer).
  */
 OZOS_INLINE uint64_t ozos_compute_merkle_root(const uint64_t* leaves, size_t count) {
     if (!leaves || count == 0) return 0ULL;
     if (count == 1) return leaves[0];
 
-    /* Buffer tĩnh trên stack (tối đa 256 nút lá) */
+    /* Static stack buffer (max 256 leaf nodes) */
     uint64_t tree[256];
     size_t n = count > 256 ? 256 : count;
     memcpy(tree, leaves, n * sizeof(uint64_t));
@@ -684,7 +684,7 @@ OZOS_INLINE uint64_t ozos_compute_merkle_root(const uint64_t* leaves, size_t cou
             if (i + 1 < n) {
                 tree[next_n++] = ozos_hash_combine64(tree[i], tree[i + 1]);
             } else {
-                tree[next_n++] = tree[i]; /* Nút đơn lẻ nâng cấp trực tiếp */
+                tree[next_n++] = tree[i]; /* Unpaired single node promoted directly */
             }
         }
         n = next_n;

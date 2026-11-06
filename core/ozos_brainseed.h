@@ -174,7 +174,7 @@ static inline void ozos_pbkdf2_sha512_bip39(
 ) {
     size_t pwd_len = strlen(mnemonic);
 
-    /* Salt = "mnemonic" + passphrase (Hỗ trợ passphrase an toàn tuyệt đối tới 500 ký tự, kẹp biên chống identity fork) */
+    /* Salt = "mnemonic" + passphrase (Strictly supports passphrases up to 500 chars to prevent identity forks) */
     char salt[2048] = "mnemonic";
     if (passphrase && strlen(passphrase) > 0) {
         size_t rem = sizeof(salt) - strlen(salt) - 1;
@@ -216,11 +216,11 @@ static inline void ozos_pbkdf2_sha512_bip39(
 }
 
 /* ========================================================================= */
-/*   [MẢNH GHÉP 3]: HẠT GIỐNG PHỤC SINH TRONG TRÍ NÃO (12-WORD BRAINSEED)    */
+/*   [PILLAR 3]: IN-MEMORY SOVEREIGN RESURRECTION SEED (12-WORD BRAINSEED)   */
 /* ========================================================================= */
 
 /**
- * Sinh Mnemonic 12 từ ngẫu nhiên từ Entropy 16-byte (128-bit) và trích xuất Master Seed (32B).
+ * Generate 12-word mnemonic from 16-byte (128-bit) entropy and extract 32B Master Seed.
  */
 static inline bool ozos_brainseed_generate_ex(
     char* mnemonic_out,
@@ -232,17 +232,17 @@ static inline bool ozos_brainseed_generate_ex(
     if (!mnemonic_out || max_mnemonic_len < 120 || !entropy16) return false;
     if (passphrase && strlen(passphrase) > OZOS_MAX_PASSPHRASE_LEN) return false;
 
-    /* 1. Tính mã kiểm tra Checksum (4 bits đầu của SHA-256) */
+    /* 1. Compute checksum (first 4 bits of SHA-256) */
     uint8_t hash[32] = {0};
     ozos_sha256_single_block(entropy16, hash);
     uint8_t checksum = (hash[0] >> 4) & 0x0F;
 
-    /* 2. Ghép 128 bit entropy + 4 bit checksum = 132 bits */
+    /* 2. Concatenate 128-bit entropy + 4-bit checksum = 132 bits */
     uint8_t bits132[17];
     memcpy(bits132, entropy16, 16);
     bits132[16] = (uint8_t)(checksum << 4);
 
-    /* 3. Tách thành 12 phần tử, mỗi phần tử 11 bit (0 .. 2047) */
+    /* 3. Divide into 12 11-bit chunks (0 .. 2047) */
     uint16_t word_indices[12];
     for (int i = 0; i < 12; ++i) {
         int bit_idx = i * 11;
@@ -257,7 +257,7 @@ static inline bool ozos_brainseed_generate_ex(
         word_indices[i] = (uint16_t)((chunk >> (24 - 11 - bit_offset)) & 0x7FF);
     }
 
-    /* 4. Tra từ điển BIP-39 tạo chuỗi Mnemonic */
+    /* 4. Lookup BIP-39 wordlist to build mnemonic string */
     mnemonic_out[0] = '\0';
     for (int i = 0; i < 12; ++i) {
         uint16_t idx = word_indices[i];
@@ -271,7 +271,7 @@ static inline bool ozos_brainseed_generate_ex(
         if (i < 11) strcat(mnemonic_out, " ");
     }
 
-    /* 5. Phục sinh Master Seed 32-byte bằng PBKDF2 */
+    /* 5. Derive 32-byte Master Seed via PBKDF2 */
     if (seed32_out) {
         uint8_t seed64[64];
         ozos_pbkdf2_sha512_bip39(seed64, mnemonic_out, passphrase ? passphrase : "");
@@ -295,7 +295,7 @@ static inline bool ozos_brainseed_generate(
 }
 
 /**
- * Phục sinh Danh tính và Master Seed từ 12 Từ Trí Não (12-Word Brainseed).
+ * Restore sovereign identity and Master Seed from 12-Word Brainseed.
  */
 static inline bool ozos_brainseed_restore(
     uint8_t seed32_out[32],
@@ -305,7 +305,7 @@ static inline bool ozos_brainseed_restore(
     if (!seed32_out || !mnemonic_str) return false;
     if (passphrase && strlen(passphrase) > OZOS_MAX_PASSPHRASE_LEN) return false;
 
-    /* Tách 12 từ an toàn luồng (Reentrant, không dùng strtok static state) */
+    /* Reentrant thread-safe word parser (no static state strtok) */
     char copy[512];
     strncpy(copy, mnemonic_str, sizeof(copy) - 1);
     copy[sizeof(copy) - 1] = '\0';
@@ -319,7 +319,7 @@ static inline bool ozos_brainseed_restore(
         }
         if (*p == '\0') break;
         if (count >= 12) {
-            /* Nghiêm ngặt: Thừa từ thứ 13 trở đi -> Bị từ chối và xóa sạch stack */
+            /* Strict: Extraneous 13th word rejected fail-closed, stack zeroized */
             ozos_brainseed_zeroize(copy, sizeof(copy));
             return false;
         }
@@ -330,10 +330,10 @@ static inline bool ozos_brainseed_restore(
     }
     if (count != 12) {
         ozos_brainseed_zeroize(copy, sizeof(copy));
-        return false; /* Bắt buộc đúng 12 từ */
+        return false; /* Exactly 12 words required */
     }
 
-    /* Tìm index của từng từ trong từ điển BIP-39 */
+    /* Locate BIP-39 dictionary index for each word */
     uint16_t indices[12];
     for (int i = 0; i < 12; ++i) {
         int found = -1;
@@ -346,12 +346,12 @@ static inline bool ozos_brainseed_restore(
         if (found < 0) {
             ozos_brainseed_zeroize(copy, sizeof(copy));
             ozos_brainseed_zeroize(indices, sizeof(indices));
-            return false; /* Từ không thuộc chuẩn BIP-39 */
+            return false; /* Word not found in standard BIP-39 wordlist */
         }
         indices[i] = (uint16_t)found;
     }
 
-    /* Tái tạo 132 bits: 128 bit entropy + 4 bit checksum */
+    /* Reconstruct 132 bits: 128-bit entropy + 4-bit checksum */
     uint8_t entropy[16] = {0};
     uint8_t bits132[17] = {0};
 
@@ -370,7 +370,7 @@ static inline bool ozos_brainseed_restore(
     memcpy(entropy, bits132, 16);
     uint8_t provided_checksum = (bits132[16] >> 4) & 0x0F;
 
-    /* Kiểm tra Checksum SHA-256 */
+    /* Verify SHA-256 Checksum */
     uint8_t hash[32] = {0};
     ozos_sha256_single_block(entropy, hash);
     uint8_t expected_checksum = (hash[0] >> 4) & 0x0F;
@@ -381,10 +381,10 @@ static inline bool ozos_brainseed_restore(
         ozos_brainseed_zeroize(entropy, sizeof(entropy));
         ozos_brainseed_zeroize(bits132, sizeof(bits132));
         ozos_brainseed_zeroize(hash, sizeof(hash));
-        return false; /* Sai checksum -> người dùng gõ nhầm từ */
+        return false; /* Checksum mismatch: user mistyped mnemonic */
     }
 
-    /* Tính toán Master Seed 64B -> Chuẩn hóa 12 từ với khoảng trắng đơn chống phân nhánh danh tính */
+    /* Compute 64B Master Seed -> Normalize mnemonic with single spaces to prevent identity forks */
     char normalized_mnemonic[256];
     normalized_mnemonic[0] = 0;
     for (int i = 0; i < 12; ++i) {

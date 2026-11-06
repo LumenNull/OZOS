@@ -6,10 +6,10 @@
 extern "C" {
 #endif
 
-// Hằng số dung sai để triệt tiêu sai số dấu phẩy động phần cứng (IEEE-754 epsilon drift)
+// Epsilon tolerance constant to eliminate hardware floating-point jitter (IEEE-754 epsilon drift)
 const float EPSILON = 1e-6f;
 
-// Hàm nội bộ: Tính phương sai (variance) năng lượng để đánh giá độ phức tạp của khối 8x8
+// Internal helper: Compute energy variance to evaluate 8x8 block texture complexity
 float calculate_block_variance(const float* block) {
     float sum = 0.0f;
     for (int i = 0; i < 64; i++) {
@@ -25,11 +25,11 @@ float calculate_block_variance(const float* block) {
     return variance / 64.0f;
 }
 
-// 1. Trích xuất vân tay nhận thức (Perceptual Fingerprint - 16 hệ số tần số thấp 4x4)
+// 1. Extract perceptual fingerprint (16 low-frequency 4x4 DCT coefficients)
 EMSCRIPTEN_KEEPALIVE
 void compute_block_fingerprint(const float* input_block, float* out_fingerprint) {
-    // Giả định input_block đã qua biến đổi 2D-DCT
-    // Lấy 4x4 góc trên bên trái (16 hệ số tần số thấp - nơi tập trung năng lượng cốt lõi)
+    // Assumes input_block has undergone 2D-DCT transform
+    // Extract top-left 4x4 sub-matrix (16 low-frequency coefficients capturing core energy)
     int idx = 0;
     for (int r = 0; r < 4; r++) {
         for (int c = 0; c < 4; c++) {
@@ -38,13 +38,13 @@ void compute_block_fingerprint(const float* input_block, float* out_fingerprint)
     }
 }
 
-// 2. Kiểm tra toàn vẹn nâng cấp với Ngưỡng Thích Ứng & Dung Sai Epsilon
+// 2. Verified block integrity check with adaptive threshold & epsilon tolerance
 EMSCRIPTEN_KEEPALIVE
 float verify_block_integrity_adaptive(const float* current_block, const float* anchor_fingerprint, float base_threshold) {
     float current_fingerprint[16];
     compute_block_fingerprint(current_block, current_fingerprint);
 
-    // Tính Mean Squared Error (MSE) giữa vân tay hiện tại và vân tay neo gốc
+    // Compute Mean Squared Error (MSE) between current and anchor fingerprints
     float mse = 0.0f;
     for (int i = 0; i < 16; i++) {
         float diff = current_fingerprint[i] - anchor_fingerprint[i];
@@ -52,7 +52,7 @@ float verify_block_integrity_adaptive(const float* current_block, const float* a
     }
     mse /= 16.0f;
 
-    // Áp dụng Epsilon Guard: Nếu sai số quá nhỏ dưới mức dung sai phần cứng, ép về 0 tuyệt đối
+    // Apply Epsilon Guard: Clamp negligible hardware rounding noise to absolute zero
     if (mse < EPSILON) {
         mse = 0.0f;
     }
@@ -60,7 +60,7 @@ float verify_block_integrity_adaptive(const float* current_block, const float* a
     return mse;
 }
 
-// Hàm tương thích ngược với API cũ
+// Backward compatibility API
 EMSCRIPTEN_KEEPALIVE
 float verify_block_integrity(const float* current_block, const float* anchor_fingerprint, float threshold) {
     return verify_block_integrity_adaptive(current_block, anchor_fingerprint, threshold);

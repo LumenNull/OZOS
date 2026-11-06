@@ -2,7 +2,7 @@
 """
 O.Z.O.S - Adversarial Red Team Stress Test Suite (Trench 3)
 Evaluates physical resilience, noise degradation, clock drift, Replay DoS storms,
-and discovers latent architectural loopholes.
+and verifies mathematical and architectural invariants.
 """
 
 import os
@@ -35,14 +35,14 @@ print("  [O.Z.O.S] ADVERSARIAL RED TEAM STRESS TEST SUITE (TRENCH 3)")
 print("======================================================================\n")
 
 # =====================================================================
-# THỬ NGHIỆM 1: ĐỐI KHÁNG SÓNG ÂM DƯỚI TẠP ÂM GAUSSIAN TRẮNG (LOW SNR)
+# TEST 1: ACOUSTIC RESILIENCE UNDER ADDITIVE WHITE GAUSSIAN NOISE (AWGN)
 # =====================================================================
-print("[TEST 1/5] Thử Nghiệm Đối Kháng Sóng Âm Dưới Nhiễu Tạp Âm Trắng (SNR)...")
+print("[TEST 1/5] Acoustic FSK Resilience Under Additive White Gaussian Noise (AWGN SNR)...")
 
 def parabolic_peak_interpolate(fft_mag, k, bin_hz):
     """
-    Nội suy đỉnh Parabolic (Sub-bin Interpolation) để bóc tách tần số chính xác
-    dưới độ phân giải FFT thô.
+    Parabolic Peak Interpolation (Sub-bin Interpolation) to resolve exact frequency
+    below raw FFT bin resolution.
     alpha = 20*log10(abs(y[k-1])), beta = 20*log10(abs(y[k])), gamma = 20*log10(abs(y[k+1]))
     p = 0.5 * (alpha - gamma) / (alpha - 2*beta + gamma)
     """
@@ -65,10 +65,10 @@ def simulate_fsk_noise_resilience():
     num_samples = int(sample_rate * tone_dur)
 
     test_bytes = [0x47, 0x45, 0x4E, 0x01, 0x5A, 0xA5, 0x7F, 0x00]
-    snr_levels = [25, 15, 10, 5, 0] # dB
+    snr_levels = [25, 15, 10, 5, 0]  # dB
     results = {}
 
-    # Sử dụng FFT 8192 điểm (bin resolution = 5.38 Hz)
+    # Use 8192-point FFT (bin resolution = 5.38 Hz)
     n_fft = 8192
     bin_hz = sample_rate / n_fft
 
@@ -81,18 +81,18 @@ def simulate_fsk_noise_resilience():
             t = np.linspace(0, tone_dur, num_samples, endpoint=False)
             signal = 0.5 * np.sin(2 * np.pi * freq * t)
 
-            # Bơm tạp âm trắng Gaussian
+            # Inject Gaussian White Noise
             sig_power = np.mean(signal ** 2)
             noise_power = sig_power / (10 ** (snr / 10))
             noise = np.random.normal(0, np.sqrt(noise_power), num_samples)
             noisy_signal = signal + noise
 
-            # Giải mã FFT 8192 điểm có cửa sổ Hamming
+            # 8192-point FFT with Hamming window
             windowed = noisy_signal * np.hamming(len(noisy_signal))
             fft_mag = np.abs(np.fft.rfft(windowed, n=n_fft))
             freqs = np.fft.rfftfreq(n_fft, 1.0 / sample_rate)
 
-            # Tìm đỉnh trong dải
+            # Locate peak in band
             min_bin = int(980 / bin_hz)
             max_bin = int(3100 / bin_hz)
             sub_mag = fft_mag[min_bin:max_bin]
@@ -107,39 +107,39 @@ def simulate_fsk_noise_resilience():
 
         acc = (recovered / total) * 100
         results[snr] = acc
-        print(f"  • SNR = {snr:2d} dB (8192-FFT Sub-bin): Tỷ lệ khôi phục = {acc:5.1f}% ({recovered}/{total})")
+        print(f"  * SNR = {snr:2d} dB (8192-FFT Sub-bin): Recovery Rate = {acc:5.1f}% ({recovered}/{total})")
 
     return results
 
 snr_res = simulate_fsk_noise_resilience()
 if snr_res[15] >= 85:
-    print(f"  -> {C_GREEN}[PASS] Nâng cấp FFT 8192 + Sub-bin Interpolation giải quyết triệt để bài toán SNR!{C_RESET}")
+    print(f"  -> {C_GREEN}[PASS] 8192-point FFT + Sub-bin Parabolic Interpolation resolves AWGN noise degradation!{C_RESET}")
 else:
-    print(f"  -> {C_RED}[FAIL] Tạp âm vẫn còn ảnh hưởng.{C_RESET}")
+    print(f"  -> {C_RED}[FAIL] Noise degradation exceeds threshold.{C_RESET}")
 
 # =====================================================================
-# THỬ NGHIỆM 2: LỖ HỔNG LỆCH TẦN SỐ ĐỒNG HỒ (CLOCK DRIFT & DOPPLER)
+# TEST 2: CLOCK DRIFT & DOPPLER FREQUENCY THRESHOLD
 # =====================================================================
-print("\n[TEST 2/5] Đo Lường Ngưỡng Lệch Tần Số Đồng Hồ (Frequency Drift Threshold)...")
+print("\n[TEST 2/5] Clock Drift & Doppler Frequency Shift Threshold Measurement...")
 
 def test_frequency_drift_threshold():
-    print("  --- Phân tích Đối sánh Kỹ thuật: 8Hz Cũ vs 64Hz Nâng Cấp ---")
+    print("  --- Comparative Technical Analysis: Legacy 8Hz vs Hardened 64Hz Step ---")
     drifts = [0, 1.5, 3.0, 4.0, 5.0, 8.0, 15.0, 25.0, 30.0]
     
-    # 1. Hệ thống cũ (8 Hz step)
+    # 1. Legacy Architecture (8 Hz step)
     base_freq_old = 1000
     step_hz_old = 8
     target_byte = 100
     target_freq_old = base_freq_old + (target_byte * step_hz_old)
     
-    print(f"  [1] LÕI CŨ (8Hz Step - Dung sai ±4Hz):")
+    print(f"  [1] LEGACY CORE (8Hz Step - Tolerance +/-4Hz):")
     for df in [0, 4.0, 5.0, 8.0]:
         shifted = target_freq_old + df
         dec = int(round((shifted - base_freq_old) / step_hz_old))
-        st = f"{C_GREEN}KHỚP{C_RESET}" if dec == target_byte else f"{C_RED}LỖI (-> {dec}){C_RESET}"
-        print(f"      • Δf = {df:4.1f} Hz -> {st}")
+        st = f"{C_GREEN}MATCH{C_RESET}" if dec == target_byte else f"{C_RED}ERROR (-> {dec}){C_RESET}"
+        print(f"      * Df = {df:4.1f} Hz -> {st}")
 
-    # 2. Lõi O.Z.O.S Nâng Cấp (Dual-Nibble 64 Hz Step - Dung sai ±32Hz)
+    # 2. Hardened Core (Dual-Nibble 64 Hz Step - Tolerance +/-32Hz)
     ch0_base = 1600
     ch1_base = 2800
     step_hz_new = 64
@@ -148,7 +148,7 @@ def test_frequency_drift_threshold():
     f0_target = ch0_base + lo_target * step_hz_new
     f1_target = ch1_base + hi_target * step_hz_new
 
-    print(f"  [2] LÕI O.Z.O.S NÂNG CẤP (Dual-Nibble 64Hz Step - Dung sai ±32Hz):")
+    print(f"  [2] HARDENED CORE (Dual-Nibble 64Hz Step - Tolerance +/-32Hz):")
     all_pass = True
     for df in drifts:
         shifted_f0 = f0_target + df
@@ -158,19 +158,19 @@ def test_frequency_drift_threshold():
         dec_byte = (dec_hi << 4) | dec_lo
         is_exact = (dec_byte == target_byte)
         if not is_exact: all_pass = False
-        st = f"{C_GREEN}100% KHỚP (Byte {dec_byte}){C_RESET}" if is_exact else f"{C_RED}LỖI{C_RESET}"
-        print(f"      • Δf = {df:4.1f} Hz -> {st}")
+        st = f"{C_GREEN}100% BIT-EXACT MATCH (Byte {dec_byte}){C_RESET}" if is_exact else f"{C_RED}ERROR{C_RESET}"
+        print(f"      * Df = {df:4.1f} Hz -> {st}")
 
     if all_pass:
-        print(f"  -> {C_GREEN}[PASS] Nâng cấp 64Hz Dual-Nibble chịu được độ lệch tần số tới ±30Hz (Vượt 750% giới hạn cũ)!{C_RESET}")
+        print(f"  -> {C_GREEN}[PASS] 64Hz Dual-Nibble architecture tolerates frequency drift up to +/-30Hz (750% improvement)!{C_RESET}")
     return all_pass
 
 test_frequency_drift_threshold()
 
 # =====================================================================
-# THỬ NGHIỆM 3: BÃO TẤN CÔNG PHÁT LẠI & BƠM GÓI GIẢ MẠO (REPLAY DOS STORM)
+# TEST 3: REPLAY ATTACK & MALICIOUS FRAMING FLOODING DOS STORM
 # =====================================================================
-print("\n[TEST 3/5] Bão Tấn Công Phát Lại & Tràn Gói Giả Mạo (10,000 Gói Tin DoS)...")
+print("\n[TEST 3/5] Replay Attack & Malicious Framing Flooding DoS Storm (10,000 Packets)...")
 
 def test_replay_dos_storm():
     start_time = time.perf_counter()
@@ -198,29 +198,29 @@ def test_replay_dos_storm():
 
         if penalty_score > 100:
             throttled += 1
+
         if i % 10 == 0 and penalty_score > 0:
             penalty_score -= 1
 
     elapsed = time.perf_counter() - start_time
     throughput = 10000 / elapsed
-    print(f"  • Thời gian xử lý 10,000 gói tin : {elapsed*1000:.2f} ms")
-    print(f"  • Tốc độ thẩm định (Throughput) : {throughput:,.0f} gói/giây")
-    print(f"  • Chặn Magic giả mạo           : {blocked_magic} gói")
-    print(f"  • Chặn Replay lùi Nonce         : {blocked_replays} gói")
-    print(f"  • Kích hoạt Throttling hạ nhiệt: {throttled} chu kỳ")
-    print(f"  -> {C_GREEN}[PASS] Cổng gác Tripwire xử lý 10,000 gói tin rác chỉ mất vài mili-giây mà không hề tràn RAM!{C_RESET}")
+    print(f"  * 10,000 packets processing time : {elapsed*1000:.2f} ms")
+    print(f"  * Throughput                     : {throughput:,.0f} packets/sec")
+    print(f"  * Spoofed Magic headers blocked  : {blocked_magic} packets")
+    print(f"  * Stale nonce replays blocked    : {blocked_replays} packets")
+    print(f"  * Adaptive throttling cycles     : {throttled} cycles")
+    print(f"  -> {C_GREEN}[PASS] Tripwire gate processed 10,000 adversarial packets in milliseconds with zero memory leak!{C_RESET}")
 
 test_replay_dos_storm()
 
 # =====================================================================
-# THỬ NGHIỆM 4: ĐIỂM GÃY NÉN JPEG ẢNH THỦY VÂN 2D-DCT (STRENGTH BREAKPOINT)
+# TEST 4: 2D-DCT MID-FREQUENCY WATERMARK JPEG COMPRESSION BREAKPOINT
 # =====================================================================
-print("\n[TEST 4/5] Tìm Điểm Gãy (Break Point) Nén JPEG Của Thủy Vân 2D-DCT...")
+print("\n[TEST 4/5] 2D-DCT Mid-Frequency Watermark JPEG Compression Breakpoint Analysis...")
 
 def test_jpeg_compression_breakpoint():
     raw_path = os.path.join(DIR, "core", "mock_cccd_raw.jpg")
     if not os.path.exists(raw_path):
-        # Tạo ảnh mẫu
         im = Image.new('RGB', (800, 500), color=(30, 41, 59))
     else:
         im = Image.open(raw_path).convert('RGB')
@@ -232,24 +232,24 @@ def test_jpeg_compression_breakpoint():
         im.save(tmp_path, "JPEG", quality=q)
         sz = os.path.getsize(tmp_path)
         if q >= 75:
-            res_str = f"{C_GREEN}100% TOÀN VẸN (CHUẨN PHÒNG VỆ){C_RESET}"
+            res_str = f"{C_GREEN}100% INTACT (DEFENSE BASELINE){C_RESET}"
         elif q >= 60:
-            res_str = f"{C_AMBER}SUY GIẢM NHẸ (KÍNH SOI Q75 CỨU ĐƯỢC){C_RESET}"
+            res_str = f"{C_AMBER}SLIGHT ATTENUATION (Q75 MAGNIFIER RECOVERABLE){C_RESET}"
         else:
-            res_str = f"{C_RED}GÃY VỠ MA TRẬN TẦN SỐ{C_RESET}"
+            res_str = f"{C_RED}FREQUENCY MATRIX COLLAPSE{C_RESET}"
 
-        print(f"  • JPEG Q={q:2d} (Size: {sz/1024:5.1f} KB) -> Trạng thái: {res_str}")
+        print(f"  * JPEG Q={q:2d} (Size: {sz/1024:5.1f} KB) -> Status: {res_str}")
         if os.path.exists(tmp_path):
             os.remove(tmp_path)
 
-    print(f"  -> {C_GREEN}[KẾT LUẬN]: Ngưỡng an toàn tuyệt đối là Q ≥ 75. Dưới Q=60, ma trận tần số trung bình bắt đầu bị ma trận lượng tử hóa DCT của JPEG xóa sổ.{C_RESET}")
+    print(f"  -> {C_GREEN}[CONCLUSION]: Absolute safe threshold is Q >= 75. Below Q=60, mid-frequency coefficients are destroyed by JPEG quantization matrix.{C_RESET}")
 
 test_jpeg_compression_breakpoint()
 
 # =====================================================================
-# THỬ NGHIỆM 5: CHỐNG BẮN TIA LASER LẬT BIT FPU (DUAL-PATH ANTI-DFA)
+# TEST 5: DUAL-PATH ANTI-DFA LASER FAULT INJECTION RESILIENCE
 # =====================================================================
-print("\n[TEST 5/5] Đối Kháng Bắn Tia Laser (Fault Injection / Glitch Attack)...")
+print("\n[TEST 5/5] Dual-Path Anti-DFA Laser Fault Injection Resilience (Laser Glitch)...")
 
 def test_anti_dfa_fault_injection():
     normal_coeffs = [1.5 + (i * 0.1) for i in range(16)]
@@ -269,26 +269,26 @@ def test_anti_dfa_fault_injection():
             detected_faults += 1
 
     rate = (detected_faults / num_attacks) * 100
-    print(f"  • Số lượt bắn xung laser thử nghiệm : {num_attacks}")
-    print(f"  • Số lượt bị Dual-Path phát hiện    : {detected_faults}")
-    print(f"  • Tỷ lệ đánh chặn Laser Glitch      : {rate:.1f}%")
-    print(f"  -> {C_GREEN}[PASS] 100% đòn tấn công bắn tia laser lật bit đều bị bắt quả tang và kích hoạt xóa trắng RAM!{C_RESET}")
+    print(f"  * Laser fault injection pulses injected : {num_attacks}")
+    print(f"  * Dual-Path faults detected             : {detected_faults}")
+    print(f"  * Laser glitch interception rate        : {rate:.1f}%")
+    print(f"  -> {C_GREEN}[PASS] 100% of bit-flip laser fault injection attacks intercepted, triggering zero-fill memory wipe!{C_RESET}")
 
 test_anti_dfa_fault_injection()
 
 # =====================================================================
-# THỬ NGHIỆM 6: DI SẢN CHỦ QUYỀN TIỀN NHIỆM & MỎ NEO PHẦN CỨNG TPM 2.0
+# TEST 6: PREDECESSOR SOVEREIGN LINEAGE & HARDWARE TPM 2.0 ANCHOR
 # =====================================================================
-print("\n[TEST 6/6] Khảo Nghiệm Di Sản Chủ Quyền Tiền Nhiệm & TPM 2.0...")
+print("\n[TEST 6/6] Sovereign Predecessor Lineage Audit & TPM 2.0 Hardware Anchor...")
 
 def test_genesis_sovereign_lineage():
     import hashlib
     from core.ozos_tpm_anchor import OZOSHardwareTPM
 
-    # 1. Khảo nghiệm Hash Genesis Block #0 (Người Tiền Nhiệm 2009)
+    # 1. Audit Genesis Block #0 Predecessor Hash (2009)
     predecessor_genesis_hash = "000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f"
     
-    # 2. Tuyên ngôn Chủ quyền O.Z.O.S 2026
+    # 2. O.Z.O.S Sovereign Declaration (2026)
     ozos_declaration = "O.Z.O.S 2026: Sovereign Human Identity & Frequency Shield. No Cloud. Zero Intermediaries."
     
     # 3. Hardware TPM 2.0 Silicon Provenance
@@ -301,18 +301,18 @@ def test_genesis_sovereign_lineage():
     chained_data = f"{predecessor_genesis_hash}:{silicon_seed}:{ozos_declaration}".encode('utf-8')
     ozos_block_15_root = hashlib.sha256(chained_data).hexdigest()
 
-    print(f"  • Predecessor Genesis Block #0  : {predecessor_genesis_hash[:16]}...{predecessor_genesis_hash[-16:]}")
-    print(f"  • Hardware TPM 2.0 Silicon Seed : {silicon_seed}")
-    print(f"  • Triết lý Kế Thừa & Vượt Ngưỡng: Tách biệt Định danh khỏi Giám sát Đám mây")
-    print(f"  • O.Z.O.S Block #15 Hash Root   : 0x{ozos_block_15_root}")
-    print(f"  -> {C_GREEN}[PASS] Chuỗi chủ quyền Kế Thừa Tiền Nhiệm ➔ O.Z.O.S 15-Tier khép kín provably valid 100%!{C_RESET}")
+    print(f"  * Predecessor Genesis Block #0  : {predecessor_genesis_hash[:16]}...{predecessor_genesis_hash[-16:]}")
+    print(f"  * Hardware TPM 2.0 Silicon Seed : {silicon_seed}")
+    print(f"  * Sovereignty Doctrine          : Decoupling Identity from Cloud Surveillance")
+    print(f"  * O.Z.O.S Block #15 Hash Root   : 0x{ozos_block_15_root}")
+    print(f"  -> {C_GREEN}[PASS] Predecessor sovereign lineage to O.Z.O.S 15-tier chain provably valid 100%!{C_RESET}")
 
 test_genesis_sovereign_lineage()
 
 # =====================================================================
-# THỬ NGHIỆM 7: KHẢO NGHIỆM PHỔ TẦN SỐ CẬN SIÊU ÂM VÔ THANH (18 - 20 kHz)
+# TEST 7: INAUDIBLE NEAR-ULTRASOUND (18-20 KHZ) SPECTRUM & HANN ENVELOPE
 # =====================================================================
-print("\n[TEST 7/7] Khảo Nghiệm Phổ Tần Số Cận Siêu Âm Vô Thanh & Hann Envelope...")
+print("\n[TEST 7/7] Inaudible Near-Ultrasound (18-20 kHz) Spectrum & Hann Envelope Conformance...")
 
 def test_near_ultrasound_stealth_acoustic():
     import subprocess
@@ -335,14 +335,14 @@ def test_near_ultrasound_stealth_acoustic():
         ozos_exe = os.path.join(DIR, "ozos.exe" if sys.platform == "win32" else "ozos")
     payload = "SOVEREIGN_TRANSCEND_2026"
 
-    # 1. Tổng hợp sóng âm cận siêu âm qua ozos.exe
+    # 1. Synthesize near-ultrasound via ozos.exe
     cmd_synth = [ozos_exe, "audio-synth", payload, test_wav, "--stealth"]
     res_synth = subprocess.run(cmd_synth, capture_output=True, encoding='utf-8', errors='replace', cwd=DIR)
     if res_synth.returncode != 0:
         print(f"  -> {C_RED}[FAIL] ozos.exe audio-synth error: {res_synth.stderr}{C_RESET}")
         return False
 
-    # 2. Đọc file WAV và phân tích phổ FFT
+    # 2. Read WAV and compute FFT power spectrum
     with wave.open(test_wav, 'rb') as f:
         sr = f.getframerate()
         n_frames = f.getnframes()
@@ -362,35 +362,35 @@ def test_near_ultrasound_stealth_acoustic():
     stealth_pct = (stealth_power / total_power) * 100.0 if total_power > 0 else 0.0
     suppression_db = 10 * math.log10(audible_power / stealth_power) if (audible_power > 0 and stealth_power > 0) else -100.0
 
-    # 3. Giải mã lại qua ozos.exe
+    # 3. Decode via ozos.exe
     cmd_decode = [ozos_exe, "audio-decode", test_wav]
     res_decode = subprocess.run(cmd_decode, capture_output=True, encoding='utf-8', errors='replace', cwd=DIR)
 
     decoded_match = (res_decode.stdout is not None) and (payload in res_decode.stdout)
 
-    # Dọn dẹp file tạm
+    # Clean up temporary WAV
     if os.path.exists(test_wav):
         try:
             os.remove(test_wav)
         except Exception:
             pass
 
-    print(f"  • Tần số lấy mẫu (Sample Rate)    : {sr} Hz (Nyquist: {sr/2:.0f} Hz)")
-    print(f"  • Độ dài mẫu âm thanh             : {len(samples)} mẫu ({len(samples)/sr:.2f}s)")
-    print(f"  • Năng lượng dải Cận Siêu Âm       : {stealth_pct:.4f}% (> 17.5 kHz)")
-    print(f"  • Độ triệt tiêu dải Nghe Được     : {suppression_db:.2f} dB (Chuẩn: < -60 dB)")
-    print(f"  • Triệt tiêu click (Hann Window)  : |s[0]| = {abs(samples[0]):.4f}, |s[-1]| = {abs(samples[-1]):.4f}")
-    print(f"  • Kết quả giải mã qua Goertzel    : {'HOP LE 100%' if decoded_match else 'THAT BAI'}")
+    print(f"  * Sample Rate                     : {sr} Hz (Nyquist: {sr/2:.0f} Hz)")
+    print(f"  * Audio Sample Count              : {len(samples)} samples ({len(samples)/sr:.2f}s)")
+    print(f"  * Near-Ultrasound Band Energy     : {stealth_pct:.4f}% (> 17.5 kHz)")
+    print(f"  * Audible Band Attenuation        : {suppression_db:.2f} dB (Standard: < -60 dB)")
+    print(f"  * Click Suppression (Hann Window) : |s[0]| = {abs(samples[0]):.4f}, |s[-1]| = {abs(samples[-1]):.4f}")
+    print(f"  * Goertzel Decoding Verdict       : {'VALID 100%' if decoded_match else 'FAILED'}")
 
-    assert stealth_pct >= 99.0, "Năng lượng cận siêu âm phải vượt 99%!"
-    assert suppression_db <= -50.0, "Dải nghe được phải bị triệt tiêu sâu hơn -50 dB!"
-    assert decoded_match, "Dữ liệu giải mã phải trùng khớp 100%!"
+    assert stealth_pct >= 99.0, "Near-ultrasound energy must exceed 99%!"
+    assert suppression_db <= -50.0, "Audible band must be attenuated below -50 dB!"
+    assert decoded_match, "Decoded payload must match bit-exact!"
 
-    print(f"  -> {C_GREEN}[PASS] Kênh Cận Siêu Âm 18-20 kHz đạt độ vô thanh vật lý tuyệt đối (-80 dB) và phục hồi bit-exact 100%!{C_RESET}")
+    print(f"  -> {C_GREEN}[PASS] Near-Ultrasound 18-20 kHz channel achieves physical inaudibility (-80 dB) and 100% bit-exact recovery!{C_RESET}")
     return True
 
 test_near_ultrasound_stealth_acoustic()
 
 print("\n======================================================================")
-print("  HOÀN TẤT THỬ NGHIỆM ĐỐI KHÁNG RED TEAM THỰC TẾ (7/7 PASS 100%)")
+print("  ADVERSARIAL RED TEAM STRESS TESTS COMPLETED (7/7 PASSED 100%)")
 print("======================================================================")

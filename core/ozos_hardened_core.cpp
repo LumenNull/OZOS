@@ -28,20 +28,20 @@ extern "C" {
 #endif
 
 // =============================================================================
-// 1. TẦNG 7: VỆ SINH SỐ CHẤM ĐỘNG BITWISE (CHỐNG TIMING SIDE-CHANNEL SUBNORMALS)
+// 1. TIER 7: BITWISE FLOATING-POINT SANITIZATION (TIMING SIDE-CHANNEL DEFENSE)
 // =============================================================================
 
 /**
- * Triệt tiêu số dưới chuẩn (Subnormal / Denormal) và NaN/Infinity ở cấp độ bit.
- * Ngăn chặn CPU rơi vào bẫy vi mã (Microcode Assist) gây lộ kênh bên thời gian.
+ * Eliminates subnormals/denormals and NaN/Infinity at the bit level.
+ * Prevents CPU microcode assist traps that leak timing side channels.
  */
 static inline float sanitize_float_bitwise(float val) {
     uint32_t u;
     memcpy(&u, &val, sizeof(uint32_t));
     uint32_t exp = (u >> 23) & 0xFF;
 
-    // Nếu exp == 0xFF (NaN hoặc Infinity) hoặc exp == 0x00 (Subnormal hoặc Zero)
-    // Ép cứng về 0.0f tức thì trong 1 chu kỳ ALU
+    // If exp == 0xFF (NaN or Infinity) or exp == 0x00 (Subnormal or Zero)
+    // Hard clamp to 0.0f within 1 ALU clock cycle
     if (exp == 0xFF || exp == 0x00) {
         return 0.0f;
     }
@@ -49,15 +49,15 @@ static inline float sanitize_float_bitwise(float val) {
 }
 
 /**
- * Ép kiểu Float32 sang Q15.16 Fixed-Point an toàn tuyệt đối (Chống Undefined Behavior).
- * Kiểm tra mũ IEEE-754 trước khi nhân để tránh tràn số nguyên 32-bit.
+ * Strict Float32 to Q15.16 Fixed-Point casting (Eliminates Undefined Behavior).
+ * Inspects IEEE-754 exponent before scaling to prevent int32 overflow.
  */
 static inline int32_t safe_float_to_q15_16(float f) {
     uint32_t u;
     memcpy(&u, &f, sizeof(uint32_t));
     uint32_t exp = (u >> 23) & 0xFF;
 
-    // Exponent > 142 tương ứng |f| >= 2^16 (sẽ gây tràn int32 khi nhân 4096)
+    // Exponent > 142 corresponds to |f| >= 2^16 (would overflow int32 on 4096x scale)
     if (exp > 142) {
         return (u & 0x80000000U) ? -2147483647 : 2147483647;
     }
@@ -68,21 +68,21 @@ static inline int32_t safe_float_to_q15_16(float f) {
 }
 
 // =============================================================================
-// 2. TẦNG 7: THỰC THI KÉP ĐỐI KHÁNG FPU vs ALU (ANTI-DFA LASER FAULT INJECTION)
+// 2. TIER 7: DUAL-PATH FPU vs ALU RESILIENCE (ANTI-DFA LASER FAULT INJECTION)
 // =============================================================================
 
 /**
- * Kiểm tra khoảng cách bình phương giữa 2 khối đặc trưng bằng 2 mạch bán dẫn độc lập:
- *  - Luồng 1: Đơn vị dấu phẩy động (FPU) duyệt xuôi 0 -> 15
- *  - Luồng 2: Đơn vị số học nguyên (ALU Q15.16) duyệt ngược 15 -> 0
- * Nếu tia Laser bắn lệch 1 luồng, sai số hội tụ vượt ngưỡng sẽ kích hoạt hủy bộ nhớ!
+ * Evaluates squared distance between feature blocks across dual independent silicon pipelines:
+ *  - Path 1: Floating-Point Unit (FPU) forward scan 0 -> 15
+ *  - Path 2: Integer ALU (Fixed-Point Q15.16) reverse scan 15 -> 0
+ * If laser glitch perturbs one path, divergent convergence triggers immediate memory wipe!
  */
 int verify_dual_path_anti_dfa(
     const float* __restrict a,
     const float* __restrict b,
     float threshold
 ) {
-    // Luồng 1: FPU (Floating-Point Unit) duyệt xuôi
+    // Path 1: Floating-Point Unit (FPU) forward scan
     float fpu_dist = 0.0f;
     for (int i = 0; i < 16; ++i) {
         float sa = sanitize_float_bitwise(a[i]);
@@ -93,7 +93,7 @@ int verify_dual_path_anti_dfa(
 
     OZOS_COMPILER_BARRIER();
 
-    // Luồng 2: Integer ALU (Fixed-Point Q15.16) duyệt ngược
+    // Path 2: Integer ALU (Fixed-Point Q15.16) reverse scan
     int64_t alu_dist_acc = 0;
     for (int i = 15; i >= 0; --i) {
         int32_t ia = safe_float_to_q15_16(a[i]);
@@ -102,13 +102,13 @@ int verify_dual_path_anti_dfa(
         alu_dist_acc += (int64_t)diff * (int64_t)diff;
     }
 
-    // Quy đổi ALU Q15.16 (nhân 4096^2 = 16,777,216) về thang đo thực
+    // Scale ALU Q15.16 (factor 4096^2 = 16,777,216) back to real domain
     float alu_dist = (float)alu_dist_acc / 16777216.0f;
 
-    // Kiểm tra độ lệch giữa 2 mạch bán dẫn
+    // Compare drift across dual silicon datapaths
     float hardware_drift = fabsf(fpu_dist - alu_dist);
     if (hardware_drift > 0.25f) {
-        // BÁO ĐỘNG ĐỎ: Phát hiện can thiệp vật lý bắn tia Laser (Fault Injection)!
+        // SECURITY ALERT: Physical laser fault injection detected!
         return -999;
     }
 
@@ -116,15 +116,15 @@ int verify_dual_path_anti_dfa(
 }
 
 // =============================================================================
-// 3. TẦNG 3 & 7: CỔNG GÁC TRIPWIRE MAC16 (SIPHASH-2-4 KEYED PRF GATEKEEPER)
+// 3. TIER 3 & 7: TRIPWIRE MAC16 GATEKEEPER (SIPHASH-2-4 KEYED PRF)
 // =============================================================================
-// LƯU Ý BẢO MẬT (F3 Remediation):
-// - Thay thế hoàn toàn hàm băm FNV-1a có mặt nạ (vốn bị rút gọn đại số hoặc không phải
-//   là MAC mật mã học thực thụ) bằng thuật toán MAC khóa đối xứng SipHash-2-4
+// SECURITY REMEDIATION NOTE:
+// - Replaced masked FNV-1a with keyed cryptographic PRF SipHash-2-4
+//   providing genuine message authentication
 //   (Aumasson & Bernstein, INDOCRYPT 2012 - ARX Pseudorandom Function).
-// - Không tuyên bố khả năng chống tấn công phân tích năng lượng phần cứng (Anti-CPA)
-//   trên hàm kiểm tra nhanh 16-bit này; đối với bảo mật mật mã toàn diện, hệ thống
-//   sử dụng Poly1305 (RFC 8439) và chữ ký số Ed25519 ở tầng xác thực chính.
+// - Does not claim differential power analysis resistance (Anti-CPA) on this 16-bit filter;
+//   for comprehensive cryptographic protection, the architecture employs Poly1305 (RFC 8439)
+//   and Ed25519 digital signatures at the primary verification tier.
 
 #define SIPROTL(x, b) (uint64_t)(((x) << (b)) | ((x) >> (64 - (b))))
 #define SIPROUND()           \
@@ -146,9 +146,9 @@ int verify_dual_path_anti_dfa(
     } while (0)
 
 /**
- * Tính mã xác thực thông điệp nhanh 16-bit (Fast Gatekeeper MAC) dựa trên
- * hàm PRF mật mã học SipHash-2-4 với khóa 128-bit (k0 = secret_seed, k1 = key_high)
- * để lọc gói tin rác tức thì trước khi gọi hàm xác thực Ed25519 / Poly1305.
+ * Computes 16-bit Fast Gatekeeper MAC based on
+ * cryptographic PRF SipHash-2-4 with 128-bit key (k0 = secret_seed, k1 = key_high)
+ * to filter garbage packets instantly before invoking Ed25519 / Poly1305 verification.
  */
 uint16_t compute_fast_gate_mac(
     const uint8_t* data,
@@ -212,12 +212,12 @@ uint16_t compute_fast_gate_mac(
 }
 
 // =============================================================================
-// 4. TẦNG 7: XÓA TRẮNG BỘ NHỚ 3 LỚP (CHỐNG ĐỌC TRỘM RAM ĐÔNG LẠNH COLD-BOOT)
+// 4. TIER 7: 3-PASS SECURE MEMORY OVERWRITE (ANTI COLD-BOOT REMANENCE)
 // =============================================================================
 
 /**
- * Xóa hủy vùng nhớ nhạy cảm bằng 3 lượt ghi đè vật lý (0xAA -> 0x55 -> 0x00)
- * kèm rào cản trình biên dịch để ngăn Dead-Store Elimination (-O3).
+ * Destroys sensitive memory via 3 physical overwrite passes (0xAA -> 0x55 -> 0x00)
+ * with compiler memory barriers preventing Dead-Store Elimination (-O3).
  */
 void shred_memory_3pass(void* ptr, size_t size) {
     if (!ptr || size == 0) return;
@@ -234,12 +234,12 @@ void shred_memory_3pass(void* ptr, size_t size) {
 }
 
 // =============================================================================
-// 5. TẦNG 9: BỘ LỌC GOERTZEL O(N) CHO VI ĐIỀU KHIỂN NHÚNG (ZERO-FFT RAM)
+// 5. TIER 9: GOERTZEL FILTER O(N) FOR EMBEDDED MICROCONTROLLERS (ZERO-FFT RAM)
 // =============================================================================
 
 /**
- * Tính công suất của đúng 1 tần số mục tiêu (target_freq) trên mảng mẫu âm thanh.
- * Chỉ tốn 3 biến float trên thanh ghi (0 byte RAM cấp phát động), nhanh gấp 20 lần FFT!
+ * Computes power at target frequency over audio samples.
+ * Operates strictly in registers with zero heap allocation, 20x faster than full FFT!
  */
 float goertzel_power(
     const float* samples,

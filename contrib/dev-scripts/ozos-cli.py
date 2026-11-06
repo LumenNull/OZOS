@@ -67,15 +67,15 @@ def hex_dump_terminal(data_bytes):
         print(f"{C_CYAN}0x{i:06X}:{C_RESET}  {hex_str}  {C_AMBER}|{ascii_str}|{C_RESET}")
 
 def cmd_tpm():
-    print(f"\n{C_BOLD}[TPM 2.0] TRUY VẤN MỎ NEO PHẦN CỨNG...{C_RESET}")
+    print(f"\n{C_BOLD}[TPM 2.0] QUERYING HARDWARE SILICON ANCHOR...{C_RESET}")
     tpm = OZOSHardwareTPM()
     badge = tpm.export_provenance_badge()
     status_color = C_GREEN if badge["tpm_status"] == "AVAILABLE" else C_AMBER
-    print(f"  • Trạng thái TPM       : {status_color}{badge['tpm_status']}{C_RESET}")
-    print(f"  • Nhà cung cấp vi mạch : {C_CYAN}{badge['provider']}{C_RESET}")
-    print(f"  • Vân tay Silicon Seed : {C_AMBER}{badge['master_silicon_seed_fingerprint']}{C_RESET}")
-    print(f"  • Nguồn Entropy TRNG   : {badge['trng_entropy_source']}")
-    print(f"  • Giá trị pháp lý      : {C_GREEN}{badge['admissibility']}{C_RESET}")
+    print(f"  • TPM Status           : {status_color}{badge['tpm_status']}{C_RESET}")
+    print(f"  • Silicon Provider     : {C_CYAN}{badge['provider']}{C_RESET}")
+    print(f"  • Silicon Seed Fingerprint: {C_AMBER}{badge['master_silicon_seed_fingerprint']}{C_RESET}")
+    print(f"  • TRNG Entropy Source  : {badge['trng_entropy_source']}")
+    print(f"  • Legal Admissibility  : {C_GREEN}{badge['admissibility']}{C_RESET}")
     tpm.close()
 
 def compute_fast_gate_mac(data: bytes, k0: int, k1: int = 0) -> int:
@@ -132,14 +132,14 @@ def compute_fast_gate_mac(data: bytes, k0: int, k1: int = 0) -> int:
 
 def build_aligned_packet(payload_str, nonce=1001, secret_seed=0xA5A5A5A5):
     if not isinstance(payload_str, str):
-        raise ValueError(f"payload_str phải là chuỗi ký tự (str), nhận được {type(payload_str).__name__}")
+        raise ValueError(f"payload_str must be a string (str), received {type(payload_str).__name__}")
     if isinstance(nonce, bool) or not isinstance(nonce, int) or nonce < 0 or nonce > 0xFFFFFFFFFFFFFFFF:
-        raise ValueError(f"nonce phải là số nguyên 64-bit không dấu [0, 2^64-1], nhận được {nonce!r}")
+        raise ValueError(f"nonce must be unsigned 64-bit integer [0, 2^64-1], received {nonce!r}")
     if isinstance(secret_seed, bool) or not isinstance(secret_seed, int):
-        raise ValueError(f"secret_seed phải là số nguyên (int), nhận được {type(secret_seed).__name__}")
+        raise ValueError(f"secret_seed must be an integer (int), received {type(secret_seed).__name__}")
     payload_bytes = payload_str.encode('utf-8')
     if len(payload_bytes) > 65535:
-        raise ValueError(f"Payload vượt quá giới hạn tối đa của khung dữ liệu 16-bit ({len(payload_bytes)} > 65535 bytes)")
+        raise ValueError(f"Payload exceeds maximum 16-bit framing limit ({len(payload_bytes)} > 65535 bytes)")
     header_size = 80
     packet = bytearray(header_size + len(payload_bytes))
 
@@ -159,7 +159,7 @@ def build_aligned_packet(payload_str, nonce=1001, secret_seed=0xA5A5A5A5):
     # 5. Payload Content
     packet[80:] = payload_bytes
 
-    # 6. Tripwire MAC16 (Offset 0x4E - 0x4F) bao phủ cả Header (0..77) VÀ Payload (SipHash-2-4)
+    # 6. Tripwire MAC16 (Offset 0x4E - 0x4F) covering Header (0..77) AND Payload (SipHash-2-4)
     k0 = secret_seed if secret_seed != 0 else 0xA5A5A5A5
     mac_input = bytes(packet[:78]) + bytes(payload_bytes)
     mac16 = compute_fast_gate_mac(mac_input, k0, 0)
@@ -168,44 +168,44 @@ def build_aligned_packet(payload_str, nonce=1001, secret_seed=0xA5A5A5A5):
 
 def validate_aligned_packet(packet_bytes, last_seen_nonce=0, secret_seed=0xA5A5A5A5):
     if packet_bytes is None or not isinstance(packet_bytes, (bytes, bytearray, memoryview)):
-        return False, "Dữ liệu gói tin không hợp lệ (yêu cầu bytes-like object)", None
+        return False, "Invalid packet data (bytes-like object required)", None
     packet_bytes = bytes(packet_bytes)
     if len(packet_bytes) < 80:
-        return False, "Kích thước nhỏ hơn 80 bytes", None
+        return False, "Size smaller than 80 bytes", None
     if isinstance(last_seen_nonce, bool):
-        return False, "last_seen_nonce không được là kiểu boolean (bool)", None
+        return False, "last_seen_nonce cannot be boolean (bool)", None
     if isinstance(secret_seed, bool) or not isinstance(secret_seed, int):
-        return False, f"secret_seed phải là số nguyên (int), nhận được {type(secret_seed).__name__}", None
+        return False, f"secret_seed must be an integer (int), received {type(secret_seed).__name__}", None
     if isinstance(last_seen_nonce, float):
-        return False, "last_seen_nonce không được là số thực (float)", None
+        return False, "last_seen_nonce cannot be float", None
     if last_seen_nonce is None:
-        return False, "last_seen_nonce không được là None", None
+        return False, "last_seen_nonce cannot be None", None
     if not isinstance(last_seen_nonce, int):
         if isinstance(last_seen_nonce, str) and len(last_seen_nonce) > 0 and all('0' <= c <= '9' for c in last_seen_nonce):
             last_seen_nonce = int(last_seen_nonce)
         else:
-            return False, f"last_seen_nonce không hợp lệ (chỉ chấp nhận chữ số ASCII 0-9): {last_seen_nonce!r}", None
+            return False, f"last_seen_nonce invalid (ASCII digits 0-9 only): {last_seen_nonce!r}", None
     if last_seen_nonce < 0 or last_seen_nonce > 0xFFFFFFFFFFFFFFFF:
-        return False, f"last_seen_nonce nằm ngoài phạm vi 64-bit [0, 2^64-1]: {last_seen_nonce}", None
+        return False, f"last_seen_nonce out of 64-bit range [0, 2^64-1]: {last_seen_nonce}", None
 
-    # Kiểm tra hệ số chấm động độc hại (NaN / Infinity)
+    # Validate poisoned floats (NaN / Infinity)
     import math
     for i in range(16):
         coeff = struct.unpack_from('<f', packet_bytes, i * 4)[0]
         if math.isnan(coeff) or math.isinf(coeff):
-            return False, "Phát hiện hệ số chấm động độc hại (NaN hoặc Infinity trong dct_coeffs)", None
+            return False, "Poisoned float detected (NaN or Infinity in dct_coeffs)", None
 
     magic = struct.unpack_from('<I', packet_bytes, 72)[0]
     if magic != 0x47454E01:
-        return False, f"Magic sai lệch (0x{magic:08X})", None
+        return False, f"Magic Header mismatch (0x{magic:08X})", None
 
     payload_len = struct.unpack_from('<H', packet_bytes, 76)[0]
     if len(packet_bytes) < 80 + payload_len:
-        return False, "Khung dữ liệu bị cắt cụt (Truncated payload)", None
+        return False, "Truncated payload framing", None
     if len(packet_bytes) > 80 + payload_len:
-        return False, "Phát hiện rác nối đuôi (Trailing garbage detected)", None
+        return False, "Trailing garbage detected", None
 
-    # Tripwire MAC16 hỗ trợ cả Sub-profile A1 (CRC16) và Sub-profile A2 (SipHash-2-4)
+    # Tripwire MAC16 supports both Sub-profile A1 (CRC16) and Sub-profile A2 (SipHash-2-4)
     incoming_mac = struct.unpack_from('<H', packet_bytes, 78)[0]
     k0 = secret_seed if secret_seed != 0 else 0xA5A5A5A5
     mac_input = bytes(packet_bytes[:78]) + bytes(packet_bytes[80:80+payload_len])
@@ -225,22 +225,22 @@ def validate_aligned_packet(packet_bytes, last_seen_nonce=0, secret_seed=0xA5A5A
     is_a1 = (secret_seed == 0xA5A5A5A5 and incoming_mac == crc)
 
     if not is_a2 and not is_a1:
-        return False, f"Tripwire MAC16 không khớp: Header hoặc Payload đã bị sửa đổi (0x{incoming_mac:04X} vs 0x{expected_mac:04X})", None
+        return False, f"Tripwire MAC16 mismatch: Header or Payload was tampered (0x{incoming_mac:04X} vs 0x{expected_mac:04X})", None
 
     if is_a1 and not is_a2 and payload_len > 0:
-        return False, "Từ chối Sub-Profile A1 cho gói tin có payload: MAC16 chỉ bảo vệ 78B Header, không bảo vệ Payload", None
+        return False, "Rejected Sub-Profile A1 for packet with payload: MAC16 does not authenticate payload", None
 
     nonce = struct.unpack_from('<Q', packet_bytes, 64)[0]
     if nonce <= last_seen_nonce:
-        return False, f"Tấn công phát lại (Nonce {nonce} <= {last_seen_nonce})", None
+        return False, f"Replay Attack (Nonce {nonce} <= {last_seen_nonce})", None
 
     payload = packet_bytes[80:80+payload_len].decode('utf-8', errors='replace')
-    return True, "HỢP LỆ", {"nonce": nonce, "payload": payload, "payload_len": payload_len}
+    return True, "VALID", {"nonce": nonce, "payload": payload, "payload_len": payload_len}
 
 def cmd_packet_build(args):
     packet, mac16 = build_aligned_packet(args.payload, args.nonce)
     b64 = base64.b64encode(packet).decode('utf-8')
-    print(f"\n{C_BOLD}[GÓI TIN ĐÃ ĐÓNG GÓI - KÍCH THƯỚC: {len(packet)} BYTES]{C_RESET}")
+    print(f"\n{C_BOLD}[FRAMED PACKET - SIZE: {len(packet)} BYTES]{C_RESET}")
     print(f"  • Nonce        : {args.nonce}")
     print(f"  • Magic        : 0x47454E01")
     print(f"  • MAC16        : 0x{mac16:04X}")
@@ -277,17 +277,17 @@ def cmd_packet_verify(args):
     elif b64_candidate:
         raw_bytes = b64_candidate
     else:
-        print(f"\n{C_RED}{C_BOLD}[XÁC THỰC THẤT BÀI]: Dữ liệu không phải Base64 hoặc Hex hợp lệ{C_RESET}")
+        print(f"\n{C_RED}{C_BOLD}[VERIFICATION FAILED]: Data is not valid Base64 or Hex{C_RESET}")
         sys.exit(1)
 
     valid, reason, info = validate_aligned_packet(raw_bytes, args.last_nonce)
     if valid:
-        print(f"\n{C_GREEN}{C_BOLD}[XÁC THỰC THÀNH CÔNG]{C_RESET}")
+        print(f"\n{C_GREEN}{C_BOLD}[VERIFICATION SUCCESSFUL]{C_RESET}")
         print(f"  • Nonce   : {info['nonce']}")
         print(f"  • Payload : {C_AMBER}\"{info['payload']}\"{C_RESET}")
         print(f"  • Length  : {info['payload_len']} bytes")
     else:
-        print(f"\n{C_RED}{C_BOLD}[XÁC THỰC THẤT BÀI]: {reason}{C_RESET}")
+        print(f"\n{C_RED}{C_BOLD}[VERIFICATION FAILED]: {reason}{C_RESET}")
         sys.exit(1)
 
 def _build_dct_basis():
@@ -315,7 +315,7 @@ def _compute_watermark_crc16(data: bytes) -> int:
 def embed_2d_dct_watermark(image_path, payload_str, output_path, strength=18.0):
     payload_bytes = payload_str.encode('utf-8')
     if len(payload_bytes) > 255:
-        raise ValueError("Payload thủy vân tối đa 255 bytes")
+        raise ValueError("Watermark payload maximum 255 bytes")
     crc = _compute_watermark_crc16(payload_bytes)
     frame = bytes([0x5A, 0xA5, len(payload_bytes), (crc >> 8) & 0xFF, crc & 0xFF]) + payload_bytes
     bits = []
@@ -328,7 +328,7 @@ def embed_2d_dct_watermark(image_path, payload_str, output_path, strength=18.0):
     h, w, _ = arr.shape
     bh, bw = h // 8, w // 8
     if bh * bw < len(bits):
-        raise ValueError(f"Ảnh quá nhỏ để nhúng {len(bits)} bits (cần tối thiểu {len(bits)} khối 8x8)")
+        raise ValueError(f"Image too small to embed {len(bits)} bits (requires at least {len(bits)} 8x8 blocks)")
 
     bit_idx = 0
     for by in range(bh):
@@ -434,34 +434,34 @@ def extract_2d_dct_watermark_bytes(im):
 
 def cmd_stego_embed(args):
     if not os.path.exists(args.image):
-        print(f"{C_RED}Tệp không tồn tại: {args.image}{C_RESET}")
+        print(f"{C_RED}File does not exist: {args.image}{C_RESET}")
         sys.exit(1)
     try:
         embed_2d_dct_watermark(args.image, args.payload, args.output)
     except ValueError as e:
-        print(f"{C_RED}[LỖI NHÚNG THỦY VÂN]: {e}{C_RESET}")
+        print(f"{C_RED}[STEGO EMBED ERROR]: {e}{C_RESET}")
         sys.exit(1)
-    print(f"{C_GREEN}{C_BOLD}[2D-DCT STEGO EMBED THÀNH CÔNG]: {args.output}{C_RESET}")
+    print(f"{C_GREEN}{C_BOLD}[2D-DCT STEGO EMBED SUCCESSFUL]: {args.output}{C_RESET}")
 
 def cmd_stego_extract(args):
     if not os.path.exists(args.image):
-        print(f"{C_RED}Tệp không tồn tại: {args.image}{C_RESET}")
+        print(f"{C_RED}File does not exist: {args.image}{C_RESET}")
         sys.exit(1)
 
-    print(f"\n{C_BOLD}[2D-DCT] ĐANG PHÂN TÍCH QUANG PHỔ TẦN SỐ ẢNH: {args.image}{C_RESET}")
+    print(f"\n{C_BOLD}[2D-DCT] ANALYZING IMAGE FREQUENCY SPECTRUM: {args.image}{C_RESET}")
     try:
         im = Image.open(args.image).convert('RGB')
         extracted = extract_2d_dct_watermark_bytes(im)
     except Exception as e:
-        print(f"{C_RED}[LỖI TRÍCH XUẤT]: {e}{C_RESET}")
+        print(f"{C_RED}[EXTRACTION ERROR]: {e}{C_RESET}")
         sys.exit(1)
 
     if extracted is not None:
         payload = extracted.decode('utf-8', errors='replace')
-        print(f"{C_GREEN}{C_BOLD}[CHỨNG CỨ BÓC TÁCH THÀNH CÔNG]:{C_RESET}")
+        print(f"{C_GREEN}{C_BOLD}[EVIDENCE EXTRACTED SUCCESSFULLY]:{C_RESET}")
         print(f"  -> \"{C_AMBER}{payload}{C_RESET}\"")
     else:
-        print(f"{C_RED}{C_BOLD}[KHÔNG TÌM THẤY THỦY VÂN HỢP LỆ]: Không phát hiện Magic Header 0x5AA5 trên phổ 2D-DCT 8x8.{C_RESET}")
+        print(f"{C_RED}{C_BOLD}[NO VALID WATERMARK FOUND]: Missing Magic Header 0x5AA5 on 2D-DCT 8x8 spectrum.{C_RESET}")
         sys.exit(1)
 
 def _hann_env(i, total, ramp):
@@ -475,10 +475,10 @@ def _hann_env(i, total, ramp):
     return 1.0
 
 def cmd_audio_synth(args):
-    print(f"\n{C_BOLD}[AUDIO FSK] ĐANG TỔNG HỢP SÓNG ÂM VÀO TỆP: {args.output}{C_RESET}")
+    print(f"\n{C_BOLD}[AUDIO FSK] SYNTHESIZING ACOUSTIC WAVEFORM TO FILE: {args.output}{C_RESET}")
     text_bytes = args.payload.encode('utf-8')
     if len(text_bytes) > 1024:
-        print(f"{C_RED}Lỗi: Dữ liệu âm thanh tối đa 1024 bytes.{C_RESET}")
+        print(f"{C_RED}Error: Audio payload maximum 1024 bytes.{C_RESET}")
         sys.exit(1)
 
     stealth = getattr(args, "mode", "stealth") != "audible"
@@ -529,7 +529,7 @@ def cmd_audio_synth(args):
         raw_audio = struct.pack(f"<{len(tones)}h", *tones)
         wf.writeframes(raw_audio)
 
-    print(f"{C_GREEN}  -> Đã ghi tệp WAV âm thanh Dual-Nibble 16-FSK ({len(tones)/sample_rate:.2f} giây).{C_RESET}")
+    print(f"{C_GREEN}  -> Written Dual-Nibble 16-FSK WAV audio file ({len(tones)/sample_rate:.2f} seconds).{C_RESET}")
 
 def main():
     print_banner()
@@ -537,33 +537,33 @@ def main():
     subparsers = parser.add_subparsers(dest="command")
 
     # tpm
-    subparsers.add_parser("tpm", help="Truy vấn vi mạch Hardware TPM 2.0")
+    subparsers.add_parser("tpm", help="Query Hardware TPM 2.0 silicon anchor")
 
     # packet build
-    p_build = subparsers.add_parser("packet-build", help="Đóng gói gói tin 80-byte Aligned")
-    p_build.add_argument("--payload", default="O.Z.O.S-SOVEREIGN-KEY-TOKEN", help="Dữ liệu payload")
-    p_build.add_argument("--nonce", type=int, default=1001, help="Nonce gói tin")
+    p_build = subparsers.add_parser("packet-build", help="Frame 80-byte SIMD-aligned packet")
+    p_build.add_argument("--payload", default="O.Z.O.S-SOVEREIGN-KEY-TOKEN", help="Payload data string")
+    p_build.add_argument("--nonce", type=int, default=1001, help="Packet nonce")
 
     # packet verify
-    p_ver = subparsers.add_parser("packet-verify", help="Xác thực gói tin 80-byte")
-    p_ver.add_argument("--data", required=True, help="Chuỗi Base64 hoặc Hex")
-    p_ver.add_argument("--last-nonce", type=int, default=0, help="Nonce ghi nhận gần nhất")
+    p_ver = subparsers.add_parser("packet-verify", help="Validate 80-byte packet")
+    p_ver.add_argument("--data", required=True, help="Base64 or Hex encoded packet string")
+    p_ver.add_argument("--last-nonce", type=int, default=0, help="Last seen monotonic nonce")
 
     # stego embed
-    p_embed = subparsers.add_parser("stego-embed", help="Nhúng thủy vân 2D-DCT vào ảnh")
-    p_embed.add_argument("--image", required=True, help="Đường dẫn tệp ảnh gốc")
-    p_embed.add_argument("--payload", required=True, help="Nội dung thủy vân")
-    p_embed.add_argument("--output", required=True, help="Đường dẫn tệp ảnh đầu ra")
+    p_embed = subparsers.add_parser("stego-embed", help="Embed 2D-DCT frequency watermark into image")
+    p_embed.add_argument("--image", required=True, help="Path to cover image file")
+    p_embed.add_argument("--payload", required=True, help="Watermark secret payload")
+    p_embed.add_argument("--output", required=True, help="Path to output watermarked image")
 
     # stego extract
-    p_stego = subparsers.add_parser("stego-extract", help="Bóc tách thủy vân 2D-DCT từ ảnh")
-    p_stego.add_argument("--image", required=True, help="Đường dẫn tệp ảnh")
+    p_stego = subparsers.add_parser("stego-extract", help="Extract 2D-DCT frequency watermark from image")
+    p_stego.add_argument("--image", required=True, help="Path to image file")
 
     # audio synth
-    p_audio = subparsers.add_parser("audio-synth", help="Tổng hợp tệp sóng âm FSK")
-    p_audio.add_argument("--payload", default="O.Z.O.S-DATA-AIR-GAP", help="Dữ liệu cần truyền")
-    p_audio.add_argument("--output", default="ozos_fsk_transmission.wav", help="Tên tệp WAV đầu ra")
-    p_audio.add_argument("--mode", choices=["stealth", "audible"], default="stealth", help="Chế độ sóng âm")
+    p_audio = subparsers.add_parser("audio-synth", help="Synthesize FSK acoustic waveform file")
+    p_audio.add_argument("--payload", default="O.Z.O.S-DATA-AIR-GAP", help="Data payload to transmit")
+    p_audio.add_argument("--output", default="ozos_fsk_transmission.wav", help="Output WAV file path")
+    p_audio.add_argument("--mode", choices=["stealth", "audible"], default="stealth", help="Acoustic waveform transmission mode")
 
     args = parser.parse_args()
 
@@ -582,7 +582,7 @@ def main():
     else:
         # Default run TPM inspection & packet sample
         cmd_tpm()
-        print(f"\n{C_DIM}Mẹo: Chạy 'python ozos-cli.py -h' để xem danh sách lệnh tác chiến.{C_RESET}")
+        print(f"\n{C_DIM}Tip: Run 'python ozos-cli.py -h' to view command options.{C_RESET}")
 
 if __name__ == '__main__':
     main()

@@ -8,7 +8,7 @@
 
 int main(void) {
     printf("======================================================================\n");
-    printf("  [AUDIT VERIFY] KIEM CHUNG THUC NGHIEM SAU KHI VA LO HONG O.Z.O.S\n");
+    printf("  [AUDIT VERIFY] EMPIRICAL SECURITY AUDIT VERIFICATION BATTERY\n");
     printf("======================================================================\n\n");
 
     int failures = 0;
@@ -34,12 +34,12 @@ int main(void) {
     bool syn_zero_accepted = ozos_handshake_syn_verify(&syn_zero);
 
     bool fix1_ok = (rc_zero == -1) && (rc_order2 == -1) && (rc_kdf_zero == -1) && (!syn_zero_accepted);
-    printf("[1] Va Lo Hong X25519 Low-Order Point (RFC 7748 Section 6.1):\n");
+    printf("[1] RFC 7748 Section 6.1 Low-Order Point Rejection:\n");
     printf("    - ozos_ecdh_shared_secret(PK=0x00..00) : rc = %d (Ky vong: -1)\n", rc_zero);
     printf("    - ozos_ecdh_shared_secret(PK=0x0100..) : rc = %d (Ky vong: -1)\n", rc_order2);
     printf("    - ozos_kdf_session_key(Shared=0x00..00): rc = %d (Ky vong: -1)\n", rc_kdf_zero);
     printf("    - ozos_handshake_syn_verify(PK=0x00..0): %s (Ky vong: REJECTED)\n", syn_zero_accepted ? "ACCEPTED" : "REJECTED");
-    printf("    => Trang thai: %s\n\n", fix1_ok ? "DA VA THANH CONG (PASS)" : "THAT BAI (FAIL)");
+    printf("    => Status: %s\n\n", fix1_ok ? "REMEDIATED & VERIFIED (PASS)" : "FAILED (FAIL)");
     if (!fix1_ok) failures++;
 
     /* 2. Kiem chung Domain Separation Poly1305 Subkey & Nonce Binding KDF */
@@ -63,11 +63,11 @@ int main(void) {
     bool verify_ok = ozos_verify_handshake_auth_tag(subkey_poly_tag, k_sess_1, victim_pk, peer_pk);
     bool fix2_ok = subkey_isolated && nonce_bound && verify_ok;
 
-    printf("[2] Va Lo Hong Tach Mien Khoa Poly1305 (Key Separation) & Nonce Binding:\n");
+    printf("[2] Poly1305 Key Domain Separation & Nonce Binding:\n");
     printf("    - K_auth_subkey tach biet khoi K_session XSalsa20: %s\n", subkey_isolated ? "CO (ISOLATED)" : "KHONG");
     printf("    - Nonce 111111 vs 999999 sinh K_session khac nhau: %s\n", nonce_bound ? "CO (BOUND)" : "KHONG");
     printf("    - Xac thuc chieu ve ozos_verify_handshake_auth_tag: %s\n", verify_ok ? "HOP LE" : "LOI");
-    printf("    => Trang thai: %s\n\n", fix2_ok ? "DA VA THANH CONG (PASS)" : "THAT BAI (FAIL)");
+    printf("    => Status: %s\n\n", fix2_ok ? "REMEDIATED & VERIFIED (PASS)" : "FAILED (FAIL)");
     if (!fix2_ok) failures++;
 
     /* 3. Kiem chung ham MAC khoa SipHash-2-4 that trong compute_fast_gate_mac (F3 Remediation) */
@@ -83,12 +83,12 @@ int main(void) {
     uint16_t mac_data_flip = compute_fast_gate_mac(pkt78_flip, 78, secret_seed, 0ULL);
     bool fix3_ok = (mac_k0 == mac_k0_repeat) && (mac_k0 != mac_k1) && (mac_k0 != mac_data_flip);
 
-    printf("[3] Va Lo Hong compute_fast_gate_mac voi ham PRF SipHash-2-4 that:\n");
+    printf("[3] Fast Gatekeeper MAC with Genuine SipHash-2-4 PRF:\n");
     printf("    - MAC16 goc (Key 0xA5A5A5A5, KeyHi=0) : 0x%04X\n", mac_k0);
     printf("    - MAC16 lap lai (Tinh tat dinh 100%%)   : 0x%04X (Khop: %s)\n", mac_k0_repeat, (mac_k0 == mac_k0_repeat) ? "DUNG" : "SAI");
     printf("    - MAC16 lat 1 bit khoa (Avalanche)    : 0x%04X (Khac biet: %s)\n", mac_k1, (mac_k0 != mac_k1) ? "DUNG" : "SAI");
     printf("    - MAC16 lat 1 bit du lieu (Tamper)    : 0x%04X (Khac biet: %s)\n", mac_data_flip, (mac_k0 != mac_data_flip) ? "DUNG" : "SAI");
-    printf("    => Trang thai: %s\n\n", fix3_ok ? "DA VA THANH CONG (PASS - SIPHASH-2-4 THAT)" : "THAT BAI (FAIL)");
+    printf("    => Status: %s\n\n", fix3_ok ? "REMEDIATED & VERIFIED (PASS - GENUINE SIPHASH-2-4)" : "FAILED (FAIL)");
     if (!fix3_ok) failures++;
 
     /* 4. Kiem chung Reentrant Tokenizer & Stack Zeroization trong Brainseed */
@@ -99,16 +99,16 @@ int main(void) {
     bool res_ok = ozos_brainseed_restore(seed_res, mnem, "SovereignPass#2026");
     bool fix4_ok = gen_ok && res_ok && (memcmp(seed_gen, seed_res, 32) == 0);
 
-    printf("[4] Va Lo Hong Stack Memory Scrubbing & Reentrant BIP-39 Parser:\n");
+    printf("[4] Stack Memory Scrubbing & Reentrant BIP-39 Parser:\n");
     printf("    - Khoi tao & Phuc hoi BIP-39 Seed 32B : %s\n", fix4_ok ? "KHOP BIT-EXACT 100%" : "LOI");
-    printf("    => Trang thai: %s\n\n", fix4_ok ? "DA VA THANH CONG (PASS)" : "THAT BAI (FAIL)");
+    printf("    => Status: %s\n\n", fix4_ok ? "REMEDIATED & VERIFIED (PASS)" : "FAILED (FAIL)");
     if (!fix4_ok) failures++;
 
     printf("======================================================================\n");
     if (failures == 0) {
-        printf("  KET LUAN C CORE: 4/4 NHOM LO HONG MAT MA C99/C++ DA DUOC VA KHEP KIN!\n");
+        printf("  CONCLUSION: 4/4 CRYPTOGRAPHIC VULNERABILITY CLASSES REMEDIATED & ENFORCED 100%!\n");
     } else {
-        printf("  CANH BAO: Co %d kiem chung that bai!\n", failures);
+        printf("  WARNING: %d audit verifications failed!\n", failures);
     }
     printf("======================================================================\n");
     return failures;
