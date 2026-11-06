@@ -619,7 +619,7 @@ static bool run_genesis_seal(void) {
     ozos_sha256_buffer(hash1, full_block, full_len);
     ozos_sha256_buffer(hash2, hash1, 32);
 
-    /* Kiem tra bat bien Hash Genesis doi chieu hang so bat bien (Zero-Tampering) */
+    /* Verify Genesis Hash invariant against canonical constant (Zero-Tampering) */
     static const uint8_t OZOS_EXPECTED_GENESIS_HASH[32] = {
         0x3b, 0x5b, 0xfe, 0x68, 0xf4, 0xa4, 0x91, 0xa0,
         0x2c, 0x0f, 0xec, 0x66, 0x54, 0x7e, 0xe1, 0x42,

@@ -258,7 +258,7 @@ int main(void) {
     if (!sig_valid || memcmp(verified_pk, pk, 32) != 0) {
         TEST_FAIL("Verify Signature", "Sovereign signature verification failed");
     }
-    printf("  • Chu ky Ed25519 64B    : Hop le 100%% tren Stack Memory (< 0.5 ms)\n");
+    printf("  • Ed25519 Signature 64B : Valid 100%% on Stack Memory (< 0.5 ms)\n");
 
     /* Mutate 1 bit in message -> Must be rejected immediately */
     signed_frame[0] ^= 0x01;
@@ -400,7 +400,7 @@ int main(void) {
     if (!dec_ok || dec_len != msg_len || memcmp(decrypted_msg, tunnel_secret_msg, msg_len) != 0) {
         TEST_FAIL("Tunnel Decrypt", "Tunnel payload decryption failed or produced corrupted data");
     }
-    printf("  • Giai ma thanh cong    : \"%s\" (100%% Toan ven)\n", decrypted_msg);
+    printf("  • Decryption Successful : \"%s\" (100%% Invariant Integrity)\n", decrypted_msg);
 
     /* 5. Anti-Replay: Replaying identical cipherframe with same 24B nonce must be rejected */
     bool replay_rejected = !ozos_tunnel_decrypt(
@@ -469,9 +469,9 @@ int main(void) {
         printf("  • Expected : '%s'\n", expected_mnemonic);
         TEST_FAIL("Mnemonic Match", "12-word phrase does not match BIP-39 golden vector");
     }
-    printf("  • 12 Tu Tri Nao (BIP-39): \"%s\"\n", mnemonic);
+    printf("  • 12 Brainseed Words (BIP-39): \"%s\"\n", mnemonic);
 
-    /* Golden Seed 32-byte dau tien: 5eb00bbddcf069084889a8ab9155568165f5c453ccb85e70811aaed6f6da5fc1 */
+    /* Golden Seed first 32 bytes: 5eb00bbddcf069084889a8ab9155568165f5c453ccb85e70811aaed6f6da5fc1 */
     uint8_t expected_seed_prefix[32] = {
         0x5e, 0xb0, 0x0b, 0xbd, 0xdc, 0xf0, 0x69, 0x08,
         0x48, 0x89, 0xa8, 0xab, 0x91, 0x55, 0x56, 0x81,
@@ -520,7 +520,7 @@ int main(void) {
     uint32_t node_a_id = 0xA1A2A3A4;
     uint32_t node_b_id = 0xB1B2B3B4;
 
-    /* Khi 2 nut o cung epoch 100 va cung Merkle root */
+    /* When two nodes are at the same epoch 100 and share identical Merkle root */
     ozos_gossip_beacon_t beacon_b;
     ozos_gossip_beacon_build(&beacon_b, node_b_id, root_epoch_100, 100);
     if (!ozos_gossip_beacon_verify(&beacon_b)) {

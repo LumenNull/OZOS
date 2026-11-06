@@ -25,6 +25,7 @@ import os
 import sys
 import subprocess
 import binascii
+import shutil
 
 if hasattr(sys.stdout, 'reconfigure'):
     sys.stdout.reconfigure(encoding='utf-8')
@@ -95,9 +96,9 @@ code, out, err = run_ozos("keygen", "0123456789abcdef0123456789abcdef0123456789a
 short_code, short_out, short_err = run_ozos("keygen", "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef") # 64 chars
 syntax_err_62 = run_ozos("keygen", "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcd") # 62 chars
 
-check_test("Seed 66 ky tu bi tu choi voi loi cu phap", code != 0 and ("Seed hex phai co do dai" in err or "Seed hex must be exactly 64" in err), "Exit code non-zero, hard error")
-check_test("Seed 62 ky tu bi tu choi voi loi cu phap", syntax_err_62[0] != 0 and ("Seed hex phai co do dai" in syntax_err_62[2] or "Seed hex must be exactly 64" in syntax_err_62[2]), "Exit code non-zero, hard error")
-check_test("Seed 64 ky tu hop le duoc chap nhan", short_code == 0 and "Sovereign Public Key" in short_out, "Exit code 0, keygen successful")
+check_test("Seed of 66 hex characters rejected with syntax error", code != 0 and ("Seed hex phai co do dai" in err or "Seed hex must be exactly 64" in err), "Exit code non-zero, hard error")
+check_test("Seed of 62 hex characters rejected with syntax error", syntax_err_62[0] != 0 and ("Seed hex phai co do dai" in syntax_err_62[2] or "Seed hex must be exactly 64" in syntax_err_62[2]), "Exit code non-zero, hard error")
+check_test("Valid 64-character hex seed accepted", short_code == 0 and "Sovereign Public Key" in short_out, "Exit code 0, keygen successful")
 
 # ----------------------------------------------------------------------
 # 2. TEST HIGH 1: Sovereign key signing & No silent fallback
@@ -105,7 +106,7 @@ check_test("Seed 64 ky tu hop le duoc chap nhan", short_code == 0 and "Sovereign
 print("\n[TEST 2/8] Default Sovereign Identity Protection Policy...")
 seed_sovereign = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
 code_sign, out_sign, err_sign = run_ozos("packet-sign", "GENESIS_SOVEREIGN_TRANSACTION", "2000", seed_sovereign)
-check_test("Ky goi tin voi seed chu quyen 64-hex thanh cong", code_sign == 0 and "[PACKET SIGNED]" in out_sign, "Packet signed")
+check_test("Packet successfully signed with 64-hex sovereign seed", code_sign == 0 and "[PACKET SIGNED]" in out_sign, "Packet signed")
 
 # Extract signed packet hex and author pubkey
 signed_hex = None
@@ -117,7 +118,7 @@ for i, line in enumerate(lines):
     if "[SIGNED HEX DUMP]:" in line and i + 1 < len(lines):
         signed_hex = lines[i + 1].strip()
 
-check_test("Trich xuat duoc Signed Packet va Sovereign PubKey", signed_hex is not None and sovereign_pk is not None, f"PubKey: {sovereign_pk[:16]}...")
+check_test("Extracted Signed Packet and Sovereign Public Key", signed_hex is not None and sovereign_pk is not None, f"PubKey: {sovereign_pk[:16]}...")
 
 # ----------------------------------------------------------------------
 # 3. TEST HIGH 2: Self-referential author verification vs Pinned Sovereign Anchor
@@ -137,14 +138,14 @@ for i, line in enumerate(lines_att):
 
 # Verify attacker frame against victim's sovereign_pk as trusted anchor:
 code_v1, out_v1, _ = run_ozos("packet-verify", attacker_hex, "1000", sovereign_pk)
-check_test("Goi tin cua ke tan cong bi TU CHOI khi doi chieu voi Sovereign Anchor",
-           ("BI TU CHOI" in out_v1 or "VALID SIGNATURE BUT AUTHOR IS NOT IN TRUSTED STORE" in out_v1 or "REJECTED" in out_v1) and ("CANH BAO: UNTRUSTED / ATTACKER KEY" in out_v1 or "WARNING: UNTRUSTED / ATTACKER KEY" in out_v1),
+check_test("Attacker packet strictly REJECTED against Sovereign Anchor",
+           ("VALID SIGNATURE BUT AUTHOR IS NOT IN TRUSTED STORE" in out_v1 or "REJECTED" in out_v1) and ("WARNING: UNTRUSTED / ATTACKER KEY" in out_v1),
            "Attacker frame blocked from sovereign authority")
 
 # Verify genuine frame against sovereign_pk as trusted anchor:
 code_v2, out_v2, _ = run_ozos("packet-verify", signed_hex, "1000", sovereign_pk)
-check_test("Goi tin chu quyen that duoc xac nhan HOP LE TUYET DOI khi khop Sovereign Anchor",
-           ("HOP LE TUYET DOI" in out_v2 or "VERIFIED (100% INVARIANT INTEGRITY & SOVEREIGN VERIFIED)" in out_v2) and "TRUSTED PINNED SOVEREIGN KEY" in out_v2,
+check_test("Authentic sovereign packet certified strictly VERIFIED against Sovereign Anchor",
+           ("VERIFIED (100% INVARIANT INTEGRITY & SOVEREIGN VERIFIED)" in out_v2) and "TRUSTED PINNED SOVEREIGN KEY" in out_v2,
            "Authentic frame verified against anchor")
 
 # ----------------------------------------------------------------------
@@ -161,8 +162,8 @@ for i, line in enumerate(lines_b):
 
 # Verify unsigned packet
 code_vu, out_vu, _ = run_ozos("packet-verify", unsigned_hex, "1000")
-check_test("Goi tin khong ky TUYET DOI KHONG in 'HOP LE TUYET DOI'",
-           ("HOP LE TUYET DOI" not in out_vu and "VERIFIED (100% INVARIANT INTEGRITY" not in out_vu) and ("KHONG CO CHU KY ED25519" in out_vu or "UNSIGNED PACKET" in out_vu or "NO ED25519 SIGNATURE" in out_vu),
+check_test("Unsigned packet strictly forbidden from displaying VERIFIED status",
+           ("VERIFIED (100% INVARIANT INTEGRITY" not in out_vu) and ("UNSIGNED PACKET" in out_vu or "NO ED25519 SIGNATURE" in out_vu),
            "Correctly categorized as unsigned format only")
 
 # Forge signature: corrupt the signature bytes in signed_hex
@@ -170,9 +171,9 @@ raw_bytes = bytearray(binascii.unhexlify(signed_hex))
 raw_bytes[-10] ^= 0xFF # Flip bits in Ed25519 signature
 corrupted_sig_hex = binascii.hexlify(raw_bytes).decode('ascii')
 code_vc, out_vc, _ = run_ozos("packet-verify", corrupted_sig_hex, "1000")
-check_test("Goi tin bi sua chu ky TUYET DOI KHONG in 'HOP LE TUYET DOI'",
-           ("HOP LE TUYET DOI" not in out_vc and "VERIFIED (100% INVARIANT INTEGRITY" not in out_vc) and ("CHU KY ED25519 BI LAM GIA" in out_vc or "ED25519 SIGNATURE FORGED OR DATA TAMPERED" in out_vc),
-           "Forged signature strictly marked BI TU CHOI")
+check_test("Forged signature packet strictly forbidden from displaying VERIFIED status",
+           ("VERIFIED (100% INVARIANT INTEGRITY" not in out_vc) and ("ED25519 SIGNATURE FORGED OR DATA TAMPERED" in out_vc),
+           "Forged signature strictly marked REJECTED")
 
 # ----------------------------------------------------------------------
 # 5. TEST MEDIUM 1: Truncated signature frames
@@ -181,7 +182,7 @@ print("\n[TEST 5/8] Truncated Signature Frame Rejection...")
 # Cut off 32 bytes from signature
 truncated_hex = signed_hex[:-64]
 code_tr, out_tr, _ = run_ozos("packet-verify", truncated_hex, "1000")
-check_test("Goi tin bi cat cut chu ky bi TU CHOI nghiem ngat",
+check_test("Truncated signature packet strictly REJECTED fail-closed",
            "TRUNCATED SIGNATURE" in out_tr,
            "Truncation caught by canonical framing check")
 
@@ -193,12 +194,12 @@ garbage_4b_hex = signed_hex + "deadbeef"
 garbage_2000b_hex = signed_hex + ("aa" * 2000)
 
 code_g4, out_g4, _ = run_ozos("packet-verify", garbage_4b_hex, "1000")
-check_test("Goi tin chua 4 byte rac bi TU CHOI",
+check_test("Packet with 4 trailing garbage bytes strictly REJECTED",
            "TRAILING GARBAGE DETECTED" in out_g4,
            "4 bytes trailing garbage blocked")
 
 code_g2k, out_g2k, _ = run_ozos("packet-verify", garbage_2000b_hex, "1000")
-check_test("Goi tin chua 2000 byte rac bi TU CHOI",
+check_test("Packet with 2000 trailing garbage bytes strictly REJECTED",
            "TRAILING GARBAGE DETECTED" in out_g2k,
            "2000 bytes trailing garbage blocked")
 
@@ -231,8 +232,8 @@ malleable_packet = raw_signed[:-32] + s_malleable_bytes
 malleable_hex = binascii.hexlify(malleable_packet).decode('ascii')
 
 code_mal, out_mal, _ = run_ozos("packet-verify", malleable_hex, "1000")
-check_test("Chu ky bien dang S + L bi TU CHOI boi quy tac chuan tac RFC 8032",
-           "CHU KY ED25519 BI LAM GIA" in out_mal or "ED25519 SIGNATURE FORGED OR DATA TAMPERED" in out_mal,
+check_test("Malleable S + L signature strictly REJECTED by RFC 8032 canonicity rule",
+           "ED25519 SIGNATURE FORGED OR DATA TAMPERED" in out_mal,
            "Strict S < L check prevented S+L malleability bypass")
 
 # ----------------------------------------------------------------------
@@ -242,13 +243,13 @@ print("\n[TEST 8/8] Anti-Replay Defense & Monotonic Nonce Invariant...")
 # signed_hex has nonce = 2000
 # Verifying with last_seen_nonce = 2000 must FAIL (nonce not strictly greater)
 code_rep1, out_rep1, _ = run_ozos("packet-verify", signed_hex, "2000")
-check_test("Replay attack bi chan khi Nonce bang last_seen_nonce (2000 == 2000)",
+check_test("Replay attack blocked when Nonce equals last_seen_nonce (2000 == 2000)",
            "Replay Attack" in out_rep1,
            "Strictly monotonic nonce enforced")
 
 # Verifying with last_seen_nonce = 2001 must FAIL (nonce 2000 < 2001)
 code_rep2, out_rep2, _ = run_ozos("packet-verify", signed_hex, "2001")
-check_test("Replay attack bi chan khi Nonce nho hon last_seen_nonce (2000 < 2001)",
+check_test("Replay attack blocked when Nonce is strictly less than last_seen_nonce (2000 < 2001)",
            "Replay Attack" in out_rep2,
            "Past nonce rejected")
 
@@ -259,8 +260,8 @@ print("\n[TEST 9/12] Tunnel Decryption Buffer Boundary Protection (Payload > 512
 fake_key = "00" * 32
 large_frame = "4f5a4844" + "00" * 1200
 code_t1, out_t1, _ = run_ozos("tunnel-decrypt", large_frame, fake_key)
-check_test("Frame vuot qua 560B bi tu choi truoc khi giai ma",
-           "Khung du lieu vuot qua gioi han bo nho cho phep" in out_t1 or "exceeds allowed memory bounds" in out_t1,
+check_test("Oversized tunnel frame (> 560B) rejected prior to decryption",
+           "exceeds allowed memory bounds" in out_t1,
            "Oversize frame rejected gracefully")
 
 # ----------------------------------------------------------------------
@@ -276,8 +277,8 @@ try:
         wf.setframerate(96000)
         wf.writeframes(struct.pack('<' + 'h'*1000, *([0]*1000)))
     code_a1, out_a1, _ = run_ozos("audio-decode", wav_test)
-    check_test("Sample rate 96kHz bi tu choi an toan, khong tran bo nho float_block",
-               "Sample rate khong hop le" in out_a1 or "Invalid sample rate" in out_a1,
+    check_test("Sample rate 96kHz safely rejected without float_block buffer overflow",
+               "Invalid sample rate" in out_a1,
                "96kHz clamped safely")
 finally:
     if os.path.exists(wav_test):
@@ -292,14 +293,14 @@ words = "abandon abandon abandon abandon abandon abandon abandon abandon abandon
 passphrase = "ZERO_STUDIO_SOVEREIGN_MIND"
 p_gsign = subprocess.run([GHOST_EXE, "sign", words, passphrase, "a" * 433],
                          stdout=subprocess.PIPE, stderr=subprocess.PIPE, encoding="utf-8", errors="replace", cwd=REPO_ROOT)
-check_test("ozos_ghost sign voi payload 433B bi tu choi graceful (exit code 1, khong abort/overflow)",
-           p_gsign.returncode != 0 and ("Payload khong hop le hoac vuot qua 256 bytes" in p_gsign.stdout or "Invalid payload or exceeds 256 bytes" in p_gsign.stdout),
+check_test("ozos_ghost sign with 433B payload rejected gracefully (exit code 1, no overflow)",
+           p_gsign.returncode != 0 and ("Invalid payload or exceeds 256 bytes" in p_gsign.stdout),
            "Ghost sign buffer overflow neutralized")
 
 p_gephem = subprocess.run([GHOST_EXE, "ephemeral", words, passphrase, "a" * 433],
                           stdout=subprocess.PIPE, stderr=subprocess.PIPE, encoding="utf-8", errors="replace", cwd=REPO_ROOT)
-check_test("ozos_ghost ephemeral voi payload 433B bi tu choi graceful (exit code 1, khong ghi de enclave)",
-           p_gephem.returncode != 0 and ("Payload khong hop le hoac vuot qua 256 bytes" in p_gephem.stdout or "Invalid payload or exceeds 256 bytes" in p_gephem.stdout),
+check_test("ozos_ghost ephemeral with 433B payload rejected gracefully (exit code 1, no enclave overwrite)",
+           p_gephem.returncode != 0 and ("Invalid payload or exceeds 256 bytes" in p_gephem.stdout),
            "Enclave collision neutralized")
 
 # ----------------------------------------------------------------------
@@ -307,18 +308,18 @@ check_test("ozos_ghost ephemeral voi payload 433B bi tu choi graceful (exit code
 # ----------------------------------------------------------------------
 print("\n[TEST 12/12] CLI packet-verify Exit Code Hygiene & Genesis Hash Seal...")
 code_exit, _, _ = run_ozos("packet-verify", corrupted_sig_hex, "1000")
-check_test("CLI packet-verify tra ve Exit Code 1 khi chu ky gia mao",
+check_test("CLI packet-verify returns Exit Code 1 on forged signature",
            code_exit == 1,
            f"Exit code = {code_exit} (Failed verification strictly non-zero)")
 
 code_exit_ok, _, _ = run_ozos("packet-verify", signed_hex, "1000", sovereign_pk)
-check_test("CLI packet-verify tra ve Exit Code 0 khi xac thuc chu quyen thanh cong",
+check_test("CLI packet-verify returns Exit Code 0 on verified sovereign signature",
            code_exit_ok == 0,
            f"Exit code = {code_exit_ok} (Success)")
 
 p_genesis = subprocess.run([GHOST_EXE, "genesis"],
                            stdout=subprocess.PIPE, stderr=subprocess.PIPE, encoding="utf-8", errors="replace", cwd=REPO_ROOT)
-check_test("ozos_ghost genesis khop 100% voi hang so bat bien compile-time (3b5bfe68...)",
+check_test("ozos_ghost genesis matches 100% compile-time immutable constant (3b5bfe68...)",
            p_genesis.returncode == 0 and "3b5bfe68f4a491a02c0fec66547ee142d36ba0038cb0c1c52ba8b14e80786edd" in p_genesis.stdout and "SEALED UNTO ETERNITY" in p_genesis.stdout,
            "Genesis immutable hash verified")
 
@@ -327,7 +328,7 @@ check_test("ozos_ghost genesis khop 100% voi hang so bat bien compile-time (3b5b
 # ----------------------------------------------------------------------
 print("\n[TEST 13/16] Malformed Trusted Sovereign Key Rejection...")
 code_tk_bad, out_tk_bad, _ = run_ozos("packet-verify", signed_hex, "1000", "1234abcd")
-check_test("Trusted key sai dinh dang (8 hex chars) bi TU CHOI nghiem ngat (exit code 1)",
+check_test("Malformed trusted key (8 hex chars) strictly REJECTED fail-closed (exit code 1)",
            code_tk_bad == 1 and ("KHOA CHU QUYEN (TRUSTED KEY) SAI DINH DANG" in out_tk_bad or "TRUSTED KEY INVALID FORMAT" in out_tk_bad),
            "Invalid format strictly non-zero and no silent fallback to self-signed")
 
@@ -352,7 +353,7 @@ check_test("Brainseed with whitespace / extra tabs produces identical Public Key
            f"Bit-exact PubKey: {pk_clean[0][:16]}...")
 
 check_test("Brainseed rejects extraneous 13th word strictly (exit code 1)",
-           code_b3 == 1 and ("FAILED" in out_b3 or "THAT BAI" in out_b3),
+           code_b3 == 1 and ("FAILED" in out_b3),
            "Strictly 12 words enforced")
 
 # ----------------------------------------------------------------------
@@ -381,7 +382,7 @@ process.exit(ok ? 0 : 1);
 """
 p_node = subprocess.run(["node", "-e", node_test_script],
                         stdout=subprocess.PIPE, stderr=subprocess.PIPE, cwd=REPO_ROOT)
-check_test("Vault bat qua tang sua doi 1 bit byte 80 va sua JSON 100->900",
+check_test("Sealed vault detects 1-bit tampering at byte 80 and JSON alteration 100->900",
            p_node.returncode == 0,
            "Sealed Local Vault payload tampering completely neutralized")
 
@@ -426,7 +427,7 @@ print("ALL_CLI_GUARDS_ACTIVE")
 p_clipy = subprocess.run([sys.executable, "-c", test_cli_script],
                          stdout=subprocess.PIPE, stderr=subprocess.PIPE,
                          cwd=REPO_ROOT)
-check_test("ozos-cli.py chan dung MAC=0, chan rac noi duoi +4B va bat loi bit-flip payload",
+check_test("ozos-cli.py blocks MAC=0, blocks trailing garbage +4B, and detects payload bit-flip",
            p_clipy.returncode == 0,
            "Python demo validator hardened 100%")
 
@@ -473,7 +474,7 @@ process.exit(ok ? 0 : 1);
 """
 p_genesis = subprocess.run(["node", "-e", test_engine_genesis_script],
                            stdout=subprocess.PIPE, stderr=subprocess.PIPE, cwd=REPO_ROOT)
-check_test("Engine Genesis path kiem tra toan ven payload FNV va tuong thich 100% GenesisShield",
+check_test("Engine Genesis path enforces FNV payload integrity and 100% GenesisShield compatibility",
            p_genesis.returncode == 0,
            "Engine Genesis FNV integrity & Shield interoperability confirmed")
 
@@ -496,7 +497,7 @@ rc_ack_bad, _, _ = run_ozos("handshake-ack", "deadbeef")
 rc_gossip_bad, _, _ = run_ozos("gossip-listen", "deadbeef")
 
 exit_codes_clean = (rc_dec_over == 1) and (rc_dec_trunc == 1) and (rc_ack_bad == 1) and (rc_gossip_bad == 1)
-check_test("Cac lenh CLI tu choi (tunnel-decrypt, handshake-ack, gossip-listen) deu tra ve exit code 1",
+check_test("Rejection CLI commands (tunnel-decrypt, handshake-ack, gossip-listen) return exit code 1",
            exit_codes_clean,
            f"Exit codes: dec_over={rc_dec_over}, dec_trunc={rc_dec_trunc}, ack_bad={rc_ack_bad}, gossip_bad={rc_gossip_bad}")
 
@@ -537,12 +538,12 @@ print("CL_GUARD_ACTIVE")
 """
 p_cl = subprocess.run([sys.executable, "-c", cl_test_script],
                       stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-check_test("server.py xu ly thieu Content-Length tra ve 400 Bad Request khong rot socket",
+check_test("server.py handles missing Content-Length returning 400 Bad Request cleanly without socket drop",
            p_cl.returncode == 0,
            "Server bridge Content-Length guard verified")
 
 # ----------------------------------------------------------------------
-# 20. TEST ROUND 5 MEDIUM 2: Keyed Local Vault (Chong Ke Tan Cong Biet Thuat Toan)
+# 20. TEST ROUND 5 MEDIUM 2: Keyed Local Vault (Defending Against Attackers with Known Algorithm)
 # ----------------------------------------------------------------------
 print("\n[TEST 20/20] Machine-Keyed Local Vault (Attacker Re-Computation Neutralization)...")
 test_keyed_vault_script = """
@@ -567,7 +568,7 @@ process.exit(ok ? 0 : 1);
 """
 p_keyed = subprocess.run(["node", "-e", test_keyed_vault_script],
                          stdout=subprocess.PIPE, stderr=subprocess.PIPE, cwd=REPO_ROOT)
-check_test("Keyed Local Vault bao ve chong ke tan cong biet thuat toan tinh lai MAC cong khai",
+check_test("Keyed Local Vault defends against attacker computing public MAC",
            p_keyed.returncode == 0,
            "Keyed Tripwire prevents unauthenticated state forgery")
 
@@ -628,7 +629,7 @@ words = "abandon abandon abandon abandon abandon abandon abandon abandon abandon
 rc_res_long, out_res_long, _ = run_ozos("brainseed-restore", words, "P" * 350)
 
 long_pass_safe = (rc_gen_long == 0) and (rc_res_long == 0) and ("Seed" in out_gen_long) and ("Ed25519" in out_res_long)
-check_test("Passphrase 300-350 ky tu chay an toan tren gen va restore, khong tran bo nho float/stack",
+check_test("Passphrase 300-350 chars executes safely on gen and restore without buffer overflow",
            long_pass_safe,
            f"Brainseed long passphrase safe (gen rc={rc_gen_long}, restore rc={rc_res_long})")
 
@@ -683,7 +684,7 @@ rc_sign_over, _, _ = run_ozos("packet-sign", "A" * 1025)
 rc_build_over, _, _ = run_ozos("packet-build", "A" * 1025)
 
 exit_codes_sign_build = (rc_sign_over == 1) and (rc_build_over == 1)
-check_test("CLI packet-sign va packet-build tra ve Exit Code 1 khi payload > 1024 bytes",
+check_test("CLI packet-sign and packet-build return Exit Code 1 when payload > 1024 bytes",
            exit_codes_sign_build,
            f"Exit codes: sign_over={rc_sign_over}, build_over={rc_build_over}")
 
@@ -742,7 +743,7 @@ try: os.rmdir(tmp_dir)
 except: pass
 
 ghost_bounds_ok = (proc0.returncode != 0) and (proc3.returncode != 0) and (proc513.returncode != 0)
-check_test("ozos_ghost listen chan chat moi boundary (rx_len = 0, 3, 513 deu exit non-zero)",
+check_test("ozos_ghost listen strictly gates all boundaries (rx_len = 0, 3, 513 all exit non-zero)",
            ghost_bounds_ok,
            f"Ghost bounds: t0={proc0.returncode}, t3={proc3.returncode}, t513={proc513.returncode}")
 
@@ -811,7 +812,7 @@ finally:
 '''
 
 p_srv = subprocess.run([sys.executable, "-c", test_server_script, REPO_ROOT], stdout=subprocess.PIPE, stderr=subprocess.PIPE, cwd=REPO_ROOT)
-check_test("server.py xu ly an toan cac payload fuzzing (non-dict, non-list, malformed JSON) khong bi crash",
+check_test("server.py safely handles fuzzing payloads (non-dict, non-list, malformed JSON) without crash",
            p_srv.returncode == 0,
            "Server bridge parser robustness verified")
 
@@ -823,7 +824,7 @@ test_fuzz_parser_script = """
 const OZOSEngine = require('./contrib/web-cockpit/ozos-engine.js');
 const engine = new OZOSEngine();
 
-// 1. verifyLocalVault voi base64 hong khong duoc throw uncaught
+// 1. verifyLocalVault with corrupted base64 must not throw uncaught error
 const res_vault_bad_b64 = engine.verifyLocalVault({ base64: "%%%NOT_VALID_BASE64%%%" });
 const vault_handled = (!res_vault_bad_b64.valid);
 
@@ -844,7 +845,7 @@ p_cli_bad = subprocess.run([sys.executable, cli_script_path, "packet-verify", "-
                            stdout=subprocess.PIPE, stderr=subprocess.PIPE, cwd=REPO_ROOT)
 cli_handled = (p_cli_bad.returncode == 1) and ("Traceback" not in p_cli_bad.stderr.decode('utf-8', errors='replace'))
 
-check_test("Fuzz mutation voi valid/invalid FNV va parser deep handling deu an toan va khong crash",
+check_test("Fuzz mutation with valid/invalid FNV and parser deep handling executes safely without crash",
            p_fuzz.returncode == 0 and cli_handled,
            "Deep parser fuzz mutation defenses verified 100%")
 
@@ -904,7 +905,7 @@ p_cli_js = subprocess.run([sys.executable, cli_script_path, "packet-verify", "--
 
 cross_js_ok = (p_js_gen.returncode == 0 and rc_c_js_ver == 0 and p_js_js.returncode == 0 and p_cli_js.returncode == 0)
 
-check_test("Profile A ho tro ca Sub-profile A1 (CRC16) va A2 (FNV fold) xac thuc cheo 100% C vs JS vs CLI",
+check_test("Profile A supports both Sub-profile A1 (CRC16) and A2 (SipHash/FNV) with 100% cross-validation",
            cross_c_ok and cross_js_ok,
            "Cross-platform dual-MAC verification operational")
 
@@ -960,7 +961,7 @@ process.exit(allOk ? 0 : 1);
 """
 p_r8 = subprocess.run(["node", "-e", test_r8_suite], stdout=subprocess.PIPE, stderr=subprocess.PIPE, cwd=REPO_ROOT)
 
-check_test("Vault payload 64KB cap, Nonce 2^64-1 overflow guard va Engine replay monotonicity duoc bao ve 100%",
+check_test("Vault payload 64KB cap, Nonce 2^64-1 overflow guard and Engine replay monotonicity 100% protected",
            p_r8.returncode == 0,
            "Round 8 medium/low findings fully verified")
 
@@ -970,13 +971,13 @@ check_test("Vault payload 64KB cap, Nonce 2^64-1 overflow guard va Engine replay
 print("\n[TEST 31/34] Brainseed Passphrase Terminal No-Echo & Seed Guidance...")
 secret_pass = "top_secret_passphrase_test_r9"
 rc_gen, out_gen, _ = run_ozos("brainseed-gen", secret_pass)
-no_echo_ok = (rc_gen == 0) and (secret_pass not in out_gen) and ("[DA BAO VE" in out_gen or "[PROTECTED" in out_gen)
+no_echo_ok = (rc_gen == 0) and (secret_pass not in out_gen) and ("[PROTECTED" in out_gen)
 
 with open(os.path.join(REPO_ROOT, "core", "ozos_main.c"), "r", encoding="utf-8") as f:
     main_c_src = f.read()
 no_seed_flag_ok = ("--seed <64_HEX_SEED>" not in main_c_src) and ("ozos packet-sign <msg> [nonce] <64_hex_seed>" in main_c_src)
 
-check_test("Passphrase khong bao gio bi echo ra terminal va huong dan ky dung cu phap positional",
+check_test("Passphrase never echoed to terminal and packet-sign enforces positional syntax",
            no_echo_ok and no_seed_flag_ok,
            "Credential echo neutralized & CLI guidance accurate")
 
@@ -1027,7 +1028,7 @@ const allOk = saveOk && failOk && engineTypeOk && alignTypeOk && shieldTypeOk;
 process.exit(allOk ? 0 : 1);
 """
 p_js_types = subprocess.run(["node", "-e", test_js_types], stdout=subprocess.PIPE, stderr=subprocess.PIPE, cwd=REPO_ROOT)
-check_test("saveLocalVault tra ve shape nhat quan (success: true/false) va type-check chan moi input phi-Uint8Array",
+check_test("saveLocalVault returns consistent shape (success: true/false) and rejects non-Uint8Array inputs",
            p_js_types.returncode == 0,
            "API return-shape consistency & caller SDK robustness verified")
 
@@ -1069,7 +1070,7 @@ seed_m = re.search(r"Master Silicon Seed\s*:\s*0x([0-9a-fA-F]{64})", out_kg)
 pk_m = re.search(r"Sovereign Public Key\s*:\s*0x([0-9a-fA-F]{64})", out_kg)
 keygen_safe_ok = (rc_kg == 0) and (seed_m is not None) and (pk_m is not None)
 
-check_test("Daemon chan port ngoai bien (1-65535) va keygen fail-closed sinh CSPRNG seed doc lap",
+check_test("Daemon blocks out-of-range ports (1-65535) and keygen fail-closed generates independent CSPRNG seeds",
            daemon_ports_ok and keygen_safe_ok,
            "Daemon port range & keygen fail-closed verified (Linux & Windows cross-platform safe)")
 
@@ -1100,7 +1101,7 @@ a2_verified_ok = (rc_b == 0 and rc_v1 == 0 and (
 raw_pkt_bytes = bytearray.fromhex(c_hex_a2)
 raw_pkt_bytes[85] ^= 0x55
 rc_v_tamper, out_v_tamper, _ = run_ozos("packet-verify", raw_pkt_bytes.hex(), "5999")
-tamper_detected_ok = (rc_v_tamper == 1) or ("Canh bao Sub-Profile A1" in out_v_tamper or "Warning Sub-Profile A1" in out_v_tamper)
+tamper_detected_ok = (rc_v_tamper == 1) or ("Warning Sub-Profile A1" in out_v_tamper)
 
 # 2. server.py sandbox path check: ensures arbitrary path gets stripped to basename
 kill_port_8899()
@@ -1133,7 +1134,7 @@ p_sb = subprocess.run([sys.executable, "-c", test_server_sandbox, REPO_ROOT], st
 kill_port_8899()
 sandbox_ok = (p_sb.returncode == 0)
 
-check_test("C packet-build phat A2 bao ve toan ven payload mac dinh va server.py sandbox duong dan output",
+check_test("C packet-build emits A2 protecting payload integrity by default and server.py sandboxes output path",
            a2_verified_ok and sandbox_ok,
            "A2 payload integrity invariant & server path traversal defense operational")
 
@@ -1166,7 +1167,7 @@ process.exit(0);
 """
 p_sentinel = subprocess.run(["node", "-e", test_js_sentinel], cwd=REPO_ROOT, capture_output=True, text=True, encoding="utf-8", errors="replace")
 sentinel_ok = (p_sentinel.returncode == 0)
-check_test("Truyen numeric-0 khong con bypass duoc co che Anti-Replay tren ca OZOSEngine lan GenesisShield",
+check_test("Numeric-0 parameter cannot bypass Anti-Replay across OZOSEngine and GenesisShield",
            sentinel_ok,
            "Numeric-0 sentinel bypass neutralized across JS validators")
 
@@ -1218,7 +1219,7 @@ spec_cli.loader.exec_module(ozos_cli_mod)
 py_a1_valid, py_a1_reason, _ = ozos_cli_mod.validate_aligned_packet(bytes(raw_a1_pkt), 7499)
 py_a1_rejected = (py_a1_valid is False and "Sub-Profile A1" in py_a1_reason)
 
-check_test("Goi tin co payload mang Sub-Profile A1 bi tu choi dong loat tren ca C, JS va Python",
+check_test("Packets carrying payload under Sub-Profile A1 uniformly rejected across C, JS, and Python",
            c_a1_rejected and js_a1_rejected and py_a1_rejected,
            "Unsigned Sub-Profile A1 with payload strictly rejected across all 3 platforms")
 
@@ -1255,7 +1256,7 @@ process.exit(0);
 """
 p_js_nonce = subprocess.run(["node", "-e", test_js_nonce_flow], cwd=REPO_ROOT, capture_output=True, text=True, encoding="utf-8", errors="replace")
 nonce_guards_ok = (p_js_nonce.returncode == 0)
-check_test("GenesisShield tu dong tang Nonce khong bi collision va OZOSEngine chan tran 2^64-1",
+check_test("GenesisShield automatically increments Nonce without collision and OZOSEngine blocks 2^64-1 overflow",
            nonce_guards_ok,
            "Shield outgoing nonce auto-increment & Engine 2^64-1 wrap guard operational")
 
@@ -1289,7 +1290,7 @@ js_nan_ok = (p_js_nan.returncode == 0)
 py_nan_valid, py_nan_reason, _ = ozos_cli_mod.validate_aligned_packet(bytes(raw_nan_pkt), 7499)
 py_nan_ok = (py_nan_valid is False and "NaN" in py_nan_reason)
 
-check_test("Goi tin chua he so float NaN / Infinity bi tu choi nghiem ngat tren C, JS va Python",
+check_test("Packets containing float NaN / Infinity strictly rejected across C, JS, and Python",
            c_nan_ok and js_nan_ok and py_nan_ok,
            "Poisoned float coefficients rejected fail-closed across all 3 platforms")
 
@@ -1313,7 +1314,7 @@ pinned_peer_ok = (rc_ack_correct == 0 and rc_ack_wrong == 1)
 rc_synth_fail, _, _ = run_ozos("audio-synth", "DATA", "/nonexistent_sandbox_dir_404/fail.wav")
 synth_exit_ok = (rc_synth_fail == 1)
 
-check_test("Handshake-ack xac thuc peer theo khoa da ghim va audio-synth thoat ma loi khac 0 khi ghi file that bai",
+check_test("Handshake-ack authenticates peer against pinned key and audio-synth exits non-zero on file write failure",
            pinned_peer_ok and synth_exit_ok,
            "Pinned peer handshake authentication & audio-synth error exit code hygiene verified")
 
@@ -1397,7 +1398,7 @@ process.exit(0);
 """
 p_js_range = subprocess.run(["node", "-e", test_js_range_str], cwd=REPO_ROOT, capture_output=True, text=True, encoding="utf-8", errors="replace")
 js_range_ok = (p_js_range.returncode == 0)
-check_test("JS validators chan dung nonce am, chan tran 2^64 va chan customNonce ngoai bien",
+check_test("JS validators reject negative nonces, 2^64 overflow and out-of-bounds customNonce",
            js_range_ok,
            "JS Nonce range invariants [0, 2^64-1] strictly enforced across Engine and Shield")
 
@@ -1414,7 +1415,7 @@ valid_pkt_py, _ = ozos_cli_mod.build_aligned_packet("PYTHON_MEMVIEW_SOVEREIGN", 
 val_memview, _, data_dict = ozos_cli_mod.validate_aligned_packet(memoryview(valid_pkt_py), 8000)
 
 py_coercion_ok = (val_bad_str is False) and (val_bad_flt is False) and (val_bad_none is False) and (val_memview is True) and (data_dict["payload"] == "PYTHON_MEMVIEW_SOVEREIGN")
-check_test("Python tu choi last_seen_nonce rac/float/None va giai ma thanh cong memoryview",
+check_test("Python rejects invalid last_seen_nonce (garbage/float/None) and successfully decrypts memoryview",
            py_coercion_ok,
            "Python nonce coercion guard and memoryview decoding verified")
 
@@ -1480,7 +1481,7 @@ p_syn = subprocess.run([OZOS_EXE, "handshake-syn"],
                        capture_output=True, text=True, encoding="utf-8", errors="replace", cwd=REPO_ROOT)
 secret_isolated = ("Ephemeral Secret A" in p_syn.stderr) and ("Ephemeral Secret A" not in p_syn.stdout)
 
-check_test("CLI & Ghost ho tro --version, --help va tach Ephemeral Secret A ra stderr",
+check_test("CLI & Ghost support --version, --help and separate Ephemeral Secret A to stderr",
            version_ok and secret_isolated,
            "Version command provenance, help exit 0 and stream separation hygiene verified")
 
@@ -1521,7 +1522,7 @@ proc_daemon_badpk = subprocess.run([GHOST_EXE, "daemon", "--pinned-peer-pubkey",
 rc_cli_badport, _, _ = run_ozos("daemon", "99999")
 
 daemon_flags_ok = (proc_daemon_unk.returncode != 0) and (proc_daemon_miss.returncode != 0) and (proc_daemon_badpk.returncode != 0) and (rc_cli_badport != 0)
-check_test("Ghost daemon tu choi flag la/thieu pubkey/pk sai do dai va CLI daemon tu choi port khong hop le",
+check_test("Ghost daemon rejects invalid flags/missing pubkey/malformed pk and CLI daemon rejects invalid port",
            daemon_flags_ok,
            "Ghost daemon & CLI daemon parameter validation fail-closed verified")
 
@@ -1581,7 +1582,7 @@ process.exit(0);
 """
 p_js_f13a = subprocess.run(["node", "-e", test_js_f13a], cwd=REPO_ROOT, capture_output=True, text=True, encoding="utf-8", errors="replace")
 f13a_ok = (p_js_f13a.returncode == 0)
-check_test("JS Aligned builder chan nonce ngoai bien, chong nhiem doc state va ho tro BigInt secretSeed (F13-A)",
+check_test("JS Aligned builder rejects out-of-bounds nonce, prevents state pollution and supports BigInt secretSeed (F13-A)",
            f13a_ok,
            "F13-A aligned builder range guard, anti-poisoning & BigInt seed mixing verified")
 
@@ -1635,7 +1636,7 @@ process.exit(0);
 """
 p_js_f13b = subprocess.run(["node", "-e", test_js_f13b], cwd=REPO_ROOT, capture_output=True, text=True, encoding="utf-8", errors="replace")
 f13b_ok = (p_js_f13b.returncode == 0)
-check_test("JS validators tu choi lastSeenNonce khong hop le fail-closed, khong fallback ve 0 (F13-B)",
+check_test("JS validators reject invalid lastSeenNonce fail-closed without fallback to 0 (F13-B)",
            f13b_ok,
            "F13-B silent floor fallback neutralized across Engine and Shield")
 
@@ -1694,7 +1695,7 @@ sys.exit(0)
 
 p_py_server = subprocess.run([sys.executable, "-c", test_py_server], capture_output=True, text=True, encoding="utf-8", errors="replace")
 server_ok = (p_py_server.returncode == 0)
-check_test("server.py Realpath GET sandbox chan duyet file he thong va chong fake success file cu",
+check_test("server.py Realpath GET sandbox blocks system file access and prevents stale success file bypass",
            server_ok,
            "Bridge server realpath canonicalization & directory traversal defenses operational")
 
@@ -1807,7 +1808,7 @@ syn_zero_hex = syn_zero_buf.hex()
 rc_ack_zero, _, _ = run_ozos("handshake-ack", syn_zero_hex)
 rc_gh_ack_zero = subprocess.run([GHOST_EXE, "ack", syn_zero_hex], capture_output=True, text=True, cwd=REPO_ROOT).returncode
 f1_f2_ok = (rc_ack_zero != 0) and (rc_gh_ack_zero != 0)
-check_test("Chan tuyet doi X25519 Low-Order Point (PK=0x00..00) tren ca CLI handshake-ack va Ghost ack (F1/F2)",
+check_test("Strictly reject X25519 Low-Order Point (PK=0x00..00) across CLI handshake-ack and Ghost ack (F1/F2)",
            f1_f2_ok,
            f"Low-order SYN rejected (cli_rc={rc_ack_zero}, ghost_rc={rc_gh_ack_zero})")
 
@@ -1884,7 +1885,7 @@ p_cli_tampered_extract = subprocess.run([sys.executable, ozos_cli_path, "stego-e
                                         capture_output=True, text=True, encoding="utf-8", errors="replace", cwd=REPO_ROOT)
 for tf in [tmp_blank_img, tmp_wm_img, tampered_wm_img]:
     if os.path.exists(tf): os.remove(tf)
-f5_tamper_rejected = (p_cli_tampered_extract.returncode != 0) or ("EVIDENCE EXTRACTED SUCCESSFULLY" not in p_cli_tampered_extract.stdout and "CHUNG CU BOC TACH THANH CONG" not in p_cli_tampered_extract.stdout)
+f5_tamper_rejected = (p_cli_tampered_extract.returncode != 0) or ("EVIDENCE EXTRACTED SUCCESSFULLY" not in p_cli_tampered_extract.stdout)
 
 f5_ok = (p_js_f5.returncode == 0) and (p_cli_blank.returncode != 0) and (p_cli_embed.returncode == 0) and (p_cli_wm.returncode == 0 and "CLI-DCT-2026" in (p_cli_wm.stdout or "")) and f5_tamper_rejected
 check_test("2D-DCT Watermark rejects blank image fail-closed, detects tampered blocks (F5), and recovers authentic watermark",
@@ -1962,7 +1963,7 @@ p_wasm_direct = subprocess.run(["node", "-e", test_wasm_direct], cwd=REPO_ROOT, 
 p_wasm_audit = subprocess.run([sys.executable, os.path.join(REPO_ROOT, "contrib", "dev-scripts", "check_wasm_staleness.py")],
                               cwd=REPO_ROOT, capture_output=True, text=True, encoding="utf-8", errors="replace")
 r14_h1_ok = (p_wasm_direct.returncode == 0) and (p_wasm_audit.returncode == 0)
-check_test("Direct-call WASM _parse_and_validate_packet chan day du 8 vector doi khang (0,4,5,5,7,7,2,3) (R14-H1)",
+check_test("Direct-call WASM _parse_and_validate_packet blocks all 8 adversarial vectors (0,4,5,5,7,7,2,3) (R14-H1)",
            r14_h1_ok,
            "WASM bytecode direct-call invariants and default-strict supply-chain check verified")
 
@@ -2054,7 +2055,7 @@ finally:
 """
 p_live_bridge = subprocess.run([sys.executable, "-c", test_live_bridge, REPO_ROOT], capture_output=True, text=True, encoding="utf-8", errors="replace", cwd=REPO_ROOT)
 kill_port_8899()
-check_test("Bridge /api/cmd thuc thi live thanh cong (H2), bao ve file WAV dau vao (H3), giu dau '/' (F7) va chan G1/G2",
+check_test("Bridge /api/cmd executes live successfully (H2), protects input WAV (H3), preserves '/' (F7), blocks G1/G2",
            p_live_bridge.returncode == 0,
            f"Bridge live verification passed (stdout={(p_live_bridge.stdout or '').strip()})")
 
@@ -2094,7 +2095,7 @@ rc_c_aud, out_c_aud, _ = run_ozos("audio-decode", tmp_aud_wav, "--audible")
 if os.path.exists(tmp_aud_wav): os.remove(tmp_aud_wav)
 f8_audible_ok = (p_cli_aud.returncode == 0) and (rc_c_aud == 0) and ("AUDIBLE-TEST" in out_c_aud)
 
-check_test("Song am audible cross-language CLI vs C bit-exact (F8), packet-verify chan floor rac (M1) va Python chan Unicode digit (P1/P2)",
+check_test("Acoustic carrier cross-language bit-exact (F8), packet-verify rejects invalid floor (M1), Python blocks Unicode digits (P1/P2)",
            f8_ok and f8_audible_ok and m1_ok and p1_p2_ok,
            f"Cross-binary WAV (f8_syn={f8_ok}, f8_audible={f8_audible_ok}), C strict floor (m1={m1_ok}), Python digit gate (p1_p2={p1_p2_ok})")
 
@@ -2150,7 +2151,7 @@ if (!seedRejected) process.exit(7);
 process.exit(0);
 """
 p_js_r14_lows = subprocess.run(["node", "-e", test_js_r14_lows], cwd=REPO_ROOT, capture_output=True, text=True, encoding="utf-8", errors="replace")
-check_test("JS Shield luu Uint8Array 40KB (F14-A), Engine khong lam hong currentNonce khi throw (F14-B) va dong nhat parser secretSeed (F14-C)",
+check_test("JS Shield stores 40KB Uint8Array (F14-A), preserves currentNonce on throw (F14-B), unifies secretSeed parser (F14-C)",
            p_js_r14_lows.returncode == 0,
            "F14-A, F14-B, F14-C JS invariants verified")
 
@@ -2235,7 +2236,7 @@ f2_deep_ok = (rc_syn59 == 0 and rc_ack59 == 0 and rc_fin59 == 0 and len(sess_key
               rc_dec59_first == 0 and "LENH_CHUYEN_KHOAN_1_TY" in out_dec59_first and
               rc_dec59_replay != 0 and "REPLAY" in out_dec59_replay.upper() and
               h2a_ok and h2b_ok)
-check_test("Poly1305 Handshake Tag gan session_nonce, Replay Store thanh tap hop ben vung (H2a) va chong tien nhiem Nonce (H2b)",
+check_test("Poly1305 Handshake Tag binds session_nonce, persistent replay store active (H2a), past nonces rejected (H2b)",
            f2_deep_ok,
            f"Handshake + Tunnel Set Replay verified (first={rc_dec59_first}, h2a_set={h2a_ok}, h2b_antipoison={h2b_ok})")
 
@@ -2264,7 +2265,7 @@ for tf in [tmp_wav60, tmp_sec60]:
 f8_ceremony_ok = (rc_syn60 == 0 and sec_file_ok and no_leak_ok and
                   rc_adec60 == 0 and "42 bytes" in out_adec60 and "31485a4f" in out_adec60.lower() and
                   proc_gh60.returncode == 0 and "[MAC16 VERIFIED]" in proc_gh60.stdout)
-check_test("ozos audio-decode & ozos_ghost listen giai ma WAV --raw-frame 42B dong nhat va --secret-file khong ro ri terminal",
+check_test("ozos audio-decode & ozos_ghost listen decode identical 42B raw-frame and --secret-file prevents terminal leak",
            f8_ceremony_ok,
            f"Cross-binary audio-decode + secret redaction verified (sec_file={sec_file_ok}, no_leak={no_leak_ok})")
 
@@ -2286,13 +2287,13 @@ combined_mitm = (out_pin_mitm or "") + (err_pin_mitm or "")
 
 # 4. Peer ID containing whitespace must be strictly rejected (prevent space-id store corruption)
 rc_pin_space, out_pin_space, err_pin_space = run_ozos("packet-verify", signed_hex, "1000", "--peer-id", "node alpha")
-space_rejected = (rc_pin_space != 0) and ("khoang trang" in (out_pin_space + err_pin_space).lower() or "whitespace" in (out_pin_space + err_pin_space).lower())
+space_rejected = (rc_pin_space != 0) and ("whitespace" in (out_pin_space + err_pin_space).lower())
 
-pin_store_ok = (rc_pin1 == 0 and ("XAC THUC THEO DANH BA .ozos_known_peers" in out_pin1 or "TOFU FIRST-USE PINNED" in out_pin1 or "AUTHENTICATED VIA .ozos_known_peers" in out_pin1) and
+pin_store_ok = (rc_pin1 == 0 and ("TOFU FIRST-USE PINNED" in out_pin1 or "AUTHENTICATED VIA .ozos_known_peers" in out_pin1) and
                 rc_pin2 == 0 and
-                rc_pin_mitm == 1 and ("KEY CHANGED" in combined_mitm or "MITM" in combined_mitm or "THAY DOI KHOA" in combined_mitm) and
+                rc_pin_mitm == 1 and ("KEY CHANGED" in combined_mitm or "MITM" in combined_mitm) and
                 space_rejected)
-check_test("Persistent Peer Pin Store (.ozos_known_peers) ghim khoa, phat hien MITM va chan khoang trang peer-id",
+check_test("Persistent Peer Pin Store (.ozos_known_peers) pins keys, detects MITM, and rejects whitespace peer-id",
            pin_store_ok,
            f"Pin store TOFU & MITM key-change & space-id rejection verified (pin1={rc_pin1}, pin2={rc_pin2}, mitm={rc_pin_mitm}, space_rej={space_rejected})")
 
@@ -2333,7 +2334,7 @@ item16_ok = ("UNAUTHENTICATED CRC16 BEACON" in out_gb and
              "UNAUTHENTICATED CRC16 BEACON" in out_glisten and
              "FORK_DETECTED" in out_glisten and
              quarantine_created and rc_glisten == 2)
-check_test("Gossip in ro nhan [UNAUTHENTICATED CRC16 BEACON], kich hoat .ozos_fork_quarantine va tra ve exit code 2 khi FORK_DETECTED",
+check_test("Gossip clearly labels [UNAUTHENTICATED CRC16 BEACON], quarantines forks, and returns exit code 2 on FORK_DETECTED",
            item16_ok,
            f"Gossip honesty & fork quarantine verified (rc={rc_glisten}, quarantine={quarantine_created})")
 
@@ -2395,7 +2396,7 @@ rc_m5, out_m5, _ = run_ozos("packet-verify", unsigned_hex, "1000", "GARBAGE_KEY_
 m5_ok = (rc_m5 == 1) and ("SAI DINH DANG" in out_m5 or "INVALID FORMAT" in out_m5)
 
 r15_63_ok = (p_py_h1.returncode == 0) and payload_survived and m5_ok
-check_test("server.py khong xoa nham file payload .wav (PY-H1), nhan .. trong payload (PY-L1) va packet-verify bat loi trusted-pk rac tren goi unsigned (M5)",
+check_test("server.py preserves .wav files (PY-H1), accepts .. in payload (PY-L1), packet-verify flags invalid trusted-pk on unsigned frame (M5)",
            r15_63_ok,
            f"PY-H1 & M5 verified (srv_rc={p_py_h1.returncode}, survived={payload_survived}, m5={m5_ok})")
 
@@ -2419,14 +2420,14 @@ ack64_hex = [l.strip() for l in out_ack64.splitlines() if len(l.strip()) == 108 
 fake_a_pub = "11" * 32
 fake_a_sk = "22" * 32
 rc_h1, out_h1, _ = run_ozos("handshake-finish", ack64_hex, fake_a_sk, fake_a_pub)
-h1_closed = (rc_h1 == 1) and ("Khong tim thay session nonce" in out_h1 or "Session nonce not found" in out_h1)
+h1_closed = (rc_h1 == 1) and ("Session nonce not found" in out_h1)
 
 # M4: gossip-beacon must emit a non-zero peer ID
 rc_m4, out_m4, _ = run_ozos("gossip-beacon", "200")
 m4_nonzero = (rc_m4 == 0) and ("Peer ID            : 0x00000000" not in out_m4)
 
 r15_64_ok = h1_closed and m4_nonzero
-check_test("handshake-finish tu choi fail-closed voi unknown A-pub khong co trong state (H1) va gossip luon phat Peer ID khac 0 (M4)",
+check_test("handshake-finish rejects unknown A-pub fail-closed (H1) and gossip always emits non-zero Peer ID (M4)",
            r15_64_ok,
            f"H1 & M4 verified (h1_closed={h1_closed}, m4_nonzero={m4_nonzero})")
 
@@ -2475,7 +2476,7 @@ if os.path.exists(audit_exe):
     rc_audit = p_audit.returncode
 
 r15_65_ok = (p_j1.returncode == 0) and (rc_audit == 0)
-check_test("JS chan zero-slot FNV bypass tren empty payload (J1) va test_audit_verify SipHash-2-4 vuot qua 4/4 bai kiem tra thuc nghiem",
+check_test("JS blocks zero-slot FNV bypass on empty payload (J1) and test_audit_verify SipHash-2-4 passes 4/4 empirical checks",
            r15_65_ok,
            f"J1 & SipHash-2-4 verified (j1_rc={p_j1.returncode}, audit_rc={rc_audit})")
 
@@ -2569,17 +2570,232 @@ p_omni = subprocess.run([omni_bin], capture_output=True, text=True, encoding="ut
 rc_omni_native = p_omni.returncode
 
 r15_69_ok = spec_ok and (rc_omni_native == 0)
-check_test("CLI spectrum-status danh chinh ngon thuan Tier 4 (H-OMNI-1) va test_omni_phy native C99 chay that 5/5 PASS (H-SUITE-1)",
+check_test("CLI spectrum-status accurately discloses Tier 4 roadmap (H-OMNI-1) and native C99 test_omni_phy passes 11/11 tests (H-SUITE-1)",
            r15_69_ok,
            f"Spectrum verified (status={spec_ok}, native_harness_rc={rc_omni_native})")
 
+# ----------------------------------------------------------------------
+# 70. TEST DATA-AT-REST: Batch Retroactive Armoring & Detached Signing (ozos sweep)
+# ----------------------------------------------------------------------
+print("\n[TEST 70/75] Batch Retroactive 2D-DCT Armoring & Detached Signing (ozos sweep)...")
+tmp_sweep_dir = os.path.join(REPO_ROOT, "_test_sweep_dir")
+if os.path.exists(tmp_sweep_dir):
+    shutil.rmtree(tmp_sweep_dir, ignore_errors=True)
+os.makedirs(tmp_sweep_dir, exist_ok=True)
+
+with open(os.path.join(tmp_sweep_dir, "contract.txt"), "w") as f:
+    f.write("SOVEREIGN CONSTITUTION CONTRACT 2026")
+
+# Generate 256x256 24-bit BMP image for 2D-DCT armoring
+bmp_w, bmp_h = 256, 256
+row_bytes = bmp_w * 3
+row_stride = ((row_bytes + 3) // 4) * 4
+img_sz = row_stride * bmp_h
+bmp_data = bytearray(54 + img_sz)
+bmp_data[0:2] = b'BM'
+struct.pack_into('<I', bmp_data, 2, 54 + img_sz)
+struct.pack_into('<I', bmp_data, 10, 54)
+struct.pack_into('<I', bmp_data, 14, 40)
+struct.pack_into('<i', bmp_data, 18, bmp_w)
+struct.pack_into('<i', bmp_data, 22, bmp_h)
+struct.pack_into('<H', bmp_data, 26, 1)
+struct.pack_into('<H', bmp_data, 28, 24)
+struct.pack_into('<I', bmp_data, 34, img_sz)
+for y in range(bmp_h):
+    for x in range(bmp_w):
+        idx = 54 + y * row_stride + x * 3
+        bmp_data[idx] = (x * 2) % 256
+        bmp_data[idx + 1] = (y * 2) % 256
+        bmp_data[idx + 2] = ((x + y)) % 256
+
+with open(os.path.join(tmp_sweep_dir, "portrait.bmp"), "wb") as f:
+    f.write(bmp_data)
+
+rc_sweep, out_sweep, _ = run_ozos("sweep", tmp_sweep_dir, "--seed", "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef")
+sig_exists = os.path.isfile(os.path.join(tmp_sweep_dir, "contract.txt.sig"))
+
+sweep_ok = (rc_sweep == 0 and "BMP Images Armored: 1" in out_sweep and "Documents Signed  : 1" in out_sweep and sig_exists)
+check_test("Batch retroactive armoring watermarks BMP images and generates Ed25519 detached signatures (ozos sweep)",
+           sweep_ok,
+           f"Sweep verified (rc={rc_sweep}, sig={sig_exists})")
+
+# ----------------------------------------------------------------------
+# 71. TEST DATA-AT-REST: Hermetic RAM Enclave Archive & Bit-Exact Extraction (ozos vault)
+# ----------------------------------------------------------------------
+print("\n[TEST 71/75] Hermetic RAM Enclave Archive & Bit-Exact Extraction (ozos vault pack/open)...")
+tmp_vault_src = os.path.join(REPO_ROOT, "_test_vault_src")
+tmp_vault_dst = os.path.join(REPO_ROOT, "_test_vault_dst")
+tmp_vault_file = os.path.join(REPO_ROOT, "_test_enclave.ozos")
+
+if os.path.exists(tmp_vault_src): shutil.rmtree(tmp_vault_src, ignore_errors=True)
+if os.path.exists(tmp_vault_dst): shutil.rmtree(tmp_vault_dst, ignore_errors=True)
+if os.path.exists(tmp_vault_file): os.remove(tmp_vault_file)
+
+os.makedirs(tmp_vault_src, exist_ok=True)
+with open(os.path.join(tmp_vault_src, "ledger.csv"), "w") as f:
+    f.write("ACCOUNT,BALANCE\nSOVEREIGN_001,999999999\n")
+with open(os.path.join(tmp_vault_src, "notes.txt"), "w") as f:
+    f.write("UNCOMPROMISED MEMORY ENCLAVE PROOF")
+
+rc_v_pack, out_v_pack, _ = run_ozos("vault", "pack", tmp_vault_src, tmp_vault_file, "--seed", "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef")
+rc_v_open, out_v_open, _ = run_ozos("vault", "open", tmp_vault_file, tmp_vault_dst, "--seed", "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef")
+
+ledger_match = False
+notes_match = False
+if os.path.isfile(os.path.join(tmp_vault_dst, "ledger.csv")):
+    with open(os.path.join(tmp_vault_dst, "ledger.csv"), "r") as f:
+        ledger_match = ("SOVEREIGN_001,999999999" in f.read())
+if os.path.isfile(os.path.join(tmp_vault_dst, "notes.txt")):
+    with open(os.path.join(tmp_vault_dst, "notes.txt"), "r") as f:
+        notes_match = ("UNCOMPROMISED MEMORY ENCLAVE PROOF" in f.read())
+
+vault_roundtrip_ok = (rc_v_pack == 0 and rc_v_open == 0 and ledger_match and notes_match)
+check_test("Hermetic Enclave Archive packs and unpacks multiple files 100% bit-exact (ozos vault)",
+           vault_roundtrip_ok,
+           f"Vault roundtrip verified (pack={rc_v_pack}, open={rc_v_open}, match={ledger_match and notes_match})")
+
+# ----------------------------------------------------------------------
+# 72. TEST DATA-AT-REST: Enclave Authenticated Encryption Tamper Rejection (Exit Code 1)
+# ----------------------------------------------------------------------
+print("\n[TEST 72/75] Hermetic Enclave Authenticated Encryption Anti-Tamper Rejection (Exit Code 1)...")
+with open(tmp_vault_file, "r+b") as f:
+    f.seek(50)
+    byte_val = f.read(1)
+    f.seek(50)
+    f.write(bytes([byte_val[0] ^ 0x01]))
+
+tmp_vault_tampered_dst = os.path.join(REPO_ROOT, "_test_vault_tampered_dst")
+rc_v_tamper, out_v_tamper, err_v_tamper = run_ozos("vault", "open", tmp_vault_file, tmp_vault_tampered_dst, "--seed", "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef")
+
+vault_tamper_ok = (rc_v_tamper == 1 and ("ENCLAVE AUTHENTICATION FAILED" in err_v_tamper or "ENCLAVE AUTHENTICATION FAILED" in out_v_tamper))
+check_test("Tampered vault container strictly triggers fail-closed alert and exit code 1 (ozos vault open)",
+           vault_tamper_ok,
+           f"Tamper rejection verified (rc={rc_v_tamper})")
+
+# Clean vault test directories
+shutil.rmtree(tmp_vault_src, ignore_errors=True)
+shutil.rmtree(tmp_vault_dst, ignore_errors=True)
+shutil.rmtree(tmp_vault_tampered_dst, ignore_errors=True)
+if os.path.exists(tmp_vault_file): os.remove(tmp_vault_file)
+
+# ----------------------------------------------------------------------
+# 73. TEST DATA-AT-REST: Zero-Touch Merkle Provenance Anchor & Verification (ozos anchor)
+# ----------------------------------------------------------------------
+print("\n[TEST 73/75] Zero-Touch Merkle Provenance Anchor & Integrity Verification (ozos anchor/anchor-verify)...")
+tmp_anchor_dir = os.path.join(REPO_ROOT, "_test_anchor_dir")
+if os.path.exists(tmp_anchor_dir): shutil.rmtree(tmp_anchor_dir, ignore_errors=True)
+os.makedirs(tmp_anchor_dir, exist_ok=True)
+
+with open(os.path.join(tmp_anchor_dir, "evidence1.bin"), "wb") as f: f.write(os.urandom(256))
+with open(os.path.join(tmp_anchor_dir, "evidence2.bin"), "wb") as f: f.write(os.urandom(512))
+
+rc_anc_create, out_anc_create, _ = run_ozos("anchor", tmp_anchor_dir, "--seed", "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef")
+rc_anc_verify, out_anc_verify, _ = run_ozos("anchor-verify", tmp_anchor_dir)
+
+# Now tamper with one file
+with open(os.path.join(tmp_anchor_dir, "evidence1.bin"), "ab") as f: f.write(b"\x01")
+rc_anc_tampered, out_anc_tampered, err_anc_tampered = run_ozos("anchor-verify", tmp_anchor_dir)
+
+anchor_ok = (rc_anc_create == 0 and rc_anc_verify == 0 and "100% VERIFIED" in out_anc_verify and rc_anc_tampered == 1 and ("MERKLE ROOT MISMATCH" in err_anc_tampered or "MERKLE ROOT MISMATCH" in out_anc_tampered))
+check_test("Zero-touch Merkle Provenance Anchor verifies untampered directory and detects 1-byte mutation (ozos anchor)",
+           anchor_ok,
+           f"Merkle Anchor verified (create={rc_anc_create}, verify={rc_anc_verify}, tamper_rc={rc_anc_tampered})")
+
+shutil.rmtree(tmp_anchor_dir, ignore_errors=True)
+
+# ----------------------------------------------------------------------
+# 74. TEST DATA-AT-REST: NIST SP 800-88 3-Pass Anti-Forensic Hardware Sanitization (ozos burn)
+# ----------------------------------------------------------------------
+print("\n[TEST 74/75] NIST SP 800-88 3-Pass Anti-Forensic Hardware Sanitization & Unlink (ozos burn)...")
+tmp_burn_file = os.path.join(REPO_ROOT, "_test_burn_evidence.bin")
+with open(tmp_burn_file, "wb") as f:
+    f.write(b"CONFIDENTIAL FORENSIC TELEMETRY RECORD" * 100)
+
+rc_burn, out_burn, _ = run_ozos("burn", tmp_burn_file)
+file_still_exists = os.path.exists(tmp_burn_file)
+
+burn_ok = (rc_burn == 0 and not file_still_exists and "HARDWARE SANITIZATION COMPLETE" in out_burn and "Pass 1 Pattern  : 0xAA" in out_burn and "Pass 3 Pattern  : 0x00" in out_burn)
+check_test("NIST SP 800-88 3-pass hardware sanitization overwrites (0xAA->0x55->0x00), flushes, and unlinks file (ozos burn)",
+           burn_ok,
+           f"Burn verified (rc={rc_burn}, deleted={not file_still_exists})")
+
+# Clean sweep directory
+shutil.rmtree(tmp_sweep_dir, ignore_errors=True)
+
+# ----------------------------------------------------------------------
+# 75. TEST AMBIENT GUARDIAN: Sub-5ms Windows RAM Clipboard Bitmap Auto-Armor Hook
+# ----------------------------------------------------------------------
+print("\n[TEST 75/75] Sub-5ms Windows RAM Clipboard Bitmap Auto-Armor Hook (ozos clipboard-armor)...")
+clip_ok = False
+if sys.platform == "win32":
+    try:
+        import ctypes
+        user32 = ctypes.windll.user32
+        kernel32 = ctypes.windll.kernel32
+        kernel32.GlobalAlloc.restype = ctypes.c_void_p
+        kernel32.GlobalAlloc.argtypes = [ctypes.c_uint, ctypes.c_size_t]
+        kernel32.GlobalLock.restype = ctypes.c_void_p
+        kernel32.GlobalLock.argtypes = [ctypes.c_void_p]
+        kernel32.GlobalUnlock.argtypes = [ctypes.c_void_p]
+        user32.SetClipboardData.argtypes = [ctypes.c_uint, ctypes.c_void_p]
+
+        CF_DIB = 8
+        GMEM_MOVEABLE = 0x0002
+
+        cw, ch = 256, 256
+        crow_bytes = cw * 3
+        crow_stride = ((crow_bytes + 3) // 4) * 4
+        cimg_sz = crow_stride * ch
+        cdib_sz = 40 + cimg_sz
+
+        cdib = bytearray(cdib_sz)
+        struct.pack_into('<I', cdib, 0, 40)
+        struct.pack_into('<i', cdib, 4, cw)
+        struct.pack_into('<i', cdib, 8, ch)
+        struct.pack_into('<H', cdib, 12, 1)
+        struct.pack_into('<H', cdib, 14, 24)
+        struct.pack_into('<I', cdib, 16, 0)
+        struct.pack_into('<I', cdib, 20, cimg_sz)
+
+        for y in range(ch):
+            for x in range(cw):
+                cidx = 40 + y * crow_stride + x * 3
+                cdib[cidx] = (x * 3) % 256
+                cdib[cidx + 1] = (y * 3) % 256
+                cdib[cidx + 2] = (x + y) % 256
+
+        if user32.OpenClipboard(None):
+            user32.EmptyClipboard()
+            hM = kernel32.GlobalAlloc(GMEM_MOVEABLE, cdib_sz)
+            pM = kernel32.GlobalLock(hM)
+            ctypes.memmove(pM, bytes(cdib), cdib_sz)
+            kernel32.GlobalUnlock(hM)
+            user32.SetClipboardData(CF_DIB, hM)
+            user32.CloseClipboard()
+
+        rc_clip, out_clip, _ = run_ozos("clipboard-armor", "--seed", "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef")
+        clip_ok = (rc_clip == 0 and "SUB-5MS WINDOWS RAM CLIPBOARD AUTO-ARMOR SUCCESS" in out_clip and "2D-DCT 8x8 Orthonormal" in out_clip)
+
+        if user32.OpenClipboard(None):
+            user32.EmptyClipboard()
+            user32.CloseClipboard()
+    except Exception as e:
+        clip_ok = False
+else:
+    rc_clip, out_clip, _ = run_ozos("clipboard-armor")
+    clip_ok = (rc_clip == 0)
+
+check_test("Sub-5ms RAM Clipboard Auto-Armor intercepts CF_DIB and injects 2D-DCT watermark without flash disk I/O",
+           clip_ok,
+           f"Clipboard armor verified (ok={clip_ok})")
+
 print("\n======================================================================")
 if all_passed:
-    print("  🏆 CONCLUSION: 69/69 SOVEREIGN & OMNI-SPECTRUM REGRESSION TESTS PASSED 100%!")
+    print("  🏆 CONCLUSION: 75/75 SOVEREIGN, OMNI-SPECTRUM & DATA-AT-REST REGRESSION TESTS PASSED 100%!")
     print("  ALL 4 SIGNAL SPECTRUM TIERS & SECURITY INVARIANTS RIGOROUSLY ENFORCED.")
     print("======================================================================")
     sys.exit(0)
 else:
-    print("  🚨 CO BAI KIEM TRA THAT BAI! VUI LONG KIEM TRA LAI.")
+    print("  🚨 TEST SUITE FAILURE DETECTED! PLEASE REVIEW TEST LOGS.")
     print("======================================================================")
     sys.exit(1)

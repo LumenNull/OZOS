@@ -240,7 +240,7 @@ OZOS_INLINE void ozos_packet_build(
     out_pkt->header_mac16 = ozos_compute_mac16(out_pkt);
 }
 
-#define OZOS_A2_DOMAIN_CONSTANT      0xA5A5A5A5ULL /* Hang so domain mac dinh cua Sub-Profile A2 */
+#define OZOS_A2_DOMAIN_CONSTANT      0xA5A5A5A5ULL /* Default domain constant for Sub-Profile A2 */
 
 /**
  * Computes 16-bit Fast Gatekeeper MAC based on
@@ -264,7 +264,7 @@ uint16_t compute_fast_gate_mac(
 #endif
 
 /**
- * Dong dau niem phong Sub-Profile A2 (SipHash-2-4 Fast Gatekeeper MAC) bao ve toan ven ca Header (0..77) lan Payload (80..80+len).
+ * Seals Sub-Profile A2 (SipHash-2-4 Fast Gatekeeper MAC) protecting integrity of both Header (0..77) and Payload (80..80+len).
  */
 OZOS_INLINE void ozos_packet_seal_a2(
     uint8_t* frame_buffer,
@@ -285,9 +285,9 @@ OZOS_INLINE void ozos_packet_seal_a2(
 }
 
 /**
- * Dong goi hoan chinh khung du lieu bao gom ca Header lan Payload voi Sub-Profile A2 mac dinh.
- * Invariant: Khi payload_len > 0, header_mac16 luon duoc niem phong bang Sub-Profile A2 (FNV-1a-64 Fold)
- * voi secret_seed (hoac hang so cong khai OZOS_A2_DOMAIN_CONSTANT = 0xA5A5A5A5ULL neu secret_seed == 0).
+ * Builds complete binary data frame including Header and Payload with Sub-Profile A2.
+ * Invariant: When payload_len > 0, header_mac16 is sealed with Sub-Profile A2 (SipHash-2-4 Fast Gatekeeper MAC)
+ * with secret_seed (or public domain constant OZOS_A2_DOMAIN_CONSTANT = 0xA5A5A5A5ULL if secret_seed == 0).
  */
 OZOS_INLINE void ozos_packet_build_frame(
     uint8_t* frame_buffer,
@@ -360,12 +360,12 @@ OZOS_INLINE ozos_status_t ozos_packet_validate_ex(
         }
     }
     if (!mac_ok && (pkt->header_mac16 == expected_mac)) {
-        /* Sub-Profile A1 (CRC16-CCITT chi bao ve 78B header) */
+        /* Sub-Profile A1 (CRC16-CCITT protects only 78B header) */
         if (pkt->payload_len == 0) {
-            mac_ok = true; /* An toan tuyet doi khi khong co payload */
+            mac_ok = true; /* Certified safe when payload is empty */
         } else {
-            /* Goi tin co payload: Sub-Profile A1 chi bao ve 78B header, tuyet doi khong bao ve payload!
-               Loai bo heuristic buffer_size >= 80 + len + 96: khong bao gio chap nhan A1 co payload khi chua xac thuc chu ky! */
+            /* Packet has payload: Sub-Profile A1 only covers 78B header and does not authenticate payload!
+               Eliminate heuristic: never accept unauthenticated A1 payload prior to signature verification! */
             return OZOS_ERR_A1_PAYLOAD_UNPROTECTED;
         }
     }

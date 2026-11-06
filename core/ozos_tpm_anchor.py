@@ -80,9 +80,9 @@ class OZOSHardwareTPM:
 
     def derive_master_seed(self):
         """
-        Tao hoac boc tach Master Seed dinh danh vat ly cua co may O.Z.O.S.
-        Gan lien voi vi mach TPM 2.0. Neu khong co TPM, sinh seed ngau nhien tu CSPRNG/TRNG.
-        Tuyet doi KHONG bao gio su dung /etc/machine-id lam key material de chong gia mao.
+        Derive or extract physical Master Seed identity for O.Z.O.S node.
+        Hardware-bound to TPM 2.0 module. Falls back to CSPRNG/TRNG if absent.
+        Strictly prohibits /etc/machine-id as key material to defeat forgery.
         """
         entropy = self.get_hardware_entropy(32)
         h = hashlib.sha256()

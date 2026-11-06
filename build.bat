@@ -50,7 +50,7 @@ if %errorlevel% equ 0 (
     gcc -O3 -Wall -Icore -I. -o %TARGET% core/ozos_ghost.c core/tweetnacl.c core/ozos_hardened_core.cpp -ladvapi32 -lwinmm
     if !errorlevel! neq 0 exit /b !errorlevel!
     if exist core\ozos_main.c (
-        gcc -O3 -Wall -Icore -I. -o ozos.exe core/ozos_main.c core/tweetnacl.c core/ozos_hardened_core.cpp -ladvapi32 -lwinmm -lncrypt
+        gcc -O3 -Wall -Icore -I. -o ozos.exe core/ozos_main.c core/tweetnacl.c core/ozos_hardened_core.cpp -ladvapi32 -lwinmm -lncrypt -luser32
         if !errorlevel! neq 0 exit /b !errorlevel!
     )
     if exist tests\test_libozos.c (
@@ -67,7 +67,7 @@ if %errorlevel% equ 0 (
     clang -O3 -Wall -Icore -I. -o %TARGET% core/ozos_ghost.c core/tweetnacl.c core/ozos_hardened_core.cpp -ladvapi32 -lwinmm
     if !errorlevel! neq 0 exit /b !errorlevel!
     if exist core\ozos_main.c (
-        clang -O3 -Wall -Icore -I. -o ozos.exe core/ozos_main.c core/tweetnacl.c core/ozos_hardened_core.cpp -ladvapi32 -lwinmm -lncrypt
+        clang -O3 -Wall -Icore -I. -o ozos.exe core/ozos_main.c core/tweetnacl.c core/ozos_hardened_core.cpp -ladvapi32 -lwinmm -lncrypt -luser32
         if !errorlevel! neq 0 exit /b !errorlevel!
     )
     if exist tests\test_libozos.c (
@@ -89,7 +89,7 @@ if %errorlevel% neq 0 (
     exit /b %errorlevel%
 )
 if exist "core\ozos_main.c" (
-    cl.exe %CFLAGS% /Fe:ozos.exe core\ozos_main.c core\tweetnacl.c core\ozos_hardened_core.cpp /link advapi32.lib winmm.lib ncrypt.lib
+    cl.exe %CFLAGS% /Fe:ozos.exe core\ozos_main.c core\tweetnacl.c core\ozos_hardened_core.cpp /link advapi32.lib winmm.lib ncrypt.lib user32.lib
     if !errorlevel! neq 0 (
         echo [FAIL] Compilation of ozos.exe failed.
         exit /b !errorlevel!

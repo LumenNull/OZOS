@@ -35,14 +35,14 @@ int main(void) {
 
     bool fix1_ok = (rc_zero == -1) && (rc_order2 == -1) && (rc_kdf_zero == -1) && (!syn_zero_accepted);
     printf("[1] RFC 7748 Section 6.1 Low-Order Point Rejection:\n");
-    printf("    - ozos_ecdh_shared_secret(PK=0x00..00) : rc = %d (Ky vong: -1)\n", rc_zero);
-    printf("    - ozos_ecdh_shared_secret(PK=0x0100..) : rc = %d (Ky vong: -1)\n", rc_order2);
-    printf("    - ozos_kdf_session_key(Shared=0x00..00): rc = %d (Ky vong: -1)\n", rc_kdf_zero);
-    printf("    - ozos_handshake_syn_verify(PK=0x00..0): %s (Ky vong: REJECTED)\n", syn_zero_accepted ? "ACCEPTED" : "REJECTED");
+    printf("    - ozos_ecdh_shared_secret(PK=0x00..00) : rc = %d (Expected: -1)\n", rc_zero);
+    printf("    - ozos_ecdh_shared_secret(PK=0x0100..) : rc = %d (Expected: -1)\n", rc_order2);
+    printf("    - ozos_kdf_session_key(Shared=0x00..00): rc = %d (Expected: -1)\n", rc_kdf_zero);
+    printf("    - ozos_handshake_syn_verify(PK=0x00..0): %s (Expected: REJECTED)\n", syn_zero_accepted ? "ACCEPTED" : "REJECTED");
     printf("    => Status: %s\n\n", fix1_ok ? "REMEDIATED & VERIFIED (PASS)" : "FAILED (FAIL)");
     if (!fix1_ok) failures++;
 
-    /* 2. Kiem chung Domain Separation Poly1305 Subkey & Nonce Binding KDF */
+    /* 2. Verify Poly1305 Subkey Domain Separation & Nonce Binding KDF */
     uint8_t peer_pk[32], peer_sk[32];
     ozos_ecdh_keypair(peer_pk, peer_sk);
     ozos_ecdh_shared_secret(shared_secret, peer_pk, victim_sk);
@@ -64,13 +64,13 @@ int main(void) {
     bool fix2_ok = subkey_isolated && nonce_bound && verify_ok;
 
     printf("[2] Poly1305 Key Domain Separation & Nonce Binding:\n");
-    printf("    - K_auth_subkey tach biet khoi K_session XSalsa20: %s\n", subkey_isolated ? "CO (ISOLATED)" : "KHONG");
-    printf("    - Nonce 111111 vs 999999 sinh K_session khac nhau: %s\n", nonce_bound ? "CO (BOUND)" : "KHONG");
-    printf("    - Xac thuc chieu ve ozos_verify_handshake_auth_tag: %s\n", verify_ok ? "HOP LE" : "LOI");
+    printf("    - K_auth_subkey separated from K_session XSalsa20: %s\n", subkey_isolated ? "YES (ISOLATED)" : "NO");
+    printf("    - Distinct nonces 111111 vs 999999 yield distinct K_session: %s\n", nonce_bound ? "YES (BOUND)" : "NO");
+    printf("    - Bidirectional tag verification ozos_verify_handshake_auth_tag: %s\n", verify_ok ? "VALID" : "ERROR");
     printf("    => Status: %s\n\n", fix2_ok ? "REMEDIATED & VERIFIED (PASS)" : "FAILED (FAIL)");
     if (!fix2_ok) failures++;
 
-    /* 3. Kiem chung ham MAC khoa SipHash-2-4 that trong compute_fast_gate_mac (F3 Remediation) */
+    /* 3. Verify genuine SipHash-2-4 keyed PRF MAC in compute_fast_gate_mac (F3 Remediation) */
     uint8_t pkt78[78];
     for (int i = 0; i < 78; i++) pkt78[i] = (uint8_t)(i * 7 + 3);
     uint64_t secret_seed = 0xA5A5A5A5ULL;
@@ -84,14 +84,14 @@ int main(void) {
     bool fix3_ok = (mac_k0 == mac_k0_repeat) && (mac_k0 != mac_k1) && (mac_k0 != mac_data_flip);
 
     printf("[3] Fast Gatekeeper MAC with Genuine SipHash-2-4 PRF:\n");
-    printf("    - MAC16 goc (Key 0xA5A5A5A5, KeyHi=0) : 0x%04X\n", mac_k0);
-    printf("    - MAC16 lap lai (Tinh tat dinh 100%%)   : 0x%04X (Khop: %s)\n", mac_k0_repeat, (mac_k0 == mac_k0_repeat) ? "DUNG" : "SAI");
-    printf("    - MAC16 lat 1 bit khoa (Avalanche)    : 0x%04X (Khac biet: %s)\n", mac_k1, (mac_k0 != mac_k1) ? "DUNG" : "SAI");
-    printf("    - MAC16 lat 1 bit du lieu (Tamper)    : 0x%04X (Khac biet: %s)\n", mac_data_flip, (mac_k0 != mac_data_flip) ? "DUNG" : "SAI");
+    printf("    - Original MAC16 (Key 0xA5A5A5A5, KeyHi=0): 0x%04X\n", mac_k0);
+    printf("    - Repeat MAC16 (100%% Deterministic)        : 0x%04X (Match: %s)\n", mac_k0_repeat, (mac_k0 == mac_k0_repeat) ? "PASS" : "FAIL");
+    printf("    - Flip 1 bit in Key (Avalanche)            : 0x%04X (Divergent: %s)\n", mac_k1, (mac_k0 != mac_k1) ? "PASS" : "FAIL");
+    printf("    - Flip 1 bit in Data (Tamper Detection)    : 0x%04X (Divergent: %s)\n", mac_data_flip, (mac_k0 != mac_data_flip) ? "PASS" : "FAIL");
     printf("    => Status: %s\n\n", fix3_ok ? "REMEDIATED & VERIFIED (PASS - GENUINE SIPHASH-2-4)" : "FAILED (FAIL)");
     if (!fix3_ok) failures++;
 
-    /* 4. Kiem chung Reentrant Tokenizer & Stack Zeroization trong Brainseed */
+    /* 4. Verify Reentrant Tokenizer & Stack Zeroization in Brainseed */
     uint8_t ent16[16] = {1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16};
     char mnem[256] = {0};
     uint8_t seed_gen[32] = {0}, seed_res[32] = {0};
@@ -100,13 +100,13 @@ int main(void) {
     bool fix4_ok = gen_ok && res_ok && (memcmp(seed_gen, seed_res, 32) == 0);
 
     printf("[4] Stack Memory Scrubbing & Reentrant BIP-39 Parser:\n");
-    printf("    - Khoi tao & Phuc hoi BIP-39 Seed 32B : %s\n", fix4_ok ? "KHOP BIT-EXACT 100%" : "LOI");
+    printf("    - Initialize & Restore BIP-39 Seed 32B : %s\n", fix4_ok ? "100% BIT-EXACT MATCH" : "ERROR");
     printf("    => Status: %s\n\n", fix4_ok ? "REMEDIATED & VERIFIED (PASS)" : "FAILED (FAIL)");
     if (!fix4_ok) failures++;
 
     printf("======================================================================\n");
     if (failures == 0) {
-        printf("  CONCLUSION: 4/4 CRYPTOGRAPHIC VULNERABILITY CLASSES REMEDIATED & ENFORCED 100%!\n");
+        printf("  CONCLUSION: 4/4 CRYPTOGRAPHIC VULNERABILITY CLASSES REMEDIATED & ENFORCED 100%%!\n");
     } else {
         printf("  WARNING: %d audit verifications failed!\n", failures);
     }

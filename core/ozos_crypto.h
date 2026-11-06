@@ -61,8 +61,8 @@ static inline int ozos_ed25519_sign_detached(
  * Executes 100% on stack, zero heap RAM allocation (no_std compliant).
  */
 /**
- * Kiem tra tinh chuan tac (Canonicity) cua phan tu vo huong S theo RFC 8032 Section 5.1.7:
- * S phai thoa man nghiem ngat: 0 <= S < L (Triet tieu hoan toan Ed25519 S+L Malleability).
+ * Verifies strict canonicity of scalar S according to RFC 8032 Section 5.1.7:
+ * S must strictly satisfy: 0 <= S < L to eliminate Ed25519 S+L malleability.
  * L = 2^252 + 27742317777372353535851937790883648493 (Little-endian byte array).
  */
 static inline bool ozos_ed25519_is_canonical_s(const uint8_t s[32]) {
@@ -76,7 +76,7 @@ static inline bool ozos_ed25519_is_canonical_s(const uint8_t s[32]) {
         if (s[i] < L[i]) return true;
         if (s[i] > L[i]) return false;
     }
-    return false; /* s == L la phi chuan (non-canonical) */
+    return false; /* s == L is non-canonical */
 }
 
 static inline bool ozos_ed25519_verify_detached(
@@ -87,7 +87,7 @@ static inline bool ozos_ed25519_verify_detached(
 ) {
     if (!sig || !msg || !pk || msg_len > OZOS_MAX_MSG_LEN) return false;
 
-    /* Bat buoc S < L de loai bo loi Malleability S+L (RFC 8032 Section 5.1.7) */
+    /* Mandatory S < L to eliminate S+L malleability (RFC 8032 Section 5.1.7) */
     if (!ozos_ed25519_is_canonical_s(sig + 32)) {
         return false;
     }
@@ -618,7 +618,7 @@ static inline bool ozos_tunnel_decrypt(
 
     const ozos_tunnel_data_hdr_t* hdr = (const ozos_tunnel_data_hdr_t*)in_frame;
     if (hdr->magic != OZOS_MAGIC_TUNNEL_DATA) return false;
-    if (hdr->payload_len > OZOS_TUNNEL_MAX_PAYLOAD) return false; /* Bat buoc: Chan dung tran bo nho Stack Overflow */
+    if (hdr->payload_len > OZOS_TUNNEL_MAX_PAYLOAD) return false; /* Mandatory: Prevent stack buffer overflow */
 
     /* Verify header MAC16 */
     uint16_t crc = 0xFFFF;
