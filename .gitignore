@@ -93,3 +93,6 @@ $RECYCLE.BIN/
 
 # --- LEVEL 7: GRAPHIFY KNOWLEDGE GRAPH ARTIFACTS ---
 graphify-out/
+
+*.nativecodeanalysis.xml
+*.pftlog

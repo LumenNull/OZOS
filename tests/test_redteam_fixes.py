@@ -2854,9 +2854,44 @@ check_test("Shamir's Secret Sharing (k,n) over GF(2^8) splits seed, restores bit
            sss_test_ok,
            f"Shamir SSS verified (split={split_ok}, c1={combine_ok_1}, c2={combine_ok_2}, few={too_few_blocked}, tamp={tamper_blocked}, dup={dup_blocked})")
 
+# ----------------------------------------------------------------------
+# 78. TEST ROUND 21: Crash Signal Handler & Emergency Memory Purge (ozos crash-test)
+# ----------------------------------------------------------------------
+print("\n[TEST 78/79] Crash Signal Handler & Emergency RAM Sanitization (NIST SP 800-88)...")
+rc_crash, out_crash, err_crash = run_ozos("crash-test")
+crash_all = out_crash + err_crash
+crash_ok = (rc_crash != 0 and
+            "CRASH GUARD ACTIVATED" in crash_all and
+            "Secure memory purged" in crash_all and
+            "Core dump suppressed" in crash_all)
+
+check_test("Crash Signal Handler intercepts hardware faults/signals and purges secure memory without OS core dumps",
+           crash_ok,
+           f"Crash guard verified (rc={rc_crash}, purged={crash_ok})")
+
+# ----------------------------------------------------------------------
+# 79. TEST ROUND 22: NIST FIPS 203 Hybrid Post-Quantum Enclave (ozos pqc-test & pqc-status)
+# ----------------------------------------------------------------------
+print("\n[TEST 79/79] NIST FIPS 203 Hybrid Post-Quantum Enclave (X25519 + ML-KEM-768)...")
+rc_stat, out_stat, _ = run_ozos("pqc-status")
+stat_ok = (rc_stat == 0 and
+           "ML-KEM-768" in out_stat and
+           "Lattice Ring" in out_stat and
+           "ACTIVE & OPERATIONAL" in out_stat)
+
+rc_test, out_test, _ = run_ozos("pqc-test")
+pqc_ok = (rc_test == 0 and
+          "BIT-EXACT MATCH" in out_test and
+          "0x50514301" in out_test and
+          "VERIFIED & COMPLIANT" in out_test)
+
+check_test("Hybrid Post-Quantum Enclave executes X25519 + ML-KEM-768 dual encapsulation with bit-exact session key agreement",
+           stat_ok and pqc_ok,
+           f"PQC verified (stat={stat_ok}, test={pqc_ok})")
+
 print("\n======================================================================")
 if all_passed:
-    print("  🏆 CONCLUSION: 77/77 SOVEREIGN, OMNI-SPECTRUM & DATA-AT-REST REGRESSION TESTS PASSED 100%!")
+    print("  🏆 CONCLUSION: 79/79 SOVEREIGN, OMNI-SPECTRUM & DATA-AT-REST REGRESSION TESTS PASSED 100%!")
     print("  ALL 4 SIGNAL SPECTRUM TIERS & SECURITY INVARIANTS RIGOROUSLY ENFORCED.")
     print("======================================================================")
     sys.exit(0)

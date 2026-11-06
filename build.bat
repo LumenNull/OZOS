@@ -12,6 +12,8 @@ set "CFLAGS=/nologo /O2 /W3 /D_CRT_SECURE_NO_WARNINGS /Icore /I."
 set "LIBS=advapi32.lib winmm.lib"
 
 if "%1"=="clean" goto do_clean
+if "%1"=="asan" goto do_asan
+if "%1"=="analyze" goto do_analyze
 if "%1"=="test" (
     call :do_build
     if !errorlevel! neq 0 exit /b !errorlevel!
@@ -165,6 +167,18 @@ echo.
 echo [TEST 5/5] Running Supply Chain WASM Integrity ^& Pin Audit...
 python contrib\dev-scripts\check_wasm_staleness.py --fail-on-drift
 if !errorlevel! neq 0 exit /b !errorlevel!
+goto :eof
+
+:do_asan
+echo [BUILD] Activating AddressSanitizer (ASan) Memory Defense...
+set "CFLAGS=/nologo /O2 /W3 /fsanitize=address /Zi /D_CRT_SECURE_NO_WARNINGS /Icore /I."
+call :do_build
+goto :eof
+
+:do_analyze
+echo [BUILD] Activating Microsoft MSVC Static Code Analyzer (/analyze)...
+set "CFLAGS=/nologo /analyze /W4 /D_CRT_SECURE_NO_WARNINGS /Icore /I."
+call :do_build
 goto :eof
 
 :do_clean
