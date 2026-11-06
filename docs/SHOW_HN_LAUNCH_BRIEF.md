@@ -6,8 +6,8 @@ This document contains the ready-to-publish launch manuscripts for announcing O.
 
 ## 1. Hacker News ("Show HN")
 
-**Suggested Submission Title:**
-> `Show HN: OZOS – Zero-Alloc (malloc=0) C99 Sovereign Enclave with Omni-Spectrum PHY & Post-Quantum Hybrid`
+**Suggested Submission Title (70 characters - strictly within HN 80-char limit):**
+> `Show HN: OZOS - Zero-Alloc (malloc=0) C99 Post-Quantum Air-Gap Enclave`
 
 **Submission URL:**
 > `https://github.com/LumenNull/OZOS`
