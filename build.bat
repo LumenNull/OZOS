@@ -90,6 +90,34 @@ if %errorlevel% neq 0 (
     echo [FAIL] Compilation of %TARGET% failed.
     exit /b %errorlevel%
 )
+if exist "core\ozos_core_main.c" (
+    cl.exe %CFLAGS% /Fe:ozos-core.exe core\ozos_core_main.c core\tweetnacl.c core\ozos_hardened_core.cpp /link advapi32.lib winmm.lib
+    if !errorlevel! neq 0 (
+        echo [FAIL] Compilation of ozos-core.exe failed.
+        exit /b !errorlevel!
+    )
+)
+if exist "core\ozos_phy_main.c" (
+    cl.exe %CFLAGS% /Fe:ozos-phy.exe core\ozos_phy_main.c core\tweetnacl.c core\ozos_hardened_core.cpp /link winmm.lib
+    if !errorlevel! neq 0 (
+        echo [FAIL] Compilation of ozos-phy.exe failed.
+        exit /b !errorlevel!
+    )
+)
+if exist "core\ozos_guard_main.c" (
+    cl.exe %CFLAGS% /Fe:ozos-guard.exe core\ozos_guard_main.c core\tweetnacl.c core\ozos_hardened_core.cpp /link advapi32.lib winmm.lib user32.lib iphlpapi.lib ncrypt.lib
+    if !errorlevel! neq 0 (
+        echo [FAIL] Compilation of ozos-guard.exe failed.
+        exit /b !errorlevel!
+    )
+)
+if exist "core\ozos_pqc_main.c" (
+    cl.exe %CFLAGS% /Fe:ozos-pqc.exe core\ozos_pqc_main.c core\tweetnacl.c core\ozos_hardened_core.cpp /link advapi32.lib
+    if !errorlevel! neq 0 (
+        echo [FAIL] Compilation of ozos-pqc.exe failed.
+        exit /b !errorlevel!
+    )
+)
 if exist "core\ozos_main.c" (
     cl.exe %CFLAGS% /Fe:ozos.exe core\ozos_main.c core\tweetnacl.c core\ozos_hardened_core.cpp /link advapi32.lib winmm.lib ncrypt.lib user32.lib iphlpapi.lib
     if !errorlevel! neq 0 (
@@ -161,6 +189,12 @@ if exist "tests\test_omni_phy.exe" (
     echo.
     echo [TEST 4C/5] Running Omni-Spectrum Cognitive PHY Verification Suite...
     tests\test_omni_phy.exe
+    if !errorlevel! neq 0 exit /b !errorlevel!
+)
+if exist "tests\test_standalone_packages.py" (
+    echo.
+    echo [TEST 4D/5] Running Standalone Decoupled Package Suite...
+    python -X utf8 tests\test_standalone_packages.py
     if !errorlevel! neq 0 exit /b !errorlevel!
 )
 echo.

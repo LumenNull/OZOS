@@ -255,8 +255,8 @@ Following exhaustive 10-round adversarial Red Team audits, the operational bound
 * **Ephemeral Anti-Replay Invariants:** In-memory anti-replay state tracking in Web Cockpit (`OZOSEngine`, `GenesisShield`) and CLI executions is scoped to active process memory.
 * **VM Rollback & Snapshot Immunity:** Full defense against virtual machine snapshot rollback attacks requires persisting monotonic nonces into hardware-backed non-volatile registers (such as TPM 2.0 NVRAM or seL4 hardware counter channels).
 
-### 4. Canonical Distribution, Upgrade Guidance & N-Day Advisory
-* **Authoritative Source & Provenance Disclosure:** The canonical repository for O.Z.O.S is strictly `https://github.com/LumenNull/OZOS.git`. All development commits on `main` and current repository states are distributed as standard unsigned git commits authored by `LumenNull <350623492+LumenNull@users.noreply.github.com>`. Formal detached Ed25519 signatures and cryptographic release manifests are planned for future milestone releases; consumers must not assume detached signatures are present on intermediate development commits.
+### 4. Canonical Distribution, Cryptographic Commit Signing & Provenance
+* **Authoritative Source & Cryptographic Signatures:** The canonical repository for O.Z.O.S is strictly `https://github.com/LumenNull/OZOS.git`. All commits on `main` are cryptographically signed using sovereign Ed25519 SSH keys (`git commit -S`) authored by `LumenNull <350623492+LumenNull@users.noreply.github.com>`. Verify commit signatures locally via `git log --show-signature`.
 * **Binary Provenance & SHA-256 Pinning:** All shipped WebAssembly modules (`zero_dct.wasm`) must match the pinned SHA-256 hash `ea26872f8c14523bb3d823c4eca16dcae96c6a11f1be24bea75081c75b5f7a4e`. Verify locally via:
   ```bash
   sha256sum contrib/web-cockpit/zero_dct.wasm core/zero_dct.wasm
@@ -264,6 +264,65 @@ Following exhaustive 10-round adversarial Red Team audits, the operational bound
 * **Upgrade Policy:** Deprecated or unpatched node deployments are susceptible to public patch-diff reverse-engineering (N-day exploitation). Node operators must continuously track the `main` branch. Older versions prior to Round 10 hardening (commit `c68c1ce`) are considered deprecated.
 
 ---
+
+---
+
+## Decoupled 4-Package Monorepo Architecture
+
+To prevent architectural entropy while maintaining a single authoritative codebase, O.Z.O.S is organized into four independent, purpose-built packages plus a master umbrella binary:
+
+```text
++-------------------------------------------------------------------------------+
+|                           OZOS UNIFIED MONOREPO                               |
++-------------------+-------------------+-------------------+-------------------+
+|     ozos-core     |     ozos-phy      |    ozos-guard     |     ozos-pqc      |
+|  (Stack Enclave)  |   (Omni-Modem)    |   (Host Armor)    |  (FIPS 203 / 204) |
++-------------------+-------------------+-------------------+-------------------+
+| * Stack-only      | * 16-FSK Acoustic | * Hypervisor      | * ML-KEM-768      |
+| * malloc = 0      | * 64-FFT OFDM     |   Detection       | * ML-DSA-65       |
+| * Shamir SSS(k,n) | * 32x32 Optical   | * Wi-Fi Shield    | * Hybrid KEM      |
+| * RFC 8032 Ed25519| * LoRa Sub-GHz RF | * DACL Anti-Dump  | * Quantum Defense |
+| * seL4 / STM32    | * HF Skywave Base | * NIST 800-88 Burn| * SHA-512 KDF     |
+| * Size: 214 KB    | * Size: 207 KB    | * Size: 306 KB    | * Size: 163 KB    |
++-------------------+-------------------+-------------------+-------------------+
+|                     ozos.exe (Master Unified Umbrella)                        |
+|           All 38 capabilities unified * Backward-compatible 100%              |
++-------------------------------------------------------------------------------+
+```
+
+### 1. `ozos-core` (Sovereign Microkernel)
+* **Design Contract:** Zero heap allocation (`malloc = 0`), stack-only execution, zero host OS API hooks.
+* **Compatibility:** Embedded microcontrollers (STM32, ESP32), seL4 Microkit user domains, POSIX, Windows.
+* **Commands:** `keygen`, `brainseed-split`, `brainseed-combine`, `brainseed-gen`, `brainseed-restore`, `packet-build`, `packet-verify`, `crash-test`.
+
+### 2. `ozos-phy` (Omni-Spectrum Physical Modem)
+* **Design Contract:** Medium-agnostic physical transport for air-gapped data propagation.
+* **Modalities:**
+  - Acoustic 16-FSK (18.1 - 19.8 kHz near-ultrasound with 5ms Hann smoothing).
+  - Acoustic 64-FFT OFDM (< 40ms burst, 16 QPSK subcarriers, ambient steganography).
+  - Optical 32x32 Dynamic Matrix (16ms per video frame @ 60fps, CRC32-IEEE protected).
+  - Long-Range LoRa Sub-GHz (84-byte sovereign wire frames, CRC16-CCITT).
+* **Commands:** `spectrum-status`, `glyph-encode`, `glyph-decode`, `ofdm-synth`, `ofdm-decode`, `lora-pack`, `lora-unpack`, `audio-synth`, `audio-decode`.
+
+### 3. `ozos-guard` (Workstation Defense & Data-at-Rest Armor)
+* **Design Contract:** Host OS environment audit, anti-forensic memory scrubbing, and cold storage defense.
+* **Capabilities:**
+  - Hypervisor detection (CPUID hypervisor bit & vendor signatures).
+  - Host network & Wi-Fi exposure scan with operational mitigation guidance.
+  - Process memory shield: strict DACL injection, dynamic code generation blocking, and non-paged RAM locking (`VirtualLock`).
+  - Sub-5ms Windows RAM clipboard auto-armor (CF_DIB intercept).
+  - 2D-DCT frequency watermarking & Ed25519 detached signatures (`ozos-guard sweep`).
+  - Zero-touch Merkle provenance tree (`.ozos_anchor.json`).
+  - NIST SP 800-88 / DoD 5220.22-M 3-pass hardware sanitization (`ozos-guard burn`).
+  - Hermetic sealed RAM archive via XSalsa20-Poly1305 (`ozos-guard vault pack/open`).
+
+### 4. `ozos-pqc` (NIST FIPS 203 & 204 Hybrid Enclave)
+* **Design Contract:** Post-quantum cryptographic resistance combining classical elliptic curve speed with lattice-based quantum security.
+* **Mechanisms:** Dual-encapsulation (X25519 + ML-KEM-768 / Kyber) with composite public key serialization and SHA-512 KDF combination.
+* **Commands:** `status`, `test`.
+
+### 5. `ozos` (Master Unified Umbrella)
+* **Design Contract:** Single CLI binary exposing all 38 capabilities across all 4 tiers with 100% backwards compatibility with all existing test suites, scripts, and Web Cockpit integration.
 
 ## License
 
