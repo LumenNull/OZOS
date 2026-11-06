@@ -225,6 +225,14 @@ static inline int ozos_glyph_decode(const uint8_t matrix[OZOS_OMNI_GLYPH_DIM][OZ
         }
     }
 
+    /* Verify timing tracks on row 4 and col 4 (alternating 1 0 1 0) (M-OMNI-4) */
+    for (int i = 4; i < 28; ++i) {
+        uint8_t exp_bit = (i % 2 == 0) ? 1 : 0;
+        if (matrix[4][i] != exp_bit || matrix[i][4] != exp_bit) {
+            return -4; /* Timing track corrupted */
+        }
+    }
+
     /* Extract 84 bytes (672 bits) */
     uint8_t payload[84];
     memset(payload, 0, sizeof(payload));
@@ -632,11 +640,24 @@ static inline int ozos_ofdm_decode_wav(const char* in_wav, uint8_t* out_data, si
     }
     fclose(fp);
 
-    /* Demodulate 21 payload symbols (skipping 2 preamble symbols) */
+    /* Demodulate and verify 2 sync preamble symbols (0x55555555 and 0xAAAAAAAA) (M-OMNI-3) */
+    float sym_buf[OZOS_OMNI_FFT_N + OZOS_OMNI_CP_LEN];
+    uint8_t pre1[4], pre2[4];
+    for (int i = 0; i < sym_size; ++i) sym_buf[i] = (float)pcm16[0 * sym_size + i];
+    ozos_ofdm_demodulate_sym(sym_buf, pre1);
+    for (int i = 0; i < sym_size; ++i) sym_buf[i] = (float)pcm16[1 * sym_size + i];
+    ozos_ofdm_demodulate_sym(sym_buf, pre2);
+
+    static const uint8_t exp_sync1[4] = {0x55, 0x55, 0x55, 0x55};
+    static const uint8_t exp_sync2[4] = {0xAA, 0xAA, 0xAA, 0xAA};
+    if (memcmp(pre1, exp_sync1, 4) != 0 || memcmp(pre2, exp_sync2, 4) != 0) {
+        free(pcm16);
+        return -9; /* Preamble sync failed */
+    }
+
+    /* Demodulate 21 payload symbols */
     uint8_t payload[84];
     memset(payload, 0, sizeof(payload));
-
-    float sym_buf[OZOS_OMNI_FFT_N + OZOS_OMNI_CP_LEN];
     for (int s = 0; s < 21; ++s) {
         int offset = (2 + s) * sym_size;
         for (int i = 0; i < sym_size; ++i) {

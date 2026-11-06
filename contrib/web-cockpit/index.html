@@ -1862,7 +1862,7 @@
 
         log("[BRAINSEED] Đang phục sinh bản thể từ trí não...", "info");
         const res = await callNativeCmd(["brainseed-restore", raw, pass]);
-        if (res.success && res.stdout && res.stdout.includes("THÀNH CÔNG")) {
+        if (res.success && res.stdout && (res.stdout.includes("RESTORED") || res.stdout.includes("THÀNH CÔNG") || res.stdout.includes("[OK]"))) {
             const mPub = res.stdout.match(/Sovereign Public Key:\s+(0x[0-9a-fA-F]+)/);
             if (mPub) {
                 currentSovereignPubKey = mPub[1];
@@ -1951,8 +1951,8 @@
         const res = await callNativeCmd(["handshake-ack", currentSynFrameHex, "ack_stealth.wav"]);
         if (res.success && res.stdout) {
             const mAck = res.stdout.match(/ACK Frame Hex\s*:\s*\n([0-9a-fA-F]+)/);
-            const mShared = res.stdout.match(/Shared Key KDF\s*:\s*(0x[0-9a-fA-F]+)/);
-            const mTag = res.stdout.match(/Poly1305 Mutual Auth\s*:\s*(0x[0-9a-fA-F]+)/);
+            const mShared = res.stdout.match(/(?:Shared Key KDF|Established K_sess)\s*:\s*(0x[0-9a-fA-F]+)/);
+            const mTag = res.stdout.match(/(?:Poly1305 Mutual Auth|Poly1305 Auth Tag)\s*:\s*(0x[0-9a-fA-F]+)/);
 
             if (mAck) {
                 document.getElementById('handshake-traffic-hex').value += `\n\n[ACK FRAME 54B]:\n${mAck[1].trim()}`;
@@ -2007,7 +2007,7 @@
     // [MẢNH GHÉP 4] MẠNG LƯỚI LAN TRUYỀN TIN ĐỒN VÔ THANH (ACOUSTIC GOSSIP MESH)
     async function acousticGossipBeaconUI() {
         log("[GOSSIP MESH] Đang phát xung Beacon 22-byte vô thanh vào không gian...", "info");
-        const res = await callNativeCmd(["gossip-beacon", "1", "100", "0x1122334455667788"]);
+        const res = await callNativeCmd(["gossip-beacon", "100"]);
         if (res.success && res.stdout) {
             const mHex = res.stdout.match(/Beacon Frame Hex\s*:\s*\n([0-9a-fA-F]+)/);
             const mPeer = res.stdout.match(/Peer ID\s*:\s*(0x[0-9a-fA-F]+)/);

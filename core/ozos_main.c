@@ -34,6 +34,9 @@
 #ifndef _strtoui64
 #define _strtoui64 strtoull
 #endif
+#include <fcntl.h>
+#include <unistd.h>
+#include <sys/stat.h>
 #endif
 
 extern void randombytes(unsigned char *buf, unsigned long long len);
@@ -46,7 +49,7 @@ extern void randombytes(unsigned char *buf, unsigned long long len);
 
 #define OZOS_VERSION_STR "2026.1-SOVEREIGN"
 #ifndef OZOS_GIT_COMMIT_HASH
-#define OZOS_GIT_COMMIT_HASH "5457d9d"
+#define OZOS_GIT_COMMIT_HASH "nogit-release"
 #endif
 #ifndef OZOS_WASM_PIN_SHA256
 #define OZOS_WASM_PIN_SHA256 "ea26872f8c14523bb3d823c4eca16dcae96c6a11f1be24bea75081c75b5f7a4e"
@@ -292,6 +295,66 @@ static short* read_wav_file(const char* filepath, size_t* out_num_samples, uint3
  *   0 : First time encountering this peer (TOFU), recorded to `.ozos_known_peers`
  *  -1 : ABNORMAL KEY CHANGE DETECTED (KEY CHANGED / MITM ALERT) -> Fail-closed!
  */
+static void ozos_secure_random_bytes(uint8_t* out, size_t len);
+
+static void ozos_get_host_state_key(uint8_t out_key[32]) {
+    static uint8_t cached_key[32] = {0};
+    static bool key_loaded = false;
+    if (key_loaded) {
+        memcpy(out_key, cached_key, 32);
+        return;
+    }
+
+    FILE* f = fopen(".ozos_state_key", "rb");
+    if (f) {
+        size_t n = fread(cached_key, 1, 32, f);
+        fclose(f);
+        if (n == 32) {
+            key_loaded = true;
+            memcpy(out_key, cached_key, 32);
+            return;
+        }
+    }
+
+    ozos_secure_random_bytes(cached_key, 32);
+#ifndef _WIN32
+    int fd = open(".ozos_state_key", O_WRONLY | O_CREAT | O_EXCL, 0600);
+    if (fd >= 0) {
+        (void)write(fd, cached_key, 32);
+        close(fd);
+    } else {
+        FILE* fr = fopen(".ozos_state_key", "rb");
+        if (fr) {
+            (void)fread(cached_key, 1, 32, fr);
+            fclose(fr);
+        }
+    }
+#else
+    FILE* fw = fopen(".ozos_state_key", "wb");
+    if (fw) {
+        fwrite(cached_key, 1, 32, fw);
+        fclose(fw);
+    }
+#endif
+    key_loaded = true;
+    memcpy(out_key, cached_key, 32);
+}
+
+static void ozos_derive_state_keys(uint64_t* out_tunnel_k0, uint64_t* out_tunnel_k1,
+                                   uint64_t* out_pin_k0, uint64_t* out_pin_k1) {
+    uint8_t host_key[32];
+    ozos_get_host_state_key(host_key);
+    uint64_t k0, k1, pk0, pk1;
+    memcpy(&k0, host_key, 8);
+    memcpy(&k1, host_key + 8, 8);
+    memcpy(&pk0, host_key + 16, 8);
+    memcpy(&pk1, host_key + 24, 8);
+    if (out_tunnel_k0) *out_tunnel_k0 = k0 ^ 0x4F5A4F535345414CULL;
+    if (out_tunnel_k1) *out_tunnel_k1 = k1 ^ 0xA5A5A5A55A5A5A5AULL;
+    if (out_pin_k0) *out_pin_k0 = pk0 ^ 0x5045455250494E53ULL;
+    if (out_pin_k1) *out_pin_k1 = pk1 ^ 0x5A5A5A5A5A5A5A5AULL;
+}
+
 static int ozos_check_and_record_peer_pin(const char* peer_id, const char* pk_hex, char* out_expected_hex) {
     if (!peer_id || !*peer_id) return 0;
 
@@ -317,7 +380,9 @@ static int ozos_check_and_record_peer_pin(const char* peer_id, const char* pk_he
                 if (parts >= 3 && strlen(line_tag) == 4 && is_valid_hex(line_tag, 4)) {
                     uint8_t pk_bytes[32];
                     hex_to_bytes(line_pk, pk_bytes, 32);
-                    uint16_t exp_tag = compute_fast_gate_mac(pk_bytes, 32, 0x5045455250494E53ULL, 0x5A5A5A5AULL);
+                    uint64_t pin_k0, pin_k1;
+                    ozos_derive_state_keys(NULL, NULL, &pin_k0, &pin_k1);
+                    uint16_t exp_tag = compute_fast_gate_mac(pk_bytes, 32, pin_k0, pin_k1);
                     uint16_t got_tag = (uint16_t)strtoul(line_tag, NULL, 16);
                     if (exp_tag != got_tag) {
                         continue; /* Forged/unauthorized entry -> skip */
@@ -346,7 +411,9 @@ static int ozos_check_and_record_peer_pin(const char* peer_id, const char* pk_he
     if (fw) {
         uint8_t pk_bytes[32];
         hex_to_bytes(pk_hex, pk_bytes, 32);
-        uint16_t tag = compute_fast_gate_mac(pk_bytes, 32, 0x5045455250494E53ULL, 0x5A5A5A5AULL);
+        uint64_t pin_k0, pin_k1;
+        ozos_derive_state_keys(NULL, NULL, &pin_k0, &pin_k1);
+        uint16_t tag = compute_fast_gate_mac(pk_bytes, 32, pin_k0, pin_k1);
         fprintf(fw, "%s %s %04X\n", peer_id, pk_hex, tag);
         fclose(fw);
 #ifndef _WIN32
@@ -356,11 +423,10 @@ static int ozos_check_and_record_peer_pin(const char* peer_id, const char* pk_he
     return 0;
 }
 
-#define OZOS_STATE_SEAL_K0 0x4F5A4F535345414CULL /* "OZOSSEAL" */
-#define OZOS_STATE_SEAL_K1 0xA5A5A5A55A5A5A5AULL
-
 static uint16_t ozos_compute_state_integrity_tag(const uint8_t* data, size_t len) {
-    return compute_fast_gate_mac(data, len, OZOS_STATE_SEAL_K0, OZOS_STATE_SEAL_K1);
+    uint64_t tk0, tk1;
+    ozos_derive_state_keys(&tk0, &tk1, NULL, NULL);
+    return compute_fast_gate_mac(data, len, tk0, tk1);
 }
 
 static void ozos_cli_load_tunnel_nonces(void) {
@@ -730,14 +796,10 @@ static int cmd_packet_sign(const char* message, uint64_t nonce, const char* cust
     for (int i = 0; i < 16; ++i) coeffs[i] = 1.0f + (float)i * 0.1f;
     ozos_packet_build(&pkt, nonce, coeffs, (uint16_t)msg_len);
     if (msg_len > 0) {
-        uint64_t h = 0xA5A5A5A5ULL;
-        for (size_t i = 0; i < 78; ++i) {
-            h = ((h ^ (uint64_t)((const uint8_t*)&pkt)[i]) * 0x100000001B3ULL);
-        }
-        for (size_t i = 0; i < msg_len; ++i) {
-            h = ((h ^ (uint64_t)((const uint8_t*)message)[i]) * 0x100000001B3ULL);
-        }
-        pkt.header_mac16 = (uint16_t)((h ^ (h >> 16) ^ (h >> 32)) & 0xFFFFU);
+        uint8_t mac_input[78 + 1024];
+        memcpy(mac_input, &pkt, 78);
+        memcpy(mac_input + 78, message, msg_len);
+        pkt.header_mac16 = compute_fast_gate_mac(mac_input, 78 + msg_len, OZOS_A2_DOMAIN_CONSTANT, 0ULL);
     }
 
     size_t unsigned_size = OZOS_PACKET_HEADER_SIZE + msg_len;
@@ -779,9 +841,9 @@ static int cmd_packet_sign(const char* message, uint64_t nonce, const char* cust
     return 0;
 }
 
-static int cmd_packet_build(const char* message, uint64_t nonce) {
+static int cmd_packet_build(const char* message, uint64_t nonce, uint64_t mac_key) {
     if (!message) {
-        printf("Error: Please provide message: ozos packet-build <msg> [nonce]\n");
+        printf("Error: Please provide message: ozos packet-build <msg> [nonce] [--mac-key <hex>]\n");
         return 1;
     }
 
@@ -796,19 +858,13 @@ static int cmd_packet_build(const char* message, uint64_t nonce) {
     for (int i = 0; i < 16; ++i) coeffs[i] = 1.0f + (float)i * 0.1f;
     ozos_packet_build(&pkt, nonce, coeffs, (uint16_t)msg_len);
 
-    /* Khi goi tin co payload (msg_len > 0), phat mac dinh Sub-Profile A2 (FNV-1a-64 Fold)
-       de bao ve toan ven toan bo Header (0..77) lan Payload (80..80+msg_len),
-       triet tieu nguy co ep downgrade qua A1 header-only. */
+    /* Khi goi tin co payload (msg_len > 0), phat Sub-Profile A2 (SipHash-2-4 Fast Gatekeeper MAC) */
     if (msg_len > 0) {
-        uint64_t h = 0xA5A5A5A5ULL;
-        const uint8_t* hdr_bytes = (const uint8_t*)&pkt;
-        for (size_t i = 0; i < 78; ++i) {
-            h = ((h ^ (uint64_t)hdr_bytes[i]) * 0x100000001B3ULL);
-        }
-        for (size_t i = 0; i < msg_len; ++i) {
-            h = ((h ^ (uint64_t)(uint8_t)message[i]) * 0x100000001B3ULL);
-        }
-        pkt.header_mac16 = (uint16_t)((h ^ (h >> 16) ^ (h >> 32)) & 0xFFFFU);
+        uint64_t k0 = (mac_key != 0ULL) ? mac_key : OZOS_A2_DOMAIN_CONSTANT;
+        uint8_t mac_input[78 + 1024];
+        memcpy(mac_input, &pkt, 78);
+        memcpy(mac_input + 78, message, msg_len);
+        pkt.header_mac16 = compute_fast_gate_mac(mac_input, 78 + msg_len, k0, 0ULL);
     }
 
     size_t total_size = OZOS_PACKET_HEADER_SIZE + msg_len;
@@ -838,9 +894,9 @@ static int cmd_packet_build(const char* message, uint64_t nonce) {
     return 0;
 }
 
-static int cmd_packet_verify(const char* hex_str, uint64_t last_seen_nonce, const char* trusted_author_pk_hex, const char* peer_id) {
+static int cmd_packet_verify(const char* hex_str, uint64_t last_seen_nonce, const char* trusted_author_pk_hex, const char* peer_id, uint64_t mac_key) {
     if (!hex_str) {
-        printf("Error: ozos packet-verify <hex> [last_seen_nonce] [trusted_author_pk] [--peer-id <id>]\n");
+        printf("Error: ozos packet-verify <hex> [last_seen_nonce] [trusted_author_pk] [--peer-id <id>] [--mac-key <hex>]\n");
         return 1;
     }
 
@@ -862,7 +918,7 @@ static int cmd_packet_verify(const char* hex_str, uint64_t last_seen_nonce, cons
     hex_to_bytes(hex_str, buffer, byte_count);
 
     ozos_packet80_t validated;
-    ozos_status_t st = ozos_packet_validate(buffer, byte_count, last_seen_nonce, &validated);
+    ozos_status_t st = ozos_packet_validate_ex(buffer, byte_count, last_seen_nonce, mac_key, &validated);
 
     printf("=================================================================\n");
     printf("  [PACKET VERIFICATION RESULT] SOVEREIGN INTEGRITY AUDIT\n");
@@ -944,7 +1000,12 @@ static int cmd_packet_verify(const char* hex_str, uint64_t last_seen_nonce, cons
     /* Xet duyet tinh xac thuc cua chu ky */
     if (byte_count == base_len) {
         /* Goi tin hop le ve cau truc nhung KHONG co chu ky */
-        if (validated.payload_len > 0) {
+        if (trusted_author_pk_hex != NULL) {
+            /* M5 residual: Fail-closed if caller passed trusted-pk but packet is unsigned */
+            printf("Status         : [REJECTED] UNSIGNED PACKET CANNOT SATISFY TRUSTED AUTHOR REQUIREMENT\n");
+            printf("* Sovereign Sig: [REJECTED] Expected trusted public key 0x%s but packet has no Ed25519 signature.\n", trusted_author_pk_hex);
+            final_rc = 1;
+        } else if (validated.payload_len > 0) {
             uint16_t crc_header = ozos_compute_mac16(&validated);
             if (validated.header_mac16 == crc_header) {
                 printf("Status         : [REJECTED] SUB-PROFILE A1 DOES NOT PROTECT PAYLOAD\n");
@@ -954,7 +1015,7 @@ static int cmd_packet_verify(const char* hex_str, uint64_t last_seen_nonce, cons
             } else {
                 printf("Status         : [WARNING] VALID WIRE FORMAT (NO ED25519 SIGNATURE ATTACHED)\n");
                 printf("* Sovereign Sig: [NONE] UNSIGNED PACKET (No sovereign signature attached)\n");
-                printf("* Sub-Profile A2 : [OK] MAC16 FNV-Fold Header & Payload Invariant Verified 100%%\n");
+                printf("* Sub-Profile A2 : [OK] MAC16 SipHash-2-4 Gatekeeper Verified 100%%\n");
                 final_rc = 0;
             }
         } else {
@@ -1411,7 +1472,11 @@ static int cmd_handshake_syn(const char* wav_path, uint32_t session_nonce, const
         printf("[ERROR] Failed to generate Ephemeral A keypair!\n");
         return 1;
     }
-    if (session_nonce == 0) session_nonce = (uint32_t)time(NULL);
+    if (session_nonce == 0) {
+        while (session_nonce == 0) {
+            ozos_secure_random_bytes((uint8_t*)&session_nonce, sizeof(session_nonce));
+        }
+    }
 
     ozos_handshake_syn_t syn;
     ozos_handshake_syn_build(&syn, a_pub, session_nonce);
@@ -1811,8 +1876,6 @@ static int cmd_brainseed_gen(const char* passphrase) {
     char pk_hex[65], seed_hex[65];
     bytes_to_hex(pk, 32, pk_hex);
     bytes_to_hex(seed32, 32, seed_hex);
-    ozos_crypto_zeroize(seed32, sizeof(seed32));
-    ozos_crypto_zeroize(sk, sizeof(sk));
 
     printf("=================================================================\n");
     printf("  [TIER 3 PRIMITIVE] MIND-BOUND RECOVERY SEED (BRAINSEED)\n");
@@ -1833,6 +1896,11 @@ static int cmd_brainseed_gen(const char* passphrase) {
     printf("   retaining these 12 words in memory allows instant 100%% restoration\n");
     printf("   on any machine via 'ozos.exe brainseed-restore'!\n");
     printf("=================================================================\n");
+    ozos_crypto_zeroize(seed32, sizeof(seed32));
+    ozos_crypto_zeroize(sk, sizeof(sk));
+    ozos_crypto_zeroize(entropy, sizeof(entropy));
+    ozos_crypto_zeroize(mnemonic, sizeof(mnemonic));
+    ozos_crypto_zeroize(seed_hex, sizeof(seed_hex));
     return 0;
 }
 
@@ -1859,14 +1927,15 @@ static int cmd_brainseed_restore(const char* mnemonic_str, const char* passphras
         char pk_hex[65], seed_hex[65];
         bytes_to_hex(pk, 32, pk_hex);
         bytes_to_hex(seed32, 32, seed_hex);
-        ozos_crypto_zeroize(seed32, sizeof(seed32));
-        ozos_crypto_zeroize(sk, sizeof(sk));
 
         printf("Status         : [OK] IDENTITY RESTORED SUCCESSFULLY!\n");
         printf("* Master Seed 32-Byte : 0x%s\n", seed_hex);
         printf("* Sovereign Public Key: 0x%s (Ed25519)\n", pk_hex);
         printf("* Memory Footprint    : 100%% Stack Execution (Zero Dynamic Leaks)\n");
         printf("=================================================================\n");
+        ozos_crypto_zeroize(seed32, sizeof(seed32));
+        ozos_crypto_zeroize(sk, sizeof(sk));
+        ozos_crypto_zeroize(seed_hex, sizeof(seed_hex));
         return 0;
     } else {
         printf("Status         : [FAILED] DICTIONARY ERROR OR INVALID CHECKSUM!\n");
@@ -1894,9 +1963,11 @@ static int cmd_gossip_beacon(uint32_t epoch, const char* wav_path, bool raw_fram
         if (get_sovereign_keys(sov_pk, sov_sk, NULL) == 0) {
             memcpy(&peer_id, sov_pk, 4);
         } else {
-            uint8_t rand_id[4];
-            ozos_secure_random_bytes(rand_id, 4);
-            memcpy(&peer_id, rand_id, 4);
+            uint8_t host_key[32];
+            ozos_get_host_state_key(host_key);
+            uint16_t m1 = compute_fast_gate_mac(host_key, 32, 0x474F5353495031ULL, 0x50454552494432ULL);
+            uint16_t m2 = compute_fast_gate_mac(host_key, 32, 0x50454552494432ULL, 0x474F5353495031ULL);
+            peer_id = ((uint32_t)m1 << 16) | (uint32_t)m2;
         }
         if (peer_id == 0) peer_id = 0x02052026; /* Non-zero fallback identity sentinel */
     }
@@ -1955,6 +2026,27 @@ static int cmd_gossip_listen(const char* beacon_hex, uint32_t my_epoch) {
     if (!ozos_gossip_beacon_verify(&remote_beacon)) {
         printf("[REJECTED] Beacon failed MAC16 check or invalid magic!\n");
         return 1;
+    }
+
+    /* Gate on .ozos_fork_quarantine (Quarantine Enforcement) */
+    FILE* fq_check = fopen(".ozos_fork_quarantine", "r");
+    if (fq_check) {
+        char qline[256];
+        char target_peer[64];
+        snprintf(target_peer, sizeof(target_peer), "peer_id=0x%08X", remote_beacon.peer_id);
+        bool quarantined = false;
+        while (fgets(qline, sizeof(qline), fq_check)) {
+            if (strstr(qline, target_peer)) {
+                quarantined = true;
+                break;
+            }
+        }
+        fclose(fq_check);
+        if (quarantined) {
+            printf("* Quarantine Status  : [BLOCKED] Peer 0x%08X is in .ozos_fork_quarantine! Consensus arbitration rejected.\n", remote_beacon.peer_id);
+            printf("=================================================================\n");
+            return 2;
+        }
     }
 
     if (my_epoch == 0) my_epoch = 100;
@@ -2058,6 +2150,7 @@ static int cmd_glyph_decode(const char* in_bmp) {
     printf("=================================================================\n");
     printf("* BMP Input File     : %s\n", in_bmp);
     printf("* Decoded Length     : %zu bytes\n", decoded_len);
+    printf("* Authentication     : [UNAUTHENTICATED BROADCAST TRANSPORT - INTEGRITY ONLY / NO PEER AUTHENTICATION]\n");
     printf("* CRC32 Integrity    : [OK] 100%% BIT-EXACT MATCH\n");
     printf("* Hex Frame      : %s\n", hex_out);
     printf("=================================================================\n");
@@ -2117,6 +2210,7 @@ static int cmd_ofdm_decode(const char* in_wav) {
     printf("=================================================================\n");
     printf("* Input WAV File     : %s\n", in_wav);
     printf("* Decoded Length : %zu bytes\n", decoded_len);
+    printf("* Authentication     : [UNAUTHENTICATED BROADCAST TRANSPORT - INTEGRITY ONLY / NO PEER AUTHENTICATION]\n");
     printf("* CRC32 Integrity    : [OK] 100%% SUCCESSFUL DECODING\n");
     printf("* Hex Frame      : %s\n", hex_out);
     printf("=================================================================\n");
@@ -2187,6 +2281,7 @@ static int cmd_lora_unpack(const char* frame_hex) {
     printf("  [LORA SUB-GHZ UNPACK SUCCESS] RF INTEGRITY VERIFIED\n");
     printf("=================================================================\n");
     printf("* LoRa Sync Word     : [OK] 0x%02X Valid\n", frame[0]);
+    printf("* Authentication     : [UNAUTHENTICATED BROADCAST TRANSPORT - INTEGRITY ONLY / NO PEER AUTHENTICATION]\n");
     printf("* CRC16-CCITT        : [OK] 100%% Invariant Match\n");
     printf("* Decoded Payload Hex:\n%s\n", hex_out);
     printf("=================================================================\n");
@@ -2217,11 +2312,12 @@ static int cmd_spectrum_status(void) {
     printf("  * Energy Profile : Ultra low-power, operates entirely without Internet/SIM\n\n");
 
     printf("  [TIER 4: HF SKYWAVE (3 - 30 MHz / GLOBAL RESILIENCE)]\n");
+    printf("  * Status         : [NOT IMPLEMENTED / PLANNED - REQUIRES ANALOG SSB TRANSCEIVER]\n");
     printf("  * Propagation    : Ionosphere Bouncing (100 - 300 km altitude reflection)\n");
     printf("  * Survivability  : Transoceanic & intercontinental reach during undersea cable collapse\n");
     printf("  * Hardware       : Battery-powered analog radio patched directly into PC Mic jack\n\n");
     printf("=================================================================\n");
-    printf("  STATUS: ALL 4 COGNITIVE PHY TIERS OPERATIONAL 100%%!\n");
+    printf("  STATUS: 3/3 COGNITIVE PHY TIERS OPERATIONAL (TIER 4 SKYWAVE PLANNED)\n");
     printf("=================================================================\n");
     return 0;
 }
@@ -2304,19 +2400,41 @@ int main(int argc, char* argv[]) {
         const char* custom_seed = (argc == 5) ? argv[4] : NULL;
         return cmd_packet_sign(msg, nonce, custom_seed);
     } else if (strcmp(cmd, "packet-build") == 0) {
-        if (argc > 4) {
-            fprintf(stderr, "[SYNTAX ERROR] Too many arguments for packet-build command.\n");
-            return 1;
-        }
-        const char* msg = (argc >= 3) ? argv[2] : "O.Z.O.S SOVEREIGN IDENTITY";
+        const char* msg = "O.Z.O.S SOVEREIGN IDENTITY";
         uint64_t nonce = 1001ULL;
-        if (argc >= 4) {
-            if (!parse_strict_u64(argv[3], &nonce) || nonce == 0) {
-                fprintf(stderr, "[SYNTAX ERROR] Invalid nonce: '%s' (must be a positive integer).\n", argv[3]);
+        uint64_t mac_key = 0ULL;
+        bool has_msg = false;
+        bool has_nonce = false;
+        for (int i = 2; i < argc; ++i) {
+            if (strcmp(argv[i], "--mac-key") == 0) {
+                if (i + 1 >= argc) {
+                    fprintf(stderr, "[SYNTAX ERROR] Flag '--mac-key' is missing required hex argument.\n");
+                    return 1;
+                }
+                const char* k_str = argv[++i];
+                if (!is_valid_hex(k_str, strlen(k_str)) || strlen(k_str) > 16) {
+                    fprintf(stderr, "[SYNTAX ERROR] Invalid --mac-key hex: '%s'\n", k_str);
+                    return 1;
+                }
+                mac_key = (uint64_t)strtoull(k_str, NULL, 16);
+            } else if (argv[i][0] == '-') {
+                fprintf(stderr, "[SYNTAX ERROR] Invalid flag: '%s'\n", argv[i]);
+                return 1;
+            } else if (!has_msg) {
+                msg = argv[i];
+                has_msg = true;
+            } else if (!has_nonce) {
+                if (!parse_strict_u64(argv[i], &nonce) || nonce == 0) {
+                    fprintf(stderr, "[SYNTAX ERROR] Invalid nonce: '%s' (must be a positive integer).\n", argv[i]);
+                    return 1;
+                }
+                has_nonce = true;
+            } else {
+                fprintf(stderr, "[SYNTAX ERROR] Too many arguments for packet-build command.\n");
                 return 1;
             }
         }
-        return cmd_packet_build(msg, nonce);
+        return cmd_packet_build(msg, nonce, mac_key);
     } else if (strcmp(cmd, "packet-verify") == 0) {
         if (argc < 3) {
             printf("Error: Please provide hex string: ozos.exe packet-verify <hex> [last_n] [trusted_author_pk] [--peer-id <id>]\n");
@@ -2325,6 +2443,7 @@ int main(int argc, char* argv[]) {
         uint64_t last_n = 1000ULL;
         const char* trusted_pk = NULL;
         const char* peer_id = NULL;
+        uint64_t mac_key = 0ULL;
         bool has_last_n = false;
         bool has_trusted_pk = false;
         for (int i = 3; i < argc; ++i) {
@@ -2347,6 +2466,17 @@ int main(int argc, char* argv[]) {
                         return 1;
                     }
                 }
+            } else if (strcmp(argv[i], "--mac-key") == 0) {
+                if (i + 1 >= argc) {
+                    fprintf(stderr, "[SYNTAX ERROR] Flag '--mac-key' is missing required hex argument.\n");
+                    return 1;
+                }
+                const char* k_str = argv[++i];
+                if (!is_valid_hex(k_str, strlen(k_str)) || strlen(k_str) > 16) {
+                    fprintf(stderr, "[SYNTAX ERROR] Invalid --mac-key hex: '%s'\n", k_str);
+                    return 1;
+                }
+                mac_key = (uint64_t)strtoull(k_str, NULL, 16);
             } else if (argv[i][0] == '-') {
                 fprintf(stderr, "[SYNTAX ERROR] Invalid flag: '%s'\n", argv[i]);
                 return 1;
@@ -2364,7 +2494,7 @@ int main(int argc, char* argv[]) {
                 return 1;
             }
         }
-        return cmd_packet_verify(argv[2], last_n, trusted_pk, peer_id);
+        return cmd_packet_verify(argv[2], last_n, trusted_pk, peer_id, mac_key);
     } else if (strcmp(cmd, "handshake-syn") == 0) {
         const char* wav_path = NULL;
         uint32_t session_nonce = 0;

@@ -50,7 +50,7 @@ int main(void) {
         if (max_err < 1e-5f) {
             printf("  -> [PASS] FFT Radix-2 Inversion Max Error: %.4e (< 1e-5)\n", max_err);
         } else {
-            printf("  -> ❌ [FAIL] FFT Radix-2 Inversion Error qua lon: %.4e\n", max_err);
+            printf("  -> [FAIL] FFT Radix-2 Inversion Error qua lon: %.4e\n", max_err);
             failed++;
         }
     }
@@ -74,7 +74,7 @@ int main(void) {
         if (match) {
             printf("  -> [PASS] Optical Glyph 32x32 Matrix Loopback BIT-EXACT 100%%\n");
         } else {
-            printf("  -> ❌ [FAIL] Optical Glyph decode failed (enc=%d, dec=%d)\n", enc_rc, dec_rc);
+            printf("  -> [FAIL] Optical Glyph decode failed (enc=%d, dec=%d)\n", enc_rc, dec_rc);
             failed++;
         }
 
@@ -84,7 +84,7 @@ int main(void) {
         if (tamper_rc != 0) {
             printf("  -> [PASS] Phat hien lat 1 bit trong Optical Matrix: BI TU CHOI (rc=%d)\n", tamper_rc);
         } else {
-            printf("  -> ❌ [FAIL] Khong phat hien tamper tren Optical Matrix!\n");
+            printf("  -> [FAIL] Khong phat hien tamper tren Optical Matrix!\n");
             failed++;
         }
     }
@@ -113,7 +113,7 @@ int main(void) {
         if (bmp_ok) {
             printf("  -> [PASS] Optical BMP 256x256 Render & Pixel Center Sampling: 100%% BIT-EXACT\n");
         } else {
-            printf("  -> ❌ [FAIL] Optical BMP test failed (write=%d, read=%d)\n", write_rc, read_rc);
+            printf("  -> [FAIL] Optical BMP test failed (write=%d, read=%d)\n", write_rc, read_rc);
             failed++;
         }
     }
@@ -140,7 +140,7 @@ int main(void) {
         if (ofdm_ok) {
             printf("  -> [PASS] Acoustic OFDM Multi-Carrier Transmission (Duration ~0.036s): 100%% BIT-EXACT\n");
         } else {
-            printf("  -> ❌ [FAIL] Acoustic OFDM failed (synth=%d, dec=%d)\n", synth_rc, dec_rc);
+            printf("  -> [FAIL] Acoustic OFDM failed (synth=%d, dec=%d)\n", synth_rc, dec_rc);
             failed++;
         }
 
@@ -155,7 +155,7 @@ int main(void) {
         if (stego_ok) {
             printf("  -> [PASS] Ambient Steganography with Background Noise: 100%% BIT-EXACT\n");
         } else {
-            printf("  -> ❌ [FAIL] Ambient Steganography failed (synth=%d, dec=%d)\n", stego_synth, stego_dec);
+            printf("  -> [FAIL] Ambient Steganography failed (synth=%d, dec=%d)\n", stego_synth, stego_dec);
             failed++;
         }
     }
@@ -181,7 +181,7 @@ int main(void) {
         if (lora_ok) {
             printf("  -> [PASS] LoRa Sub-GHz 84-byte Sovereign Frame & CRC16-CCITT: 100%% BIT-EXACT\n");
         } else {
-            printf("  -> ❌ [FAIL] LoRa frame failed (pack=%d, unpack=%d)\n", pack_rc, unpack_rc);
+            printf("  -> [FAIL] LoRa frame failed (pack=%d, unpack=%d)\n", pack_rc, unpack_rc);
             failed++;
         }
 
@@ -191,7 +191,7 @@ int main(void) {
         if (lora_tamper_rc != 0) {
             printf("  -> [PASS] Phat hien sua doi 1 bit tren LoRa Frame: BI TU CHOI (rc=%d)\n", lora_tamper_rc);
         } else {
-            printf("  -> ❌ [FAIL] Khong phat hien sua doi LoRa frame!\n");
+            printf("  -> [FAIL] Khong phat hien sua doi LoRa frame!\n");
             failed++;
         }
     }
@@ -199,11 +199,11 @@ int main(void) {
     printf("\n=================================================================\n");
     if (failed == 0) {
         printf("  🏆 KẾT QUẢ: 5/5 BÀI THI OMNI-SPECTRUM COGNITIVE PHY PASS 100%%!\n");
-        printf("  ĐÃ HIỆN THỰC HÓA THÀNH CÔNG 4 TẦNG QUANG HỌC, OFDM, LORA & SKYWAVE.\n");
+        printf("  SUCCESSFULLY IMPLEMENTED 3 TIERS: OPTICAL, OFDM & LORA (TIER 4 SKYWAVE PLANNED).\n");
         printf("=================================================================\n");
         return 0;
     } else {
-        printf("  🚨 CÓ %d BÀI THI THẤT BẠI!\n", failed);
+        printf("  [FAIL] %d TESTS FAILED!\n", failed);
         printf("=================================================================\n");
         return 1;
     }

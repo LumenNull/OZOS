@@ -183,12 +183,11 @@ static inline bool ozos_ghost_play_pcm16(const short* pcm16, size_t num_samples,
     wfx.nAvgBytesPerSec = wfx.nSamplesPerSec * wfx.nBlockAlign;
 
     if (waveOutGetNumDevs() == 0) {
-        return true;
+        return false;
     }
     HWAVEOUT hWaveOut = NULL;
     MMRESULT res = waveOutOpen(&hWaveOut, WAVE_MAPPER, &wfx, 0, 0, CALLBACK_NULL);
     if (res != MMSYSERR_NOERROR) {
-        if (res == MMSYSERR_NODRIVER || res == MMSYSERR_BADDEVICEID) return true;
         return false;
     }
 
@@ -209,7 +208,7 @@ static inline bool ozos_ghost_play_pcm16(const short* pcm16, size_t num_samples,
     return true;
 #else
     (void)pcm16; (void)num_samples; (void)sample_rate;
-    return true;
+    return false;
 #endif
 }
 

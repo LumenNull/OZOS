@@ -6,6 +6,72 @@
  */
 
 class OZOSEngine {
+    /**
+     * Compute Fast Gatekeeper MAC (16-bit) using SipHash-2-4 PRF
+     * Bit-exact conformance with C compute_fast_gate_mac and Python ozos-cli.py
+     */
+    static computeFastGateMac(dataUint8, k0BigInt, k1BigInt = 0n) {
+        const rotl64 = (x, b) => {
+            const bi = BigInt(b);
+            return (((x << bi) & 0xFFFFFFFFFFFFFFFFn) | (x >> (64n - bi))) & 0xFFFFFFFFFFFFFFFFn;
+        };
+
+        let k0 = BigInt(k0BigInt) & 0xFFFFFFFFFFFFFFFFn;
+        let k1 = (k1BigInt !== 0n && k1BigInt !== null && k1BigInt !== undefined)
+            ? (BigInt(k1BigInt) & 0xFFFFFFFFFFFFFFFFn)
+            : ((k0 ^ 0x4F5A4F5353495048n) & 0xFFFFFFFFFFFFFFFFn);
+
+        let v0 = (k0 ^ 0x736f6d6570736575n) & 0xFFFFFFFFFFFFFFFFn;
+        let v1 = (k1 ^ 0x646f72616e646f6dn) & 0xFFFFFFFFFFFFFFFFn;
+        let v2 = (k0 ^ 0x6c7967656e657261n) & 0xFFFFFFFFFFFFFFFFn;
+        let v3 = (k1 ^ 0x7465646279746573n) & 0xFFFFFFFFFFFFFFFFn;
+
+        const sipround = () => {
+            v0 = (v0 + v1) & 0xFFFFFFFFFFFFFFFFn;
+            v1 = rotl64(v1, 13) ^ v0;
+            v0 = rotl64(v0, 32);
+            v2 = (v2 + v3) & 0xFFFFFFFFFFFFFFFFn;
+            v3 = rotl64(v3, 16) ^ v2;
+            v0 = (v0 + v3) & 0xFFFFFFFFFFFFFFFFn;
+            v3 = rotl64(v3, 21) ^ v0;
+            v2 = (v2 + v1) & 0xFFFFFFFFFFFFFFFFn;
+            v1 = rotl64(v1, 17) ^ v2;
+            v2 = rotl64(v2, 32);
+        };
+
+        const len = BigInt(dataUint8.length);
+        const blocks = Math.floor(dataUint8.length / 8);
+        const view = new DataView(dataUint8.buffer, dataUint8.byteOffset, dataUint8.byteLength);
+
+        for (let i = 0; i < blocks; i++) {
+            const m = view.getBigUint64(i * 8, true);
+            v3 ^= m;
+            sipround();
+            sipround();
+            v0 ^= m;
+        }
+
+        const rem = dataUint8.length % 8;
+        const offset = blocks * 8;
+        let last = (len & 0xFFn) << 56n;
+        for (let i = 0; i < rem; i++) {
+            last |= BigInt(dataUint8[offset + i]) << BigInt(8 * i);
+        }
+        v3 ^= last;
+        sipround();
+        sipround();
+        v0 ^= last;
+
+        v2 ^= 0xFFn;
+        sipround();
+        sipround();
+        sipround();
+        sipround();
+
+        const h = (v0 ^ v1 ^ v2 ^ v3) & 0xFFFFFFFFFFFFFFFFn;
+        return Number(((h & 0xFFFFn) ^ ((h >> 16n) & 0xFFFFn) ^ ((h >> 32n) & 0xFFFFn) ^ ((h >> 48n) & 0xFFFFn)) & 0xFFFFn);
+    }
+
     constructor() {
         this.wasm = null;
         this.isReady = false;
@@ -469,7 +535,15 @@ class OZOSEngine {
 
         const magic = [0x5A, 0xA5];
         const bytes = new TextEncoder().encode(secretStr);
-        const fullPayload = [magic[0], magic[1], bytes.length, ...bytes];
+        let crc = 0xFFFF;
+        for (let b of bytes) {
+            crc ^= (b << 8);
+            for (let i = 0; i < 8; i++) {
+                if (crc & 0x8000) crc = ((crc << 1) ^ 0x1021) & 0xFFFF;
+                else crc = (crc << 1) & 0xFFFF;
+            }
+        }
+        const fullPayload = [magic[0], magic[1], bytes.length, (crc >> 8) & 0xFF, crc & 0xFF, ...bytes];
 
         const bits = [];
         for (let b of fullPayload) {
@@ -582,28 +656,67 @@ class OZOSEngine {
         for (let i = 0; i < rawBytes.length - 3; i++) {
             if (rawBytes[i] === 0x5A && rawBytes[i + 1] === 0xA5) {
                 const len = rawBytes[i + 2];
-                if (len > 0 && len <= 128 && (i + 3 + len) <= rawBytes.length) {
-                    const totalMsgBits = (3 + len) * 8;
-                    const bitOffset = i * 8;
-                    const votedBytes = new Uint8Array(len);
-                    for (let bIdx = 0; bIdx < len; bIdx++) {
-                        let byteVal = 0;
-                        for (let bitPos = 0; bitPos < 8; bitPos++) {
-                            const targetBit = (3 + bIdx) * 8 + bitPos;
-                            let ones = 0, count = 0;
-                            for (let k = bitOffset + targetBit; k < rawBits.length; k += totalMsgBits) {
-                                ones += rawBits[k];
-                                count++;
+                if (len > 0 && len <= 128) {
+                    // Check 5-byte frame with CRC16
+                    if (i + 5 + len <= rawBytes.length) {
+                        const expCrc = (rawBytes[i + 3] << 8) | rawBytes[i + 4];
+                        const totalMsgBits = (5 + len) * 8;
+                        const bitOffset = i * 8;
+                        const votedBytes = new Uint8Array(len);
+                        for (let bIdx = 0; bIdx < len; bIdx++) {
+                            let byteVal = 0;
+                            for (let bitPos = 0; bitPos < 8; bitPos++) {
+                                const targetBit = (5 + bIdx) * 8 + bitPos;
+                                let ones = 0, count = 0;
+                                for (let k = bitOffset + targetBit; k < rawBits.length; k += totalMsgBits) {
+                                    ones += rawBits[k];
+                                    count++;
+                                }
+                                const majorityBit = (count > 0 && ones * 2 >= count) ? 1 : rawBits[bitOffset + targetBit];
+                                byteVal = (byteVal << 1) | majorityBit;
                             }
-                            const majorityBit = (count > 0 && ones * 2 >= count) ? 1 : rawBits[bitOffset + targetBit];
-                            byteVal = (byteVal << 1) | majorityBit;
+                            votedBytes[bIdx] = byteVal;
                         }
-                        votedBytes[bIdx] = byteVal;
+                        let calcCrc = 0xFFFF;
+                        for (let b of votedBytes) {
+                            calcCrc ^= (b << 8);
+                            for (let bit = 0; bit < 8; bit++) {
+                                if (calcCrc & 0x8000) calcCrc = ((calcCrc << 1) ^ 0x1021) & 0xFFFF;
+                                else calcCrc = (calcCrc << 1) & 0xFFFF;
+                            }
+                        }
+                        if (calcCrc === expCrc) {
+                            try {
+                                const text = new TextDecoder('utf-8', { fatal: true }).decode(votedBytes);
+                                return { success: true, text: text, method: "2D-DCT Mid-Frequency Symmetry (CRC16 Integrity Verified)" };
+                            } catch (e) {}
+                        }
                     }
-                    try {
-                        const text = new TextDecoder('utf-8', { fatal: true }).decode(votedBytes);
-                        return { success: true, text: text, method: "2D-DCT Mid-Frequency Symmetry (Majority Voting Q75 Recovery)" };
-                    } catch (e) {}
+
+                    // Fallback to legacy 3-byte frame
+                    if (i + 3 + len <= rawBytes.length) {
+                        const totalMsgBits = (3 + len) * 8;
+                        const bitOffset = i * 8;
+                        const votedBytes = new Uint8Array(len);
+                        for (let bIdx = 0; bIdx < len; bIdx++) {
+                            let byteVal = 0;
+                            for (let bitPos = 0; bitPos < 8; bitPos++) {
+                                const targetBit = (3 + bIdx) * 8 + bitPos;
+                                let ones = 0, count = 0;
+                                for (let k = bitOffset + targetBit; k < rawBits.length; k += totalMsgBits) {
+                                    ones += rawBits[k];
+                                    count++;
+                                }
+                                const majorityBit = (count > 0 && ones * 2 >= count) ? 1 : rawBits[bitOffset + targetBit];
+                                byteVal = (byteVal << 1) | majorityBit;
+                            }
+                            votedBytes[bIdx] = byteVal;
+                        }
+                        try {
+                            const text = new TextDecoder('utf-8', { fatal: true }).decode(votedBytes);
+                            return { success: true, text: text, method: "2D-DCT Mid-Frequency Symmetry (Legacy Header)" };
+                        } catch (e) {}
+                    }
                 }
             }
         }
@@ -923,15 +1036,11 @@ class OZOSEngine {
         // 5. Payload Content từ Offset 80 trở đi
         packet.set(payloadBytes, 80);
 
-        // 6. Tính toán Tripwire MAC 16-bit cho Header (0..77) VÀ Payload (80..80+len)
-        let macHash = safeSeed;
-        for (let i = 0; i < 78; i++) {
-            macHash = ((macHash ^ BigInt(packet[i])) * 0x100000001B3n) & 0xFFFFFFFFFFFFFFFFn;
-        }
-        for (let i = 0; i < payloadBytes.length; i++) {
-            macHash = ((macHash ^ BigInt(payloadBytes[i])) * 0x100000001B3n) & 0xFFFFFFFFFFFFFFFFn;
-        }
-        const mac16 = Number((macHash ^ (macHash >> 16n) ^ (macHash >> 32n)) & 0xFFFFn);
+        // 6. Tính toán Tripwire MAC 16-bit cho Header (0..77) VÀ Payload (80..80+len) bằng SipHash-2-4
+        const macInput = new Uint8Array(78 + payloadBytes.length);
+        macInput.set(packet.subarray(0, 78), 0);
+        macInput.set(payloadBytes, 78);
+        const mac16 = OZOSEngine.computeFastGateMac(macInput, safeSeed);
         view.setUint16(78, mac16, true);
 
         return {
@@ -975,7 +1084,7 @@ class OZOSEngine {
             return { valid: false, code: 4, reason: "Phát hiện rác nối đuôi (Trailing garbage detected)" };
         }
 
-        // 2. Kiểm tra Tripwire MAC 16-bit (Offset 78) bao phủ Header (0..77) VÀ Payload (80..80+len)
+        // 2. Kiểm tra Tripwire MAC 16-bit (Offset 78) bao phủ Header (0..77) VÀ Payload (80..80+len) bằng SipHash-2-4
         let safeSeed = 0xA5A5A5A5n;
         if (secretSeed !== null && secretSeed !== undefined) {
             try {
@@ -985,14 +1094,10 @@ class OZOSEngine {
             }
         }
         const incomingMac = view.getUint16(78, true);
-        let expectedHash = safeSeed;
-        for (let i = 0; i < 78; i++) {
-            expectedHash = ((expectedHash ^ BigInt(packetUint8[i])) * 0x100000001B3n) & 0xFFFFFFFFFFFFFFFFn;
-        }
-        for (let i = 0; i < payloadLen; i++) {
-            expectedHash = ((expectedHash ^ BigInt(packetUint8[80 + i])) * 0x100000001B3n) & 0xFFFFFFFFFFFFFFFFn;
-        }
-        const expectedMac = Number((expectedHash ^ (expectedHash >> 16n) ^ (expectedHash >> 32n)) & 0xFFFFn);
+        const macInput = new Uint8Array(78 + payloadLen);
+        macInput.set(packetUint8.subarray(0, 78), 0);
+        macInput.set(packetUint8.subarray(80, 80 + payloadLen), 78);
+        const expectedMac = OZOSEngine.computeFastGateMac(macInput, safeSeed);
 
         // Hỗ trợ tương thích chuẩn tắc đa nền tảng với Sub-profile A1 (CRC16-CCITT Bare-Metal C99)
         let crc = 0xFFFF;

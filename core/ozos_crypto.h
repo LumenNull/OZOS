@@ -15,6 +15,13 @@
 extern "C" {
 #endif
 
+uint16_t compute_fast_gate_mac(
+    const uint8_t* in,
+    size_t in_len,
+    uint64_t secret_seed,
+    uint64_t key_high
+);
+
 /**
  * [MẢNH GHÉP 1]: CHỮ KÝ BẢN THỂ (ED25519 SOVEREIGN SIGNATURE)
  * Tái tạo cặp khóa Ed25519 từ Hạt giống 32-byte (TPM Silicon Seed hoặc Brainseed)
@@ -122,16 +129,14 @@ static inline size_t ozos_sign_packet_frame(
 
     memcpy(out_buffer, header_and_payload, header_plus_payload_len);
     if (header_plus_payload_len > 80) {
-        uint64_t h = 0xA5A5A5A5ULL;
-        for (size_t i = 0; i < 78; ++i) {
-            h = ((h ^ (uint64_t)out_buffer[i]) * 0x100000001B3ULL);
-        }
-        for (size_t i = 80; i < header_plus_payload_len; ++i) {
-            h = ((h ^ (uint64_t)out_buffer[i]) * 0x100000001B3ULL);
-        }
-        uint16_t fnv_mac = (uint16_t)((h ^ (h >> 16) ^ (h >> 32)) & 0xFFFFU);
-        out_buffer[78] = (uint8_t)(fnv_mac & 0xFFU);
-        out_buffer[79] = (uint8_t)((fnv_mac >> 8) & 0xFFU);
+        uint8_t mac_input[78 + 4096];
+        size_t p_len = header_plus_payload_len - 80;
+        if (p_len > 4096) p_len = 4096;
+        memcpy(mac_input, out_buffer, 78);
+        memcpy(mac_input + 78, out_buffer + 80, p_len);
+        uint16_t sip_mac = compute_fast_gate_mac(mac_input, 78 + p_len, 0xA5A5A5A5ULL, 0ULL);
+        out_buffer[78] = (uint8_t)(sip_mac & 0xFFU);
+        out_buffer[79] = (uint8_t)((sip_mac >> 8) & 0xFFU);
     }
     memcpy(out_buffer + header_plus_payload_len, pk, OZOS_ED25519_PK_BYTES);
 
@@ -316,7 +321,7 @@ static inline int ozos_kdf_session_key_ex(
     kdf_input[32 + sizeof(salt) + 2] = (uint8_t)((session_nonce >> 16) & 0xFFU);
     kdf_input[32 + sizeof(salt) + 3] = (uint8_t)((session_nonce >> 24) & 0xFFU);
 
-    size_t kdf_len = (session_nonce != 0U) ? (32 + sizeof(salt) + 4) : (32 + sizeof(salt));
+    size_t kdf_len = 32 + sizeof(salt) + 4;
     uint8_t hash_out[64];
     crypto_hash(hash_out, kdf_input, kdf_len);
     memcpy(session_key_out, hash_out, OZOS_SESSION_KEY_BYTES);
@@ -345,6 +350,11 @@ static inline void ozos_derive_handshake_poly1305_subkey_ex(
     const uint8_t b_pub[32],
     uint32_t session_nonce
 ) {
+    if (!subkey_out) return;
+    if (!session_key || !a_pub || !b_pub) {
+        memset(subkey_out, 0, 32);
+        return;
+    }
     const char domain_label[] = "OZOS_POLY1305_HANDSHAKE_SUBKEY_V1";
     uint8_t buf[32 + 32 + 32 + sizeof(domain_label) + 4];
     memcpy(buf, session_key, 32);
@@ -352,13 +362,11 @@ static inline void ozos_derive_handshake_poly1305_subkey_ex(
     memcpy(buf + 64, b_pub, 32);
     memcpy(buf + 96, domain_label, sizeof(domain_label));
     size_t buf_len = 96 + sizeof(domain_label);
-    if (session_nonce != 0U) {
-        buf[buf_len + 0] = (uint8_t)(session_nonce & 0xFFU);
-        buf[buf_len + 1] = (uint8_t)((session_nonce >> 8) & 0xFFU);
-        buf[buf_len + 2] = (uint8_t)((session_nonce >> 16) & 0xFFU);
-        buf[buf_len + 3] = (uint8_t)((session_nonce >> 24) & 0xFFU);
-        buf_len += 4;
-    }
+    buf[buf_len + 0] = (uint8_t)(session_nonce & 0xFFU);
+    buf[buf_len + 1] = (uint8_t)((session_nonce >> 8) & 0xFFU);
+    buf[buf_len + 2] = (uint8_t)((session_nonce >> 16) & 0xFFU);
+    buf[buf_len + 3] = (uint8_t)((session_nonce >> 24) & 0xFFU);
+    buf_len += 4;
 
     uint8_t digest[64];
     crypto_hash(digest, buf, buf_len);
@@ -392,14 +400,11 @@ static inline int ozos_compute_handshake_auth_tag_ex(
     uint8_t transcript[68];
     memcpy(transcript, a_pub, 32);
     memcpy(transcript + 32, b_pub, 32);
-    size_t t_len = 64;
-    if (session_nonce != 0U) {
-        transcript[64] = (uint8_t)(session_nonce & 0xFFU);
-        transcript[65] = (uint8_t)((session_nonce >> 8) & 0xFFU);
-        transcript[66] = (uint8_t)((session_nonce >> 16) & 0xFFU);
-        transcript[67] = (uint8_t)((session_nonce >> 24) & 0xFFU);
-        t_len = 68;
-    }
+    transcript[64] = (uint8_t)(session_nonce & 0xFFU);
+    transcript[65] = (uint8_t)((session_nonce >> 8) & 0xFFU);
+    transcript[66] = (uint8_t)((session_nonce >> 16) & 0xFFU);
+    transcript[67] = (uint8_t)((session_nonce >> 24) & 0xFFU);
+    size_t t_len = 68;
 
     uint8_t poly_subkey[32];
     ozos_derive_handshake_poly1305_subkey_ex(poly_subkey, session_key, a_pub, b_pub, session_nonce);
@@ -431,14 +436,11 @@ static inline bool ozos_verify_handshake_auth_tag_ex(
     uint8_t transcript[68];
     memcpy(transcript, a_pub, 32);
     memcpy(transcript + 32, b_pub, 32);
-    size_t t_len = 64;
-    if (session_nonce != 0U) {
-        transcript[64] = (uint8_t)(session_nonce & 0xFFU);
-        transcript[65] = (uint8_t)((session_nonce >> 8) & 0xFFU);
-        transcript[66] = (uint8_t)((session_nonce >> 16) & 0xFFU);
-        transcript[67] = (uint8_t)((session_nonce >> 24) & 0xFFU);
-        t_len = 68;
-    }
+    transcript[64] = (uint8_t)(session_nonce & 0xFFU);
+    transcript[65] = (uint8_t)((session_nonce >> 8) & 0xFFU);
+    transcript[66] = (uint8_t)((session_nonce >> 16) & 0xFFU);
+    transcript[67] = (uint8_t)((session_nonce >> 24) & 0xFFU);
+    size_t t_len = 68;
 
     uint8_t poly_subkey[32];
     ozos_derive_handshake_poly1305_subkey_ex(poly_subkey, session_key, a_pub, b_pub, session_nonce);
@@ -487,6 +489,7 @@ static inline void ozos_handshake_syn_build(
 static inline bool ozos_handshake_syn_verify(const ozos_handshake_syn_t* syn) {
     if (!syn) return false;
     if (syn->magic != OZOS_MAGIC_HANDSHAKE_SYN) return false;
+    if (syn->session_nonce == 0U) return false;
     if (ozos_is_low_order_curve25519_point(syn->eph_pubkey)) return false;
 
     uint16_t crc = 0xFFFF;

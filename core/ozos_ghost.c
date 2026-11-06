@@ -99,7 +99,7 @@ static bool ghost_parse_strict_hex_u64(const char* str, uint64_t* out) {
 }
 
 #ifndef OZOS_GIT_COMMIT_HASH
-#define OZOS_GIT_COMMIT_HASH "0ff9186"
+#define OZOS_GIT_COMMIT_HASH "nogit-release"
 #endif
 #ifndef OZOS_WASM_PIN_SHA256
 #define OZOS_WASM_PIN_SHA256 "ea26872f8c14523bb3d823c4eca16dcae96c6a11f1be24bea75081c75b5f7a4e"

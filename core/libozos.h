@@ -264,7 +264,7 @@ uint16_t compute_fast_gate_mac(
 #endif
 
 /**
- * Dong dau niem phong Sub-Profile A2 (FNV-1a-64 Fold) bao ve toan ven ca Header (0..77) lan Payload (80..80+len).
+ * Dong dau niem phong Sub-Profile A2 (SipHash-2-4 Fast Gatekeeper MAC) bao ve toan ven ca Header (0..77) lan Payload (80..80+len).
  */
 OZOS_INLINE void ozos_packet_seal_a2(
     uint8_t* frame_buffer,
@@ -272,16 +272,16 @@ OZOS_INLINE void ozos_packet_seal_a2(
     uint64_t secret_seed
 ) {
     if (!frame_buffer) return;
-    uint64_t h = (secret_seed != 0) ? secret_seed : OZOS_A2_DOMAIN_CONSTANT;
-    for (size_t i = 0; i < 78; ++i) {
-        h = ((h ^ (uint64_t)frame_buffer[i]) * 0x100000001B3ULL);
+    uint8_t mac_input[78 + 4096];
+    size_t copy_payload = payload_len > 4096 ? 4096 : (size_t)payload_len;
+    memcpy(mac_input, frame_buffer, 78);
+    if (copy_payload > 0) {
+        memcpy(mac_input + 78, frame_buffer + 80, copy_payload);
     }
-    for (size_t i = 0; i < (size_t)payload_len; ++i) {
-        h = ((h ^ (uint64_t)frame_buffer[80 + i]) * 0x100000001B3ULL);
-    }
-    uint16_t fnv_mac = (uint16_t)((h ^ (h >> 16) ^ (h >> 32)) & 0xFFFFU);
+    uint64_t k0 = (secret_seed != 0ULL) ? secret_seed : OZOS_A2_DOMAIN_CONSTANT;
+    uint16_t sip_mac = compute_fast_gate_mac(mac_input, 78 + copy_payload, k0, 0ULL);
     ozos_packet80_t* pkt = (ozos_packet80_t*)frame_buffer;
-    pkt->header_mac16 = fnv_mac;
+    pkt->header_mac16 = sip_mac;
 }
 
 /**
@@ -342,21 +342,20 @@ OZOS_INLINE ozos_status_t ozos_packet_validate_ex(
         return OZOS_ERR_MAGIC_INVALID;
     }
 
-    /* 2. Kiểm tra Cổng gác Tripwire MAC16 (< 20ns): Hỗ trợ cả Sub-profile A1 (CRC16) và Sub-profile A2 (FNV Fold) */
+    /* 2. Kiểm tra Cổng gác Tripwire MAC16 (< 20ns): Hỗ trợ cả Sub-profile A1 (CRC16) và Sub-profile A2 (SipHash-2-4) */
     uint16_t expected_mac = ozos_compute_mac16(pkt);
     bool mac_ok = false;
 
     if (buffer_size >= OZOS_PACKET_HEADER_SIZE + (size_t)pkt->payload_len) {
-        uint64_t seed = (secret_seed != 0) ? secret_seed : OZOS_A2_DOMAIN_CONSTANT;
-        uint64_t h = seed;
-        for (size_t i = 0; i < 78; ++i) {
-            h = ((h ^ (uint64_t)buffer[i]) * 0x100000001B3ULL);
+        uint8_t mac_input[78 + 4096];
+        size_t copy_payload = pkt->payload_len > 4096 ? 4096 : (size_t)pkt->payload_len;
+        memcpy(mac_input, buffer, 78);
+        if (copy_payload > 0) {
+            memcpy(mac_input + 78, buffer + 80, copy_payload);
         }
-        for (size_t i = 0; i < (size_t)pkt->payload_len; ++i) {
-            h = ((h ^ (uint64_t)buffer[80 + i]) * 0x100000001B3ULL);
-        }
-        uint16_t fnv_mac = (uint16_t)((h ^ (h >> 16) ^ (h >> 32)) & 0xFFFFU);
-        if (pkt->header_mac16 == fnv_mac) {
+        uint64_t k0 = (secret_seed != 0ULL) ? secret_seed : OZOS_A2_DOMAIN_CONSTANT;
+        uint16_t expected_sip_mac = compute_fast_gate_mac(mac_input, 78 + copy_payload, k0, 0ULL);
+        if (pkt->header_mac16 == expected_sip_mac) {
             mac_ok = true;
         }
     }

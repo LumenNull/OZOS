@@ -1089,7 +1089,12 @@ for line in out_b.splitlines():
 
 # Verify authentic packet
 rc_v1, out_v1, _ = run_ozos("packet-verify", c_hex_a2, "5999")
-a2_verified_ok = (rc_b == 0 and rc_v1 == 0 and ("Sub-Profile A2 : ✅ MAC16 FNV-Fold" in out_v1 or "Sub-Profile A2 : [OK] MAC16 FNV-Fold" in out_v1))
+a2_verified_ok = (rc_b == 0 and rc_v1 == 0 and (
+    "Sub-Profile A2 : [OK] MAC16 SipHash-2-4" in out_v1 or
+    "Sub-Profile A2 : ✅ MAC16 SipHash-2-4" in out_v1 or
+    "Sub-Profile A2 : [OK] MAC16" in out_v1 or
+    "Sub-Profile A2 : ✅ MAC16" in out_v1
+))
 
 # Tampering payload byte must fail Sub-Profile A2 verification
 raw_pkt_bytes = bytearray.fromhex(c_hex_a2)
@@ -1858,13 +1863,33 @@ p_cli_embed = subprocess.run([sys.executable, ozos_cli_path, "stego-embed", "--i
                              capture_output=True, text=True, encoding="utf-8", errors="replace", cwd=REPO_ROOT)
 p_cli_wm = subprocess.run([sys.executable, ozos_cli_path, "stego-extract", "--image", tmp_wm_img],
                           capture_output=True, text=True, encoding="utf-8", errors="replace", cwd=REPO_ROOT)
-for tf in [tmp_blank_img, tmp_wm_img]:
-    if os.path.exists(tf): os.remove(tf)
 
-f5_ok = (p_js_f5.returncode == 0) and (p_cli_blank.returncode != 0) and (p_cli_embed.returncode == 0) and (p_cli_wm.returncode == 0 and "CLI-DCT-2026" in (p_cli_wm.stdout or ""))
-check_test("2D-DCT Watermark tu choi anh trang fail-closed va khoi phuc dung thuy van that tren JS & CLI (F5)",
+# F5-payload adversarial tampering: tamper with a block in watermarked image and assert stego-extract fails closed
+tampered_wm_img = os.path.join(REPO_ROOT, "_test_tampered_wm_f5.png")
+p_cli_embed_tamper = subprocess.run([sys.executable, ozos_cli_path, "stego-embed", "--image", tmp_blank_img, "--output", tampered_wm_img, "--payload", "TAMPER_TEST_DATA"],
+                                    capture_output=True, text=True, encoding="utf-8", errors="replace", cwd=REPO_ROOT)
+im_t = Image.open(tampered_wm_img)
+pix = list(im_t.getdata())
+# Invert entire 8x8 block 6 (x in 48..55, y in 0..7) to tamper with payload bit
+w_t = im_t.width
+for y_b in range(8):
+    for x_b in range(48, 56):
+        idx_b = y_b * w_t + x_b
+        r_b, g_b, b_b = pix[idx_b][:3]
+        pix[idx_b] = (255 - r_b, 255 - g_b, 255 - b_b)
+im_t.putdata(pix)
+im_t.save(tampered_wm_img)
+
+p_cli_tampered_extract = subprocess.run([sys.executable, ozos_cli_path, "stego-extract", "--image", tampered_wm_img],
+                                        capture_output=True, text=True, encoding="utf-8", errors="replace", cwd=REPO_ROOT)
+for tf in [tmp_blank_img, tmp_wm_img, tampered_wm_img]:
+    if os.path.exists(tf): os.remove(tf)
+f5_tamper_rejected = (p_cli_tampered_extract.returncode != 0) or ("CHỨNG CỨ BÓC TÁCH THÀNH CÔNG" not in p_cli_tampered_extract.stdout and "CHUNG CU BOC TACH THANH CONG" not in p_cli_tampered_extract.stdout)
+
+f5_ok = (p_js_f5.returncode == 0) and (p_cli_blank.returncode != 0) and (p_cli_embed.returncode == 0) and (p_cli_wm.returncode == 0 and "CLI-DCT-2026" in (p_cli_wm.stdout or "")) and f5_tamper_rejected
+check_test("2D-DCT Watermark tu choi anh trang fail-closed, bat loi block bi sua (F5) va khoi phuc dung thuy van that tren JS & CLI",
            f5_ok,
-           "2D-DCT authentic extraction verified across JS engine and Python CLI")
+           f"2D-DCT authentic extraction and tamper rejection verified (tamper_blocked={f5_tamper_rejected})")
 
 # ----------------------------------------------------------------------
 # 55. TEST ROUND 14 (R14-H1): Direct-Call WASM _parse_and_validate_packet Corpus & Default Strictness
@@ -2061,9 +2086,17 @@ for bad_nonce in ["²", "¹", "12³", "１０００", "١٢٣"]:
     except Exception:
         p1_p2_ok = False
 
-check_test("ozos_ghost listen giai ma WAV cua ozos handshake-syn (F8), packet-verify chan floor rac (M1) va Python chan Unicode digit (P1/P2)",
-           f8_ok and m1_ok and p1_p2_ok,
-           f"Cross-binary WAV (f8={f8_ok}), C strict floor (m1={m1_ok}), Python digit gate (p1_p2={p1_p2_ok})")
+# F8: Cross-language audible audio alignment (ozos-cli.py audio-synth --audible decoded by C ozos.exe audio-decode)
+tmp_aud_wav = os.path.join(REPO_ROOT, "_test_f8_audible.wav")
+p_cli_aud = subprocess.run([sys.executable, ozos_cli_path, "audio-synth", "--payload", "AUDIBLE-TEST", "--output", tmp_aud_wav, "--mode", "audible"],
+                           capture_output=True, text=True, encoding="utf-8", errors="replace", cwd=REPO_ROOT)
+rc_c_aud, out_c_aud, _ = run_ozos("audio-decode", tmp_aud_wav, "--audible")
+if os.path.exists(tmp_aud_wav): os.remove(tmp_aud_wav)
+f8_audible_ok = (p_cli_aud.returncode == 0) and (rc_c_aud == 0) and ("AUDIBLE-TEST" in out_c_aud)
+
+check_test("Song am audible cross-language CLI vs C bit-exact (F8), packet-verify chan floor rac (M1) va Python chan Unicode digit (P1/P2)",
+           f8_ok and f8_audible_ok and m1_ok and p1_p2_ok,
+           f"Cross-binary WAV (f8_syn={f8_ok}, f8_audible={f8_audible_ok}), C strict floor (m1={m1_ok}), Python digit gate (p1_p2={p1_p2_ok})")
 
 # ----------------------------------------------------------------------
 # 58. TEST ROUND 14 (F14-A, F14-B, F14-C): JS Shield Uint8Array Vault, Check-Before-Mutate Nonce & Unified Seed Parser
@@ -2183,7 +2216,20 @@ with open(os.path.join(REPO_ROOT, ".ozos_tunnel_nonces"), "a") as f:
     f.write(f"{nonce_psn}\n")  # Injected without authentic tag
 rc_legit_dec, _, _ = run_ozos("tunnel-decrypt", enc_psn_hex, sess_key59)
 rc_re_replay_psn, _, _ = run_ozos("tunnel-decrypt", enc_psn_hex, sess_key59)
-h2b_ok = (rc_legit_dec == 0) and (rc_re_replay_psn != 0)
+
+# H2b Adversarial Forge Test: Attacker tries to pre-poison a NEW frame using old public constants K0=0x4F5A4F535345414C / K1=0xA5A5A5A55A5A5A5A
+# Host kernel uses private host state key, so forged tag MUST be rejected and NOT poison the store
+rc_enc_forge, out_enc_forge, _ = run_ozos("tunnel-encrypt", "TX_FORGE_TARGET", sess_key59)
+enc_forge_hex = [l.strip() for l in out_enc_forge.splitlines() if len(l.strip()) >= 96 and all(c in "0123456789abcdefABCDEF" for c in l.strip())][0]
+nonce_forge = enc_forge_hex[8:56]
+public_k0 = 0x4F5A4F535345414C
+public_k1 = 0xA5A5A5A55A5A5A5A
+tag_forge = ozos_cli_mod.compute_fast_gate_mac(bytes.fromhex(nonce_forge), public_k0, public_k1)
+with open(os.path.join(REPO_ROOT, ".ozos_tunnel_nonces"), "a") as f:
+    f.write(f"{nonce_forge}:{tag_forge:04x}\n")
+rc_legit_dec_forge, out_legit_dec_forge, _ = run_ozos("tunnel-decrypt", enc_forge_hex, sess_key59)
+rc_re_replay_forge, _, _ = run_ozos("tunnel-decrypt", enc_forge_hex, sess_key59)
+h2b_ok = (rc_legit_dec == 0) and (rc_re_replay_psn != 0) and (rc_legit_dec_forge == 0) and ("TX_FORGE_TARGET" in out_legit_dec_forge) and (rc_re_replay_forge != 0)
 
 f2_deep_ok = (rc_syn59 == 0 and rc_ack59 == 0 and rc_fin59 == 0 and len(sess_key59) == 64 and
               rc_dec59_first == 0 and "LENH_CHUYEN_KHOAN_1_TY" in out_dec59_first and
@@ -2497,18 +2543,33 @@ check_test("LoRa Sub-GHz đóng khung 84-byte (Sync 0x12, Type 0x50, CRC16-CCITT
 # ----------------------------------------------------------------------
 # 69. TEST OMNI-SPECTRUM (TIER 4 & HARNESS): Diagnostic Spectrum Status & Native PHY Harness
 # ----------------------------------------------------------------------
-print("\n[TEST 69/69] Kiem Tra Spectrum-Status & Bo Test Native C99 test_omni_phy.exe...")
+print("\n[TEST 69/69] Kiem Tra Spectrum-Status & Bo Test Native C99 test_omni_phy (H-SUITE-1 & H-OMNI-1)...")
 rc_spec, out_spec, _ = run_ozos("spectrum-status")
-spec_ok = (rc_spec == 0) and ("TẦNG 1: QUANG HỌC" in out_spec or "TIER 1: OPTICAL SPECTRUM" in out_spec) and ("TẦNG 2: SÓNG ÂM" in out_spec or "TIER 2: ACOUSTIC" in out_spec) and ("TẦNG 3: SÓNG DÀI" in out_spec or "TIER 3: LONG-RANGE" in out_spec) and ("TẦNG 4: SÓNG TRỜI HF" in out_spec or "TIER 4: HF SKYWAVE" in out_spec)
+# Assert Tier 4 is marked PLANNED / NOT IMPLEMENTED and strictly reject fake "ALL 4 TIERS OPERATIONAL 100%"
+spec_claim_ok = ("ALL 4 TIERS OPERATIONAL 100%" not in out_spec and "TẤT CẢ 4 TẦNG" not in out_spec)
+spec_tiers_present = (("TẦNG 1" in out_spec or "TIER 1" in out_spec) and
+                      ("TẦNG 2" in out_spec or "TIER 2" in out_spec) and
+                      ("TẦNG 3" in out_spec or "TIER 3" in out_spec) and
+                      ("TẦNG 4" in out_spec or "TIER 4" in out_spec) and
+                      ("NOT IMPLEMENTED" in out_spec or "PLANNED" in out_spec or "CHƯA" in out_spec))
+spec_ok = (rc_spec == 0) and spec_claim_ok and spec_tiers_present
 
-omni_exe = os.path.join(REPO_ROOT, "tests", "test_omni_phy.exe")
-rc_omni_native = 0
-if os.path.exists(omni_exe):
-    p_omni = subprocess.run([omni_exe], capture_output=True, text=True, encoding="utf-8", errors="replace", cwd=REPO_ROOT)
-    rc_omni_native = p_omni.returncode
+# Cross-platform lookup: do not silently skip if .exe is missing (H-SUITE-1 fix)
+omni_candidates = [
+    os.path.join(REPO_ROOT, "tests", "test_omni_phy.exe"),
+    os.path.join(REPO_ROOT, "tests", "test_omni_phy"),
+    os.path.join(REPO_ROOT, "test_omni_phy.exe"),
+    os.path.join(REPO_ROOT, "test_omni_phy")
+]
+omni_bin = next((c for c in omni_candidates if os.path.isfile(c)), None)
+if omni_bin is None:
+    raise FileNotFoundError("test_omni_phy binary not found! Cannot skip native PHY test suite.")
+
+p_omni = subprocess.run([omni_bin], capture_output=True, text=True, encoding="utf-8", errors="replace", cwd=REPO_ROOT)
+rc_omni_native = p_omni.returncode
 
 r15_69_ok = spec_ok and (rc_omni_native == 0)
-check_test("CLI spectrum-status hiển thị đầy đủ 4 tầng sóng và bộ kiểm thử native C99 test_omni_phy.exe đạt 5/5 PASS 100%",
+check_test("CLI spectrum-status danh chinh ngon thuan Tier 4 (H-OMNI-1) va test_omni_phy native C99 chay that 5/5 PASS (H-SUITE-1)",
            r15_69_ok,
            f"Spectrum verified (status={spec_ok}, native_harness_rc={rc_omni_native})")
 

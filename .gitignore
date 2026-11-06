@@ -88,3 +88,5 @@ $RECYCLE.BIN/
 **/.ozos_known_peers
 .ozos_fork_quarantine
 **/.ozos_fork_quarantine
+.ozos_state_key
+**/.ozos_state_key

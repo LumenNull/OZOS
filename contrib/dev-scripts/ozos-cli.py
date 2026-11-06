@@ -78,6 +78,58 @@ def cmd_tpm():
     print(f"  • Giá trị pháp lý      : {C_GREEN}{badge['admissibility']}{C_RESET}")
     tpm.close()
 
+def compute_fast_gate_mac(data: bytes, k0: int, k1: int = 0) -> int:
+    if k1 == 0:
+        k1 = (k0 ^ 0x4F5A4F5353495048) & 0xFFFFFFFFFFFFFFFF
+    def rotl64(x, b):
+        return ((x << b) & 0xFFFFFFFFFFFFFFFF) | (x >> (64 - b))
+
+    v0 = (k0 ^ 0x736f6d6570736575) & 0xFFFFFFFFFFFFFFFF
+    v1 = (k1 ^ 0x646f72616e646f6d) & 0xFFFFFFFFFFFFFFFF
+    v2 = (k0 ^ 0x6c7967656e657261) & 0xFFFFFFFFFFFFFFFF
+    v3 = (k1 ^ 0x7465646279746573) & 0xFFFFFFFFFFFFFFFF
+
+    def sipround():
+        nonlocal v0, v1, v2, v3
+        v0 = (v0 + v1) & 0xFFFFFFFFFFFFFFFF
+        v1 = rotl64(v1, 13) ^ v0
+        v0 = rotl64(v0, 32)
+        v2 = (v2 + v3) & 0xFFFFFFFFFFFFFFFF
+        v3 = rotl64(v3, 16) ^ v2
+        v0 = (v0 + v3) & 0xFFFFFFFFFFFFFFFF
+        v3 = rotl64(v3, 21) ^ v0
+        v2 = (v2 + v1) & 0xFFFFFFFFFFFFFFFF
+        v1 = rotl64(v1, 17) ^ v2
+        v2 = rotl64(v2, 32)
+
+    in_len = len(data)
+    blocks = in_len // 8
+    for i in range(blocks):
+        m = struct.unpack_from('<Q', data, i * 8)[0]
+        v3 ^= m
+        sipround()
+        sipround()
+        v0 ^= m
+
+    rem = in_len % 8
+    offset = blocks * 8
+    last = (in_len & 0xFF) << 56
+    for i in range(rem):
+        last |= data[offset + i] << (8 * i)
+    v3 ^= last
+    sipround()
+    sipround()
+    v0 ^= last
+
+    v2 ^= 0xFF
+    sipround()
+    sipround()
+    sipround()
+    sipround()
+
+    h = (v0 ^ v1 ^ v2 ^ v3) & 0xFFFFFFFFFFFFFFFF
+    return ((h & 0xFFFF) ^ ((h >> 16) & 0xFFFF) ^ ((h >> 32) & 0xFFFF) ^ ((h >> 48) & 0xFFFF)) & 0xFFFF
+
 def build_aligned_packet(payload_str, nonce=1001, secret_seed=0xA5A5A5A5):
     if not isinstance(payload_str, str):
         raise ValueError(f"payload_str phải là chuỗi ký tự (str), nhận được {type(payload_str).__name__}")
@@ -107,13 +159,10 @@ def build_aligned_packet(payload_str, nonce=1001, secret_seed=0xA5A5A5A5):
     # 5. Payload Content
     packet[80:] = payload_bytes
 
-    # 6. Tripwire MAC16 (Offset 0x4E - 0x4F) bao phủ cả Header (0..77) VÀ Payload
-    h = secret_seed
-    for b in packet[:78]:
-        h = ((h ^ b) * 0x100000001B3) & 0xFFFFFFFFFFFFFFFF
-    for b in payload_bytes:
-        h = ((h ^ b) * 0x100000001B3) & 0xFFFFFFFFFFFFFFFF
-    mac16 = (h ^ (h >> 16) ^ (h >> 32)) & 0xFFFF
+    # 6. Tripwire MAC16 (Offset 0x4E - 0x4F) bao phủ cả Header (0..77) VÀ Payload (SipHash-2-4)
+    k0 = secret_seed if secret_seed != 0 else 0xA5A5A5A5
+    mac_input = bytes(packet[:78]) + bytes(payload_bytes)
+    mac16 = compute_fast_gate_mac(mac_input, k0, 0)
     struct.pack_into('<H', packet, 78, mac16)
     return bytes(packet), mac16
 
@@ -156,14 +205,11 @@ def validate_aligned_packet(packet_bytes, last_seen_nonce=0, secret_seed=0xA5A5A
     if len(packet_bytes) > 80 + payload_len:
         return False, "Phát hiện rác nối đuôi (Trailing garbage detected)", None
 
-    # Tripwire MAC16 hỗ trợ cả Sub-profile A1 (CRC16) và Sub-profile A2 (FNV Fold)
+    # Tripwire MAC16 hỗ trợ cả Sub-profile A1 (CRC16) và Sub-profile A2 (SipHash-2-4)
     incoming_mac = struct.unpack_from('<H', packet_bytes, 78)[0]
-    h = secret_seed
-    for b in packet_bytes[:78]:
-        h = ((h ^ b) * 0x100000001B3) & 0xFFFFFFFFFFFFFFFF
-    for b in packet_bytes[80:80+payload_len]:
-        h = ((h ^ b) * 0x100000001B3) & 0xFFFFFFFFFFFFFFFF
-    expected_mac = (h ^ (h >> 16) ^ (h >> 32)) & 0xFFFF
+    k0 = secret_seed if secret_seed != 0 else 0xA5A5A5A5
+    mac_input = bytes(packet_bytes[:78]) + bytes(packet_bytes[80:80+payload_len])
+    expected_mac = compute_fast_gate_mac(mac_input, k0, 0)
 
     # CRC16-CCITT cho Sub-profile A1
     crc = 0xFFFF
@@ -255,11 +301,23 @@ def _build_dct_basis():
 _DCT_T = _build_dct_basis()
 _DCT_TT = _DCT_T.T
 
+def _compute_watermark_crc16(data: bytes) -> int:
+    crc = 0xFFFF
+    for b in data:
+        crc ^= (b << 8)
+        for _ in range(8):
+            if crc & 0x8000:
+                crc = ((crc << 1) ^ 0x1021) & 0xFFFF
+            else:
+                crc = (crc << 1) & 0xFFFF
+    return crc
+
 def embed_2d_dct_watermark(image_path, payload_str, output_path, strength=18.0):
     payload_bytes = payload_str.encode('utf-8')
     if len(payload_bytes) > 255:
         raise ValueError("Payload thủy vân tối đa 255 bytes")
-    frame = bytes([0x5A, 0xA5, len(payload_bytes)]) + payload_bytes
+    crc = _compute_watermark_crc16(payload_bytes)
+    frame = bytes([0x5A, 0xA5, len(payload_bytes), (crc >> 8) & 0xFF, crc & 0xFF]) + payload_bytes
     bits = []
     for byte_val in frame:
         for b in range(7, -1, -1):
@@ -331,19 +389,46 @@ def extract_2d_dct_watermark_bytes(im):
         if count >= max_blocks:
             break
     dct_bytes = _bits_to_bytes(dct_bits)
+    if len(dct_bytes) >= 5 and dct_bytes[0] == 0x5A and dct_bytes[1] == 0xA5:
+        p_len = dct_bytes[2]
+        exp_crc = (dct_bytes[3] << 8) | dct_bytes[4]
+        if 5 + p_len <= len(dct_bytes):
+            p_bytes = bytes(dct_bytes[5:5+p_len])
+            if _compute_watermark_crc16(p_bytes) == exp_crc:
+                return p_bytes
+            return None # Tampered watermark payload strictly rejected
+
     if len(dct_bytes) >= 3 and dct_bytes[0] == 0x5A and dct_bytes[1] == 0xA5:
         p_len = dct_bytes[2]
         if 3 + p_len <= len(dct_bytes):
-            return bytes(dct_bytes[3:3+p_len])
+            try:
+                cand = bytes(dct_bytes[3:3+p_len])
+                cand.decode('utf-8')
+                return cand
+            except Exception:
+                pass
 
     # Fallback check for legacy LSB stride-16 test fixtures ONLY if 0x5A 0xA5 magic is present
     flat = np.array(im.convert('RGB')).flatten()
     lsb_bits = [int(flat[i] & 1) for i in range(0, min(len(flat), 32768), 16)]
     lsb_bytes = _bits_to_bytes(lsb_bits)
+    if len(lsb_bytes) >= 5 and lsb_bytes[0] == 0x5A and lsb_bytes[1] == 0xA5:
+        p_len = lsb_bytes[2]
+        exp_crc = (lsb_bytes[3] << 8) | lsb_bytes[4]
+        if 5 + p_len <= len(lsb_bytes):
+            p_bytes = bytes(lsb_bytes[5:5+p_len])
+            if _compute_watermark_crc16(p_bytes) == exp_crc:
+                return p_bytes
+            return None
     if len(lsb_bytes) >= 3 and lsb_bytes[0] == 0x5A and lsb_bytes[1] == 0xA5:
         p_len = lsb_bytes[2]
         if 3 + p_len <= len(lsb_bytes):
-            return bytes(lsb_bytes[3:3+p_len])
+            try:
+                cand = bytes(lsb_bytes[3:3+p_len])
+                cand.decode('utf-8')
+                return cand
+            except Exception:
+                pass
 
     return None
 
@@ -404,8 +489,10 @@ def cmd_audio_synth(args):
     samples_pre = int(sample_rate * pre_dur)
     ramp = int(sample_rate * 0.005)
 
-    pre_lo = 17900.0 if stealth else 1200.0
-    pre_hi = 19900.0 if stealth else 1400.0
+    pre_lo = 17900.0 if stealth else 1350.0
+    pre_hi = 19900.0 if stealth else 4050.0
+    post_lo = 17900.0 if stealth else 1350.0
+    post_hi = 20100.0 if stealth else 4250.0
 
     tones = []
     # 1. Preamble (40ms dual-tone matching native C engine)
@@ -422,8 +509,8 @@ def cmd_audio_synth(args):
             f_low = 18100.0 + low_nib * 50.0
             f_high = 19000.0 + high_nib * 50.0
         else:
-            f_low = 1600.0 + low_nib * 60.0
-            f_high = 2800.0 + high_nib * 60.0
+            f_low = 1600.0 + low_nib * 64.0
+            f_high = 2800.0 + high_nib * 64.0
         for i in range(samples_per_tone):
             t = i / sample_rate
             s = 0.45 * (math.sin(2.0 * math.pi * f_low * t) + math.sin(2.0 * math.pi * f_high * t)) * _hann_env(i, samples_per_tone, ramp)
@@ -432,7 +519,7 @@ def cmd_audio_synth(args):
     # 3. Postamble (40ms dual-tone matching native C engine)
     for i in range(samples_pre):
         t = i / sample_rate
-        s = 0.4 * (math.sin(2.0 * math.pi * pre_lo * t) + math.sin(2.0 * math.pi * pre_hi * t)) * _hann_env(i, samples_pre, ramp)
+        s = 0.4 * (math.sin(2.0 * math.pi * post_lo * t) + math.sin(2.0 * math.pi * post_hi * t)) * _hann_env(i, samples_pre, ramp)
         tones.append(int(max(-32767, min(32767, s * 32767.0))))
 
     with wave.open(args.output, 'w') as wf:
