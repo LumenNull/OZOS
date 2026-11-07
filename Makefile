@@ -7,7 +7,7 @@ CC ?= gcc
 CXX ?= g++
 GIT_COMMIT_HASH := $(shell git rev-parse --short HEAD 2>/dev/null || git log -1 --format="%h" 2>/dev/null || echo nogit-release)
 CFLAGS ?= -O3 -Wall -Wextra -std=c99 -D_DEFAULT_SOURCE -D_POSIX_C_SOURCE=200809L -DOZOS_GIT_COMMIT_HASH=\"$(GIT_COMMIT_HASH)\" -Icore -I. -fstack-protector-strong -D_FORTIFY_SOURCE=2 -fPIE
-CXXFLAGS ?= -O3 -Wall -Wextra -Icore -I. -fstack-protector-strong -D_FORTIFY_SOURCE=2 -fPIE
+CXXFLAGS ?= -O3 -Wall -Wextra -fno-exceptions -fno-rtti -Icore -I. -fstack-protector-strong -D_FORTIFY_SOURCE=2 -fPIE
 HARDENING_LDFLAGS ?= -pie -Wl,-z,relro,-z,now
 HARDENED_OBJ = ozos_hardened_core.o
 SRC = core/ozos_ghost.c core/tweetnacl.c $(HARDENED_OBJ)

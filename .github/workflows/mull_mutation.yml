@@ -41,10 +41,13 @@ jobs:
           MULL_PLUGIN=$(find /usr -name "libmull-ir-frontend-19.so" -o -name "libmull-ir-frontend.so" 2>/dev/null | head -n 1)
           if [ -n "$MULL_PLUGIN" ]; then
             echo "Found Mull Plugin: $MULL_PLUGIN"
+            clang++-19 -O0 -g -grecord-command-line -fno-exceptions -fno-rtti \
+              -fpass-plugin="$MULL_PLUGIN" \
+              -Icore -I. -c core/ozos_hardened_core.cpp -o ozos_hardened_core_mull.o
             clang-19 -O0 -g -grecord-command-line \
               -fpass-plugin="$MULL_PLUGIN" \
               -Icore -I. \
-              tests/test_libozos.c core/tweetnacl.c core/ozos_hardened_core.cpp \
+              tests/test_libozos.c core/tweetnacl.c ozos_hardened_core_mull.o \
               -lm -o test_libozos_mull
             (mull-runner-19 ./test_libozos_mull \
               --report-name=libozos_mutation_report \

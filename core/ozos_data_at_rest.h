@@ -1135,6 +1135,18 @@ static inline int ozos_watermark_bmp_buffer(
     return 0;
 }
 
+static inline bool ozos_dar_str_ieq(const char* a, const char* b) {
+    if (!a || !b) return false;
+    while (*a && *b) {
+        char ca = *a++;
+        char cb = *b++;
+        if (ca >= 'A' && ca <= 'Z') ca = (char)(ca + ('a' - 'A'));
+        if (cb >= 'A' && cb <= 'Z') cb = (char)(cb + ('a' - 'A'));
+        if (ca != cb) return false;
+    }
+    return (*a == '\0' && *b == '\0');
+}
+
 /**
  * Batch retroactive armoring: walks directory, embeds 2D-DCT into BMP images and
  * produces detached Ed25519 signatures (.sig) for all other documents at wire speed.
@@ -1162,7 +1174,7 @@ static inline int ozos_sweep_directory(const char* dir_path, const uint8_t seed[
         const char* full_path = flist.entries[i].full_path;
         const char* ext = strrchr(full_path, '.');
 
-        if (ext && (_stricmp(ext, ".bmp") == 0)) {
+        if (ext && ozos_dar_str_ieq(ext, ".bmp")) {
             /* 1. Armoring BMP Image with 2D-DCT */
             uint8_t* bmp_raw = NULL;
             size_t bmp_sz = 0;
@@ -1187,7 +1199,7 @@ static inline int ozos_sweep_directory(const char* dir_path, const uint8_t seed[
                 }
                 free(bmp_raw);
             }
-        } else if (ext && (_stricmp(ext, ".sig") == 0)) {
+        } else if (ext && ozos_dar_str_ieq(ext, ".sig")) {
             /* Skip existing signature files */
             continue;
         } else {
