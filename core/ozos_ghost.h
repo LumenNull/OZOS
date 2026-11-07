@@ -89,7 +89,7 @@ static inline void* ozos_ghost_alloc_locked_enclave(size_t size) {
     }
     return ptr;
 #else
-    return malloc(size);
+    return calloc(1, size);
 #endif
 }
 

@@ -10,9 +10,11 @@ CFLAGS ?= -O3 -Wall -Wextra -std=c99 -D_DEFAULT_SOURCE -D_POSIX_C_SOURCE=200809L
 CXXFLAGS ?= -O3 -Wall -Wextra -fno-exceptions -fno-rtti -Icore -I. -fstack-protector-strong -D_FORTIFY_SOURCE=2 -fPIE
 HARDENING_LDFLAGS ?= -pie -Wl,-z,relro,-z,now
 HARDENED_OBJ = ozos_hardened_core.o
+CORE_HEADERS := $(wildcard core/*.h)
 SRC = core/ozos_ghost.c core/tweetnacl.c $(HARDENED_OBJ)
 TARGET = ozos_ghost
 CLI_TARGET = ozos
+GUARD_TARGET = ozos-guard
 TEST_TARGET = test_libozos
 AUDIT_TARGET = test_audit_verify
 OMNI_TARGET = test_omni_phy
@@ -31,26 +33,33 @@ endif
 
 .PHONY: all test test_libozos test_wasm test_redteam test_rfc test_mutation reflex_audit wasm clean
 
-all: $(TARGET) $(CLI_TARGET) $(TEST_TARGET) $(AUDIT_TARGET) $(OMNI_TARGET)
+all: $(TARGET) $(CLI_TARGET) $(GUARD_TARGET) $(TEST_TARGET) $(AUDIT_TARGET) $(OMNI_TARGET)
 
-$(HARDENED_OBJ): core/ozos_hardened_core.cpp
+$(HARDENED_OBJ): core/ozos_hardened_core.cpp $(CORE_HEADERS)
 	$(CXX) $(CXXFLAGS) -c core/ozos_hardened_core.cpp -o $(HARDENED_OBJ)
 
-$(TARGET): $(SRC)
+$(TARGET): $(SRC) $(CORE_HEADERS)
 	@echo "================================================================="
 	@echo "  [O.Z.O.S] COMPILING BARE-METAL C99 SOVEREIGN MICRO-KERNEL"
 	@echo "================================================================="
 	$(CC) $(CFLAGS) -o $(TARGET) $(SRC) $(LDFLAGS) $(HARDENING_LDFLAGS)
 	@echo "  [SUCCESS] BUILT: $(TARGET)"
 
-$(CLI_TARGET): core/ozos_main.c core/tweetnacl.c $(HARDENED_OBJ)
+$(CLI_TARGET): core/ozos_main.c core/tweetnacl.c $(HARDENED_OBJ) $(CORE_HEADERS)
 	@echo "================================================================="
 	@echo "  [O.Z.O.S] COMPILING SOVEREIGN CLI UTILITY (OZOS)"
 	@echo "================================================================="
 	$(CC) $(CFLAGS) -o $(CLI_TARGET) core/ozos_main.c core/tweetnacl.c $(HARDENED_OBJ) $(LDFLAGS) $(HARDENING_LDFLAGS)
 	@echo "  [SUCCESS] BUILT: $(CLI_TARGET)"
 
-$(TEST_TARGET): tests/test_libozos.c core/tweetnacl.c $(HARDENED_OBJ)
+$(GUARD_TARGET): core/ozos_guard_main.c core/tweetnacl.c $(HARDENED_OBJ) $(CORE_HEADERS)
+	@echo "================================================================="
+	@echo "  [O.Z.O.S] COMPILING WORKSTATION & DATA-AT-REST SENTINEL (OZOS-GUARD)"
+	@echo "================================================================="
+	$(CC) $(CFLAGS) -o $(GUARD_TARGET) core/ozos_guard_main.c core/tweetnacl.c $(HARDENED_OBJ) $(LDFLAGS) $(HARDENING_LDFLAGS)
+	@echo "  [SUCCESS] BUILT: $(GUARD_TARGET)"
+
+$(TEST_TARGET): tests/test_libozos.c core/tweetnacl.c $(HARDENED_OBJ) $(CORE_HEADERS)
 	@echo "================================================================="
 	@echo "  [O.Z.O.S] COMPILING NATIVE LIBOZOS VERIFICATION TEST SUITE"
 	@echo "================================================================="
@@ -58,7 +67,7 @@ $(TEST_TARGET): tests/test_libozos.c core/tweetnacl.c $(HARDENED_OBJ)
 	cp -f $(TEST_TARGET) tests/$(TEST_TARGET)
 	@echo "  [SUCCESS] BUILT: $(TEST_TARGET) & tests/$(TEST_TARGET)"
 
-$(AUDIT_TARGET): tests/test_audit_verify.c core/tweetnacl.c $(HARDENED_OBJ)
+$(AUDIT_TARGET): tests/test_audit_verify.c core/tweetnacl.c $(HARDENED_OBJ) $(CORE_HEADERS)
 	@echo "================================================================="
 	@echo "  [O.Z.O.S] COMPILING REAL CRYPTO AUDIT VERIFICATION SUITE"
 	@echo "================================================================="
@@ -66,7 +75,7 @@ $(AUDIT_TARGET): tests/test_audit_verify.c core/tweetnacl.c $(HARDENED_OBJ)
 	cp -f $(AUDIT_TARGET) tests/$(AUDIT_TARGET)
 	@echo "  [SUCCESS] BUILT: $(AUDIT_TARGET) & tests/$(AUDIT_TARGET)"
 
-$(OMNI_TARGET): tests/test_omni_phy.c
+$(OMNI_TARGET): tests/test_omni_phy.c $(CORE_HEADERS)
 	@echo "================================================================="
 	@echo "  [O.Z.O.S] COMPILING OMNI-SPECTRUM COGNITIVE PHY TEST SUITE"
 	@echo "================================================================="
@@ -74,7 +83,7 @@ $(OMNI_TARGET): tests/test_omni_phy.c
 	cp -f $(OMNI_TARGET) tests/$(OMNI_TARGET)
 	@echo "  [SUCCESS] BUILT: $(OMNI_TARGET) & tests/$(OMNI_TARGET)"
 
-test: $(TARGET) $(CLI_TARGET) $(TEST_TARGET) $(AUDIT_TARGET) $(OMNI_TARGET)
+test: $(TARGET) $(CLI_TARGET) $(GUARD_TARGET) $(TEST_TARGET) $(AUDIT_TARGET) $(OMNI_TARGET)
 	@echo "================================================================="
 	@echo "  [TEST 1/5] HARDWARE TORTURE VERIFICATION"
 	@echo "================================================================="
@@ -165,5 +174,5 @@ reflex_audit: test test_wasm test_redteam test_mutation
 
 clean:
 	@echo "[CLEAN] Removing build artifacts..."
-	rm -f $(TARGET) $(CLI_TARGET) $(TEST_TARGET) *.o core/*.o tests/*.exe *.exe
+	rm -f $(TARGET) $(CLI_TARGET) $(GUARD_TARGET) $(TEST_TARGET) $(AUDIT_TARGET) $(OMNI_TARGET) tests/$(TEST_TARGET) tests/$(AUDIT_TARGET) tests/$(OMNI_TARGET) *.o core/*.o tests/*.exe *.exe
 	@echo "[CLEAN] Clean complete."

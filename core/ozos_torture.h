@@ -246,14 +246,14 @@ static inline bool ozos_torture_dpa_test(void) {
             acc += (acc << 1) ^ (acc >> 1);
         }
 
-        /* Random Execution Jitter Injection */
+        uint64_t c1 = ozos_torture_rdtsc();
+        uint64_t diff = c1 - c0;
+
+        /* Post-window Execution Jitter Injection (outside rdtsc gate to avoid Hyper-V PLE VMEXIT skew) */
         uint32_t jitter_cycles = (blinding_factor & 0x0F);
         for (volatile uint32_t j = 0; j < jitter_cycles; j++) {
             ozos_torture_pause();
         }
-
-        uint64_t c1 = ozos_torture_rdtsc();
-        uint64_t diff = c1 - c0;
 
         /* Discard samples affected by OS thread preemption or hypervisor traps (> 4000 cycles) */
         if (diff > 4000) continue;
