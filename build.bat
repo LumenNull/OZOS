@@ -118,13 +118,6 @@ if exist "core\ozos_pqc_main.c" (
         exit /b !errorlevel!
     )
 )
-if exist "core\ozos_mesh_main.c" (
-    cl.exe %CFLAGS% /Fe:ozos-mesh.exe core\ozos_mesh_main.c core\tweetnacl.c core\ozos_hardened_core.cpp /link advapi32.lib winmm.lib
-    if !errorlevel! neq 0 (
-        echo [FAIL] Compilation of ozos-mesh.exe failed.
-        exit /b !errorlevel!
-    )
-)
 if exist "core\ozos_main.c" (
     cl.exe %CFLAGS% /Fe:ozos.exe core\ozos_main.c core\tweetnacl.c core\ozos_hardened_core.cpp /link advapi32.lib winmm.lib ncrypt.lib user32.lib iphlpapi.lib
     if !errorlevel! neq 0 (

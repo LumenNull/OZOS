@@ -275,27 +275,33 @@ Following exhaustive 10-round adversarial Red Team audits, the operational bound
 
 ---
 
-## Decoupled 5-Package Monorepo Architecture (The Sovereign Triad)
+## Decoupled 4-Package Monorepo Architecture
 
-To prevent architectural entropy while maintaining a single authoritative codebase, O.Z.O.S is organized into five independent, purpose-built packages plus a master umbrella binary:
+To prevent architectural entropy while maintaining a single authoritative codebase, O.Z.O.S is organized into four independent, purpose-built packages plus a master umbrella binary.
+
+> [!NOTE]
+> **The Sovereign Triad ("The Chan Vac"):**
+> * **Leg 1 (Core & Vault):** This repository (`OZOS`) - Minimal microkernel, stack enclave, NIST FIPS 203 PQC, and data-at-rest armor.
+> * **Leg 2 (Sovereign Mesh P2P):** [`OZOS-Mesh`](https://github.com/LumenNull/OZOS-Mesh) - Dedicated standalone repository for Zero-IP peer-to-peer routing, 80-byte canonical framing, and anti-storm Bloom filtering.
+> * **Leg 3 (Autonomous Hardware):** Bare-metal microcontroller nodes and off-grid solar power harvesters.
 
 ```text
-+-----------------------------------------------------------------------------------------------+
-|                                    OZOS UNIFIED MONOREPO                                      |
-+-------------------+-------------------+-------------------+-------------------+---------------+
-|     ozos-core     |     ozos-phy      |    ozos-guard     |     ozos-pqc      |   ozos-mesh   |
-|  (Stack Enclave)  |   (Omni-Modem)    |   (Host Armor)    |  (FIPS 203 / 204) | (Zero-IP Mesh)|
-+-------------------+-------------------+-------------------+-------------------+---------------+
-| * Stack-only      | * 16-FSK Acoustic | * Hypervisor      | * ML-KEM-768      | * Zero-IP P2P |
-| * malloc = 0      | * 64-FFT OFDM     |   Detection       | * ML-DSA-65       | * OZOS-80 Wire|
-| * Shamir SSS(k,n) | * 32x32 Optical   | * Wi-Fi Shield    | * Hybrid KEM      | * Bloom Filter|
-| * RFC 8032 Ed25519| * LoRa Sub-GHz RF | * DACL Anti-Dump  | * Quantum Defense | * DTN Forward |
-| * seL4 / STM32    | * HF Skywave Base | * NIST 800-88 Burn| * SHA-512 KDF     | * Anti-Storm  |
-| * Size: 214 KB    | * Size: 207 KB    | * Size: 306 KB    | * Size: 163 KB    | * Size: 152 KB|
-+-------------------+-------------------+-------------------+-------------------+---------------+
-|                              ozos.exe (Master Unified Umbrella)                               |
-|                     All capabilities unified * Backward-compatible 100%                       |
-+-----------------------------------------------------------------------------------------------+
++-------------------------------------------------------------------------------+
+|                           OZOS UNIFIED MONOREPO                               |
++-------------------+-------------------+-------------------+-------------------+
+|     ozos-core     |     ozos-phy      |    ozos-guard     |     ozos-pqc      |
+|  (Stack Enclave)  |   (Omni-Modem)    |   (Host Armor)    |  (FIPS 203 / 204) |
++-------------------+-------------------+-------------------+-------------------+
+| * Stack-only      | * 16-FSK Acoustic | * Hypervisor      | * ML-KEM-768      |
+| * malloc = 0      | * 64-FFT OFDM     |   Detection       | * ML-DSA-65       |
+| * Shamir SSS(k,n) | * 32x32 Optical   | * Wi-Fi Shield    | * Hybrid KEM      |
+| * RFC 8032 Ed25519| * LoRa Sub-GHz RF | * DACL Anti-Dump  | * Quantum Defense |
+| * seL4 / STM32    | * HF Skywave Base | * NIST 800-88 Burn| * SHA-512 KDF     |
+| * Size: 214 KB    | * Size: 207 KB    | * Size: 306 KB    | * Size: 163 KB    |
++-------------------+-------------------+-------------------+-------------------+
+|                     ozos.exe (Master Unified Umbrella)                        |
+|           All 38 capabilities unified * Backward-compatible 100%              |
++-------------------------------------------------------------------------------+
 ```
 
 ### 1. `ozos-core` (Sovereign Microkernel)
@@ -329,16 +335,7 @@ To prevent architectural entropy while maintaining a single authoritative codeba
 * **Mechanisms:** Dual-encapsulation (X25519 + ML-KEM-768 / Kyber) with composite public key serialization and SHA-512 KDF combination.
 * **Commands:** `status`, `test`.
 
-### 5. `ozos-mesh` (Sovereign Zero-IP P2P Mesh Router - Leg 2 of Sovereign Triad)
-* **Design Contract:** Physical-first, zero-IP epidemic mesh routing for decentralized air-gapped networks.
-* **Mechanisms:**
-  - Invariant 80-byte wire frame (`OZOS-80` canonical alignment).
-  - 512-bit zero-heap stack Bloom filter (3 independent hash scramblers) for broadcast-storm suppression.
-  - Store-and-forward Delay-Tolerant Network (DTN) ring buffer (16 frames deep).
-  - Multi-hop relay with cryptographic MAC16 tripwire re-sealing and TTL decrement.
-* **Commands:** `status`, `pack`, `forward`, `sim-multihop`.
-
-### 6. `ozos` (Master Unified Umbrella)
+### 5. `ozos` (Master Unified Umbrella)
 * **Design Contract:** Single CLI binary exposing all 38 capabilities across all 4 tiers with 100% backwards compatibility with all existing test suites, scripts, and Web Cockpit integration.
 
 ## License
