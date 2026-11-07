@@ -533,9 +533,11 @@ static bool run_ephemeral_enclave_test(void) {
     printf("\n");
 
     printf("[3/5] Packaging & signing sovereign frame in enclave...\n");
-    ozos_packet80_t* hdr = (ozos_packet80_t*)packet_buffer;
+    ozos_packet80_t aligned_hdr;
     float zero_coeffs[16] = {0};
-    ozos_packet_build(hdr, 7777, zero_coeffs, (uint16_t)payload_len);
+    ozos_packet_build(&aligned_hdr, 7777, zero_coeffs, (uint16_t)payload_len);
+    memcpy(packet_buffer, &aligned_hdr, sizeof(aligned_hdr));
+    ozos_ghost_zeroize(&aligned_hdr, sizeof(aligned_hdr));
     memcpy(packet_buffer + sizeof(ozos_packet80_t), test_payload, payload_len);
 
     size_t header_plus_payload_len = sizeof(ozos_packet80_t) + payload_len;
@@ -1486,9 +1488,10 @@ int main(int argc, char* argv[]) {
                 printf("[!] Packet truncated (< %zu bytes for GENESIS PACKET).\n", sizeof(ozos_packet80_t));
                 return 1;
             }
-            ozos_packet80_t* p = (ozos_packet80_t*)rx_buffer;
-            uint16_t expected_mac = ozos_compute_mac16(p);
-            mac_verified = (p->header_mac16 == expected_mac);
+            ozos_packet80_t aligned_rx;
+            memcpy(&aligned_rx, rx_buffer, sizeof(aligned_rx));
+            uint16_t expected_mac = ozos_compute_mac16(&aligned_rx);
+            mac_verified = (aligned_rx.header_mac16 == expected_mac);
             printf("[+] Type     : GENESIS PACKET (Aligned 80-Byte Frame) [%s]\n", mac_verified ? "MAC16 VERIFIED" : "MAC16 UNVERIFIED");
         } else {
             printf("[!] Unrecognized magic header: 0x%08X\n", magic);

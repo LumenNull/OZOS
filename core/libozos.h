@@ -280,8 +280,7 @@ OZOS_INLINE void ozos_packet_seal_a2(
     }
     uint64_t k0 = (secret_seed != 0ULL) ? secret_seed : OZOS_A2_DOMAIN_CONSTANT;
     uint16_t sip_mac = compute_fast_gate_mac(mac_input, 78 + copy_payload, k0, 0ULL);
-    ozos_packet80_t* pkt = (ozos_packet80_t*)frame_buffer;
-    pkt->header_mac16 = sip_mac;
+    memcpy(frame_buffer + offsetof(ozos_packet80_t, header_mac16), &sip_mac, sizeof(sip_mac));
 }
 
 /**
@@ -298,8 +297,9 @@ OZOS_INLINE void ozos_packet_build_frame(
     uint64_t secret_seed
 ) {
     if (!frame_buffer) return;
-    ozos_packet80_t* pkt = (ozos_packet80_t*)frame_buffer;
-    ozos_packet_build(pkt, nonce, coeffs, payload_len);
+    ozos_packet80_t aligned_pkt;
+    ozos_packet_build(&aligned_pkt, nonce, coeffs, payload_len);
+    memcpy(frame_buffer, &aligned_pkt, sizeof(aligned_pkt));
     if (payload_len > 0) {
         if (payload && payload != (frame_buffer + OZOS_PACKET_HEADER_SIZE)) {
             memcpy(frame_buffer + OZOS_PACKET_HEADER_SIZE, payload, payload_len);
@@ -322,9 +322,11 @@ OZOS_INLINE ozos_status_t ozos_packet_validate_ex(
         return OZOS_ERR_BUFFER_TOO_SMALL;
     }
 
-    const ozos_packet80_t* pkt = (const ozos_packet80_t*)buffer;
+    ozos_packet80_t aligned_hdr;
+    memcpy(&aligned_hdr, buffer, sizeof(ozos_packet80_t));
+    const ozos_packet80_t* pkt = &aligned_hdr;
     if (out_header) {
-        memcpy(out_header, pkt, sizeof(ozos_packet80_t));
+        memcpy(out_header, &aligned_hdr, sizeof(ozos_packet80_t));
     }
 
     /* 1. Poisoned Float / NaN / Inf Validation */

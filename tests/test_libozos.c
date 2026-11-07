@@ -70,7 +70,7 @@ int main(void) {
 
     /* Validate forged Magic Header (Magic check must trip immediately) */
     memcpy(buffer, &pkt, sizeof(pkt));
-    ((ozos_packet80_t*)buffer)->magic = 0xDEADBEEF;
+    { uint32_t forged_magic = 0xDEADBEEFU; memcpy(buffer + offsetof(ozos_packet80_t, magic), &forged_magic, sizeof(forged_magic)); }
     st = ozos_packet_validate(buffer, 80 + 15, 4999ULL, &validated);
     if (st != OZOS_ERR_MAGIC_INVALID) TEST_FAIL("Magic check", "Failed to catch forged Magic header");
 
