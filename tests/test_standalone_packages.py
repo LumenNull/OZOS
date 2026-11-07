@@ -2,11 +2,12 @@
 """
 O.Z.O.S (Omni-Zero Operating Shield)
 Automated Standalone Binary Verification Suite
-Tests the 4 decoupled packages independently:
+Tests the 5 decoupled packages independently:
   1. ozos-core.exe  : Minimal Sovereign Microkernel (Stack Enclave)
   2. ozos-phy.exe   : Omni-Spectrum Physical Modem & Transport
   3. ozos-guard.exe : Workstation Armor & Data-at-Rest Engine
   4. ozos-pqc.exe   : NIST FIPS 203 Hybrid Post-Quantum Enclave
+  5. ozos-mesh.exe  : Sovereign Zero-IP P2P Mesh Router (Leg 2)
 """
 
 import os
@@ -20,9 +21,10 @@ CORE_BIN = os.path.join(ROOT_DIR, "ozos-core.exe")
 PHY_BIN = os.path.join(ROOT_DIR, "ozos-phy.exe")
 GUARD_BIN = os.path.join(ROOT_DIR, "ozos-guard.exe")
 PQC_BIN = os.path.join(ROOT_DIR, "ozos-pqc.exe")
+MESH_BIN = os.path.join(ROOT_DIR, "ozos-mesh.exe")
 
 def run_cmd(args):
-    res = subprocess.run(args, capture_output=True, text=True, cwd=ROOT_DIR)
+    res = subprocess.run(args, capture_output=True, text=True, cwd=ROOT_DIR, encoding="utf-8", errors="replace")
     return res.returncode, res.stdout, res.stderr
 
 def test_ozos_core():
@@ -185,6 +187,33 @@ def test_ozos_guard():
 
     print("  [PASS] ozos-guard.exe verified 100% independent.")
 
+def test_ozos_mesh():
+    print("\n[TEST 5/5] Testing ozos-mesh.exe (Sovereign Zero-IP P2P Mesh Router - Leg 2)...")
+    assert os.path.exists(MESH_BIN), f"Binary not found: {MESH_BIN}"
+    
+    # 1. status
+    rc, out, err = run_cmd([MESH_BIN, "status"])
+    assert rc == 0, f"mesh status failed: {err}"
+    assert "SOVEREIGN MESH ROUTER STATUS" in out
+    print("  -> ozos-mesh.exe status: OK")
+    
+    # 2. pack
+    rc, out, err = run_cmd([MESH_BIN, "pack", "0xA11CE001", "0xC0C00003", "STANDALONE_MESH_TEST", "4"])
+    assert rc == 0, f"mesh pack failed: {err}"
+    hex_str = None
+    for line in out.splitlines():
+        if "Raw Frame Hex" in line:
+            hex_str = line.split(":")[-1].strip()
+    assert hex_str is not None and len(hex_str) == 160
+    print("  -> ozos-mesh.exe pack (80-byte OZOS-80 frame): OK")
+    
+    # 3. sim-multihop
+    rc, out, err = run_cmd([MESH_BIN, "sim-multihop"])
+    assert rc == 0, f"mesh sim-multihop failed: {err}"
+    assert "BENCHMARK PASSED 100%" in out
+    print("  -> ozos-mesh.exe 3-node multi-hop simulation: OK")
+    print("  [PASS] ozos-mesh.exe verified 100% independent.")
+
 def main():
     print("======================================================================")
     print("  O.Z.O.S STANDALONE DECOUPLED PACKAGE VERIFICATION SUITE")
@@ -193,8 +222,9 @@ def main():
     test_ozos_pqc()
     test_ozos_phy()
     test_ozos_guard()
+    test_ozos_mesh()
     print("\n======================================================================")
-    print("  ALL 4 STANDALONE BINARIES FULLY FUNCTIONAL AND VERIFIED 100%!")
+    print("  ALL 5 STANDALONE BINARIES FULLY FUNCTIONAL AND VERIFIED 100%!")
     print("======================================================================")
 
 if __name__ == "__main__":
