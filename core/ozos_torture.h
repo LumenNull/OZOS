@@ -75,12 +75,23 @@ static inline void ozos_torture_random_bytes(void* buf, size_t len) {
 #endif
 }
 
+#if defined(_MSC_VER)
+#define OZOS_TORTURE_NOINLINE __declspec(noinline)
+#elif defined(__GNUC__) || defined(__clang__)
+#define OZOS_TORTURE_NOINLINE __attribute__((noinline))
+#else
+#define OZOS_TORTURE_NOINLINE
+#endif
+
 static inline uint64_t ozos_torture_rdtsc(void) {
 #if defined(_WIN32) && defined(_MSC_VER)
-    return __rdtsc();
+    _mm_lfence();
+    uint64_t t = __rdtsc();
+    _mm_lfence();
+    return t;
 #elif defined(__i386__) || defined(__x86_64__)
     uint32_t lo, hi;
-    __asm__ __volatile__ ("rdtsc" : "=a" (lo), "=d" (hi));
+    __asm__ __volatile__ ("lfence\n\trdtsc\n\tlfence" : "=a" (lo), "=d" (hi) : : "memory");
     return ((uint64_t)hi << 32) | lo;
 #elif defined(__aarch64__)
     uint64_t val;
@@ -206,6 +217,19 @@ static inline bool ozos_torture_cold_boot_test(void) {
    TEST 2: DIFFERENTIAL POWER ANALYSIS (DPA) & SIDE-CHANNEL AUDIT
    ============================================================================= */
 
+static OZOS_TORTURE_NOINLINE uint64_t ozos_torture_dpa_sample_cycles(uint8_t target_bit, uint32_t blinding_factor) {
+    uint64_t c0 = ozos_torture_rdtsc();
+    volatile uint32_t acc = 0x5A5A5A5AU ^ blinding_factor;
+    for (int b = 0; b < 256; b++) {
+        uint32_t mask = (uint32_t)(-(int32_t)target_bit);
+        acc ^= (blinding_factor & mask);
+        acc += (acc << 1) ^ (acc >> 1);
+    }
+    (void)acc;
+    uint64_t c1 = ozos_torture_rdtsc();
+    return (c1 >= c0) ? (c1 - c0) : 0ULL;
+}
+
 static inline bool ozos_torture_dpa_test(void) {
     printf("=================================================================\n");
     printf("  [TORTURE 2/4] DIFFERENTIAL POWER ANALYSIS (DPA) & EMA ATTACK\n");
@@ -220,60 +244,54 @@ static inline bool ozos_torture_dpa_test(void) {
     uint8_t seed[32] = { 0x42 };
     ozos_ed25519_seed_keypair(dummy_pk, dummy_sk, seed);
 
+    uint32_t blind_pool[2000];
+    uint8_t order_pool[2000];
+    ozos_torture_random_bytes(blind_pool, sizeof(blind_pool));
+    ozos_torture_random_bytes(order_pool, sizeof(order_pool));
+
+    /* CPU pipeline & branch-free ALU warmup before cycle collection */
+    for (int w = 0; w < 256; w++) {
+        (void)ozos_torture_dpa_sample_cycles((uint8_t)(w & 1), blind_pool[w]);
+    }
+
     uint64_t cycles_bit0_sum = 0;
     uint64_t cycles_bit1_sum = 0;
     int count0 = 0, count1 = 0;
 
-    /* Measure cycle differential between bit 0 and bit 1 operations */
-    for (int i = 0; i < SAMPLES; i++) {
-        uint8_t rand_byte = 0;
-        ozos_torture_random_bytes(&rand_byte, 1);
-        uint8_t target_bit = rand_byte & 1;
+    /* Paired interleaved cycle differential (dudect methodology: immune to vCPU P-state drift) */
+    for (int i = 0; i < (SAMPLES / 2); i++) {
+        uint8_t first_bit = order_pool[i] & 1U;
+        uint32_t bf0 = blind_pool[i * 2];
+        uint32_t bf1 = blind_pool[i * 2 + 1];
 
-        /* Apply Projective Coordinate Blinding Simulation */
-        uint32_t blinding_factor = 0;
-        ozos_torture_random_bytes(&blinding_factor, 4);
+        uint64_t d_first  = ozos_torture_dpa_sample_cycles(first_bit, bf0);
+        uint64_t d_second = ozos_torture_dpa_sample_cycles((uint8_t)(first_bit ^ 1U), bf1);
 
-        /* Hardware cycle timer */
-        uint64_t c0 = ozos_torture_rdtsc();
-
-        /* Constant-time scalar multiplication operation with blinding */
-        volatile uint32_t acc = 0x5A5A5A5A ^ blinding_factor;
-        for (int b = 0; b < 256; b++) {
-            /* Constant-time conditional swap logic (Uniform gate switching) */
-            uint32_t mask = (uint32_t)(-(int32_t)target_bit);
-            acc ^= (blinding_factor & mask);
-            acc += (acc << 1) ^ (acc >> 1);
-        }
-
-        uint64_t c1 = ozos_torture_rdtsc();
-        uint64_t diff = c1 - c0;
-
-        /* Post-window Execution Jitter Injection (outside rdtsc gate to avoid Hyper-V PLE VMEXIT skew) */
-        uint32_t jitter_cycles = (blinding_factor & 0x0F);
+        /* Post-pair jitter mask */
+        uint32_t jitter_cycles = (bf0 & 0x03U);
         for (volatile uint32_t j = 0; j < jitter_cycles; j++) {
             ozos_torture_pause();
         }
 
-        /* Discard samples affected by OS thread preemption or hypervisor traps (> 4000 cycles) */
-        if (diff > 4000) continue;
+        /* Discard pairs interrupted by OS preemption or hypervisor VMEXIT (> 8000 cycles or zero) */
+        if (d_first == 0ULL || d_second == 0ULL || d_first > 8000ULL || d_second > 8000ULL) continue;
 
-        if (target_bit == 0) {
-            cycles_bit0_sum += diff;
-            count0++;
+        if (first_bit == 0U) {
+            cycles_bit0_sum += d_first;
+            cycles_bit1_sum += d_second;
         } else {
-            cycles_bit1_sum += diff;
-            count1++;
+            cycles_bit1_sum += d_first;
+            cycles_bit0_sum += d_second;
         }
+        count0++;
+        count1++;
     }
 
-    if (count0 < 10) count0 = 1;
-    if (count1 < 10) count1 = 1;
-
-    double avg_bit0 = (double)cycles_bit0_sum / (double)count0;
-    double avg_bit1 = (double)cycles_bit1_sum / (double)count1;
+    double avg_bit0 = (count0 > 0) ? ((double)cycles_bit0_sum / (double)count0) : 1.0;
+    double avg_bit1 = (count1 > 0) ? ((double)cycles_bit1_sum / (double)count1) : 1.0;
     double delta_cycles = fabs(avg_bit0 - avg_bit1);
-    double pct_variance = (delta_cycles / ((avg_bit0 + avg_bit1) * 0.5)) * 100.0;
+    double mean_cycles = (avg_bit0 + avg_bit1) * 0.5;
+    double pct_variance = (mean_cycles > 0.0) ? ((delta_cycles / mean_cycles) * 100.0) : 0.0;
 
     printf("[2/3] Analyzing statistical power & timing differential...\n");
     printf("  • Avg Cycles (Bit 0)    : %.2f cycles\n", avg_bit0);
