@@ -235,7 +235,10 @@ int main(void) {
     size_t claim_len = strlen(test_claim);
 
     /* Sign 80-byte header + payload */
-    uint8_t raw_packet[80 + 19];
+    uint8_t raw_packet[80 + 64];
+    if (claim_len > 64) {
+        TEST_FAIL("Sign Frame", "Test claim exceeds stack buffer capacity");
+    }
     memcpy(raw_packet, &pkt, 80);
     memcpy(raw_packet + 80, test_claim, claim_len);
 
