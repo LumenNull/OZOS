@@ -22,6 +22,8 @@
 #define WIN32_LEAN_AND_MEAN
 #endif
 #include <windows.h>
+#else
+#include <unistd.h>
 #endif
 
 #ifdef __cplusplus
@@ -99,7 +101,8 @@ static void ozos_posix_signal_handler(int sig) {
     WriteFile(GetStdHandle(STD_ERROR_HANDLE), msg, (DWORD)(sizeof(msg) - 1), &written, NULL);
     ExitProcess(128 + sig);
 #else
-    (void)write(2, msg, sizeof(msg) - 1);
+    ssize_t nw = write(2, msg, sizeof(msg) - 1);
+    (void)nw;
     _exit(128 + sig);
 #endif
 }

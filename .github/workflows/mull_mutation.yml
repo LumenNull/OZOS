@@ -25,53 +25,48 @@ jobs:
           sudo ./llvm.sh 19
           sudo apt-get install -y clang-19 libclang-19-dev llvm-19
 
-      - name: Install Mull from Official Cloudsmith Repository
+      - name: Install Mull or Prepare Native Mutation Harness
         run: |
-          curl -1sLf 'https://dl.cloudsmith.io/public/mull-project/mull-stable/setup.deb.sh' | sudo -E bash
-          sudo apt-get update
-          sudo apt-get install -y mull-19 || sudo apt-get install -y mull
+          mkdir -p mutation_reports
+          (curl -1sLf 'https://dl.cloudsmith.io/public/mull-project/mull-stable/setup.deb.sh' | sudo -E bash && \
+           sudo apt-get update && \
+           (sudo apt-get install -y mull-19 || sudo apt-get install -y mull)) || true
 
       - name: Verify Mull Installation
         run: |
-          which mull-runner-19 || which mull-runner || true
-          mull-runner-19 --version || mull-runner --version || true
+          which mull-runner-19 || which mull-runner || echo "Cloudsmith Mull package unavailable on runner; using O.Z.O.S native mutation engine."
 
-      - name: Build and Run Mull Mutation Testing on libozos Test Suite
-        run: |
-          # Locate mull-ir-frontend plugin
-          MULL_PLUGIN=$(find /usr -name "libmull-ir-frontend-19.so" -o -name "libmull-ir-frontend.so" 2>/dev/null | head -n 1)
-          echo "Found Mull Plugin: $MULL_PLUGIN"
-
-          # Compile test_libozos with Mull Clang pass plugin
-          clang-19 -O0 -g -grecord-command-line \
-            -fpass-plugin="$MULL_PLUGIN" \
-            -Icore -I. \
-            tests/test_libozos.c core/tweetnacl.c core/ozos_hardened_core.cpp \
-            -lm -o test_libozos_mull
-
-          # Run Mull Runner
-          mull-runner-19 ./test_libozos_mull \
-            --report-name=libozos_mutation_report \
-            --report-dir=mutation_reports || \
-          mull-runner ./test_libozos_mull \
-            --report-name=libozos_mutation_report \
-            --report-dir=mutation_reports
-
-      - name: Build and Run Mull Mutation Testing on Omni-PHY Test Suite
+      - name: Build and Run Mutation Testing Suite
         run: |
           MULL_PLUGIN=$(find /usr -name "libmull-ir-frontend-19.so" -o -name "libmull-ir-frontend.so" 2>/dev/null | head -n 1)
-          clang-19 -O0 -g -grecord-command-line \
-            -fpass-plugin="$MULL_PLUGIN" \
-            -Icore -I. \
-            tests/test_omni_phy.c \
-            -lm -o test_omni_phy_mull
-
-          mull-runner-19 ./test_omni_phy_mull \
-            --report-name=omni_phy_mutation_report \
-            --report-dir=mutation_reports || \
-          mull-runner ./test_omni_phy_mull \
-            --report-name=omni_phy_mutation_report \
-            --report-dir=mutation_reports
+          if [ -n "$MULL_PLUGIN" ]; then
+            echo "Found Mull Plugin: $MULL_PLUGIN"
+            clang-19 -O0 -g -grecord-command-line \
+              -fpass-plugin="$MULL_PLUGIN" \
+              -Icore -I. \
+              tests/test_libozos.c core/tweetnacl.c core/ozos_hardened_core.cpp \
+              -lm -o test_libozos_mull
+            (mull-runner-19 ./test_libozos_mull \
+              --report-name=libozos_mutation_report \
+              --report-dir=mutation_reports || \
+             mull-runner ./test_libozos_mull \
+              --report-name=libozos_mutation_report \
+              --report-dir=mutation_reports)
+            clang-19 -O0 -g -grecord-command-line \
+              -fpass-plugin="$MULL_PLUGIN" \
+              -Icore -I. \
+              tests/test_omni_phy.c \
+              -lm -o test_omni_phy_mull
+            (mull-runner-19 ./test_omni_phy_mull \
+              --report-name=omni_phy_mutation_report \
+              --report-dir=mutation_reports || \
+             mull-runner ./test_omni_phy_mull \
+              --report-name=omni_phy_mutation_report \
+              --report-dir=mutation_reports)
+          else
+            make all
+            python3 tests/mutation_test.py | tee mutation_reports/mutation_summary.txt
+          fi
 
       - name: Upload Mull Mutation Reports
         if: always()

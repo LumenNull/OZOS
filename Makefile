@@ -4,10 +4,13 @@
 # ==============================================================================
 
 CC ?= gcc
+CXX ?= g++
 GIT_COMMIT_HASH := $(shell git rev-parse --short HEAD 2>/dev/null || git log -1 --format="%h" 2>/dev/null || echo nogit-release)
-CFLAGS ?= -O3 -Wall -Wextra -std=c99 -D_POSIX_C_SOURCE=200809L -DOZOS_GIT_COMMIT_HASH=\"$(GIT_COMMIT_HASH)\" -Icore -I. -fstack-protector-strong -D_FORTIFY_SOURCE=2 -fPIE
+CFLAGS ?= -O3 -Wall -Wextra -std=c99 -D_DEFAULT_SOURCE -D_POSIX_C_SOURCE=200809L -DOZOS_GIT_COMMIT_HASH=\"$(GIT_COMMIT_HASH)\" -Icore -I. -fstack-protector-strong -D_FORTIFY_SOURCE=2 -fPIE
+CXXFLAGS ?= -O3 -Wall -Wextra -Icore -I. -fstack-protector-strong -D_FORTIFY_SOURCE=2 -fPIE
 HARDENING_LDFLAGS ?= -pie -Wl,-z,relro,-z,now
-SRC = core/ozos_ghost.c core/tweetnacl.c core/ozos_hardened_core.cpp
+HARDENED_OBJ = ozos_hardened_core.o
+SRC = core/ozos_ghost.c core/tweetnacl.c $(HARDENED_OBJ)
 TARGET = ozos_ghost
 CLI_TARGET = ozos
 TEST_TARGET = test_libozos
@@ -30,6 +33,9 @@ endif
 
 all: $(TARGET) $(CLI_TARGET) $(TEST_TARGET) $(AUDIT_TARGET) $(OMNI_TARGET)
 
+$(HARDENED_OBJ): core/ozos_hardened_core.cpp
+	$(CXX) $(CXXFLAGS) -c core/ozos_hardened_core.cpp -o $(HARDENED_OBJ)
+
 $(TARGET): $(SRC)
 	@echo "================================================================="
 	@echo "  [O.Z.O.S] COMPILING BARE-METAL C99 SOVEREIGN MICRO-KERNEL"
@@ -37,26 +43,26 @@ $(TARGET): $(SRC)
 	$(CC) $(CFLAGS) -o $(TARGET) $(SRC) $(LDFLAGS) $(HARDENING_LDFLAGS)
 	@echo "  [SUCCESS] BUILT: $(TARGET)"
 
-$(CLI_TARGET): core/ozos_main.c core/tweetnacl.c core/ozos_hardened_core.cpp
+$(CLI_TARGET): core/ozos_main.c core/tweetnacl.c $(HARDENED_OBJ)
 	@echo "================================================================="
 	@echo "  [O.Z.O.S] COMPILING SOVEREIGN CLI UTILITY (OZOS)"
 	@echo "================================================================="
-	$(CC) $(CFLAGS) -o $(CLI_TARGET) core/ozos_main.c core/tweetnacl.c core/ozos_hardened_core.cpp $(LDFLAGS) $(HARDENING_LDFLAGS)
+	$(CC) $(CFLAGS) -o $(CLI_TARGET) core/ozos_main.c core/tweetnacl.c $(HARDENED_OBJ) $(LDFLAGS) $(HARDENING_LDFLAGS)
 	@echo "  [SUCCESS] BUILT: $(CLI_TARGET)"
 
-$(TEST_TARGET): tests/test_libozos.c core/tweetnacl.c core/ozos_hardened_core.cpp
+$(TEST_TARGET): tests/test_libozos.c core/tweetnacl.c $(HARDENED_OBJ)
 	@echo "================================================================="
 	@echo "  [O.Z.O.S] COMPILING NATIVE LIBOZOS VERIFICATION TEST SUITE"
 	@echo "================================================================="
-	$(CC) $(CFLAGS) -o $(TEST_TARGET) tests/test_libozos.c core/tweetnacl.c core/ozos_hardened_core.cpp $(LDFLAGS) $(HARDENING_LDFLAGS)
+	$(CC) $(CFLAGS) -o $(TEST_TARGET) tests/test_libozos.c core/tweetnacl.c $(HARDENED_OBJ) $(LDFLAGS) $(HARDENING_LDFLAGS)
 	cp -f $(TEST_TARGET) tests/$(TEST_TARGET)
 	@echo "  [SUCCESS] BUILT: $(TEST_TARGET) & tests/$(TEST_TARGET)"
 
-$(AUDIT_TARGET): tests/test_audit_verify.c core/tweetnacl.c core/ozos_hardened_core.cpp
+$(AUDIT_TARGET): tests/test_audit_verify.c core/tweetnacl.c $(HARDENED_OBJ)
 	@echo "================================================================="
 	@echo "  [O.Z.O.S] COMPILING REAL CRYPTO AUDIT VERIFICATION SUITE"
 	@echo "================================================================="
-	$(CC) $(CFLAGS) -o $(AUDIT_TARGET) tests/test_audit_verify.c core/tweetnacl.c core/ozos_hardened_core.cpp $(LDFLAGS) $(HARDENING_LDFLAGS)
+	$(CC) $(CFLAGS) -o $(AUDIT_TARGET) tests/test_audit_verify.c core/tweetnacl.c $(HARDENED_OBJ) $(LDFLAGS) $(HARDENING_LDFLAGS)
 	cp -f $(AUDIT_TARGET) tests/$(AUDIT_TARGET)
 	@echo "  [SUCCESS] BUILT: $(AUDIT_TARGET) & tests/$(AUDIT_TARGET)"
 
