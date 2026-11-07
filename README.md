@@ -348,4 +348,4 @@ To prevent architectural entropy while maintaining a single authoritative codeba
 ## License
 
 Released under the [MIT License](LICENSE).
-Copyright (c) 2026 ZeroStudio & The Sovereign Citizens of Humankind.
+Copyright (c) 2026 ZeroLab & The Sovereign Citizens of Humankind.
