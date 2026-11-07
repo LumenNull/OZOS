@@ -1,6 +1,13 @@
 # O.Z.O.S // Omni-Zero Operating Shield
 ### *Pure C99 Sovereign Cryptographic Micro-Kernel & Ghost Enclave*
 
+[![CI: Sovereign Bare-Metal](https://github.com/LumenNull/OZOS/actions/workflows/ci.yml/badge.svg)](https://github.com/LumenNull/OZOS/actions/workflows/ci.yml)
+[![CI: Mull Mutation Testing](https://github.com/LumenNull/OZOS/actions/workflows/mull_mutation.yml/badge.svg)](https://github.com/LumenNull/OZOS/actions/workflows/mull_mutation.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+[![Standards: RFC--OZOS--0080](https://img.shields.io/badge/Standards-RFC--OZOS--0080-emerald.svg)](docs/RFC-OZOS-0080.md)
+[![Hardware: TPM 2.0](https://img.shields.io/badge/Silicon-TPM%202.0%20Bound-gold.svg)](core/ozos_workstation_guard.h)
+[![Memory: Zero--Heap Enclave](https://img.shields.io/badge/Memory-Locked%20Enclave%20(no__std)-purple.svg)](core/ozos_ghost.h)
+
 ```
   ____   ______   ____   _____ 
  / __ \ |___  /  / __ \ / ____|
