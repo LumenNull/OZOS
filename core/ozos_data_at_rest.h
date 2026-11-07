@@ -1274,6 +1274,11 @@ static inline int ozos_clipboard_armor_singleshot(const uint8_t seed[32]) {
     }
 
     size_t dib_size = GlobalSize(hDIB);
+    if (dib_size < sizeof(BITMAPINFOHEADER)) {
+        GlobalUnlock(hDIB);
+        CloseClipboard();
+        return 0;
+    }
     BITMAPINFOHEADER* bih = (BITMAPINFOHEADER*)pDIB;
 
     int w = bih->biWidth;
@@ -1287,17 +1292,33 @@ static inline int ozos_clipboard_armor_singleshot(const uint8_t seed[32]) {
         return 0;
     }
 
-    /* Compute pixel offset and stride */
+    /* Compute pixel offset and stride with strict bounds checks */
     size_t header_sz = bih->biSize;
+    if (header_sz < sizeof(BITMAPINFOHEADER)) {
+        GlobalUnlock(hDIB);
+        CloseClipboard();
+        return 0;
+    }
     if (bih->biCompression == 3 /* BI_BITFIELDS */) header_sz += 12;
 
-    uint8_t* pixels = pDIB + header_sz;
     int abs_h = (h < 0) ? -h : h;
+    if (w < 16 || abs_h < 16 || w > 8192 || abs_h > 8192) {
+        GlobalUnlock(hDIB);
+        CloseClipboard();
+        return 0;
+    }
     int bytes_per_pixel = bpp / 8;
     int row_stride = ((w * bytes_per_pixel + 3) / 4) * 4;
+    size_t pixel_bytes = (size_t)row_stride * (size_t)abs_h;
+    if (header_sz > dib_size || pixel_bytes > (dib_size - header_sz)) {
+        GlobalUnlock(hDIB);
+        CloseClipboard();
+        return 0;
+    }
 
     uint8_t pk[32], sk[64];
     crypto_sign_seed_keypair(pk, sk, seed);
+    ozos_crypto_zeroize(sk, sizeof(sk));
 
     /* Allocate copy to modify safely */
     HGLOBAL hNew = GlobalAlloc(GMEM_MOVEABLE, dib_size);
@@ -1308,6 +1329,12 @@ static inline int ozos_clipboard_armor_singleshot(const uint8_t seed[32]) {
     }
 
     uint8_t* pNew = (uint8_t*)GlobalLock(hNew);
+    if (!pNew) {
+        GlobalFree(hNew);
+        GlobalUnlock(hDIB);
+        CloseClipboard();
+        return 1;
+    }
     memcpy(pNew, pDIB, dib_size);
     uint8_t* new_pixels = pNew + header_sz;
 
@@ -1319,7 +1346,11 @@ static inline int ozos_clipboard_armor_singleshot(const uint8_t seed[32]) {
 
     /* Replace clipboard content */
     EmptyClipboard();
-    SetClipboardData(CF_DIB, hNew);
+    if (!SetClipboardData(CF_DIB, hNew)) {
+        GlobalFree(hNew);
+        CloseClipboard();
+        return 1;
+    }
     CloseClipboard();
 
     QueryPerformanceCounter(&t2);
@@ -1336,6 +1367,97 @@ static inline int ozos_clipboard_armor_singleshot(const uint8_t seed[32]) {
     printf("* Pasted Media    : Indelible Mathematical Identity Certified [OK]\n");
     printf("=================================================================\n");
     return 0;
+}
+
+/*
+ * Non-intrusive event-driven background clipboard poll:
+ * - Zero clipboard locks when sequence number is unchanged or non-bitmap content (Ctrl+C text/files) is copied.
+ * - Watermarks newly captured screenshots (CF_DIB) once in RAM and advances *io_last_seq to prevent self-triggering.
+ */
+static inline bool ozos_clipboard_armor_poll_once(
+    const uint8_t pk[32],
+    DWORD* io_last_seq,
+    int* out_w,
+    int* out_h
+) {
+    if (!pk || !io_last_seq) return false;
+    DWORD cur_seq = GetClipboardSequenceNumber();
+    if (cur_seq == 0 || cur_seq == *io_last_seq) {
+        return false;
+    }
+
+    if (!IsClipboardFormatAvailable(CF_DIB)) {
+        *io_last_seq = cur_seq;
+        return false;
+    }
+
+    /* Allow Snipping Tool / screenshot producer to finish committing clipboard formats */
+    Sleep(50);
+
+    BOOL opened = FALSE;
+    for (int attempt = 0; attempt < 3; ++attempt) {
+        if (OpenClipboard(NULL)) {
+            opened = TRUE;
+            break;
+        }
+        Sleep(15);
+    }
+    if (!opened) {
+        return false;
+    }
+
+    bool watermarked = false;
+    HANDLE hDIB = GetClipboardData(CF_DIB);
+    if (hDIB) {
+        size_t dib_size = GlobalSize(hDIB);
+        uint8_t* pDIB = (uint8_t*)GlobalLock(hDIB);
+        if (pDIB && dib_size >= sizeof(BITMAPINFOHEADER)) {
+            BITMAPINFOHEADER* bih = (BITMAPINFOHEADER*)pDIB;
+            int w = bih->biWidth;
+            int h = bih->biHeight;
+            int abs_h = (h < 0) ? -h : h;
+            uint16_t bpp = bih->biBitCount;
+            size_t header_sz = bih->biSize;
+            if (bih->biCompression == 3) header_sz += 12;
+
+            if ((bpp == 24 || bpp == 32) &&
+                header_sz >= sizeof(BITMAPINFOHEADER) &&
+                w >= 16 && abs_h >= 16 && w <= 8192 && abs_h <= 8192) {
+                int row_stride = ((w * (bpp / 8) + 3) / 4) * 4;
+                size_t pixel_bytes = (size_t)row_stride * (size_t)abs_h;
+                if (header_sz <= dib_size && pixel_bytes <= (dib_size - header_sz)) {
+                    HGLOBAL hNew = GlobalAlloc(GMEM_MOVEABLE, dib_size);
+                    if (hNew) {
+                        uint8_t* pNew = (uint8_t*)GlobalLock(hNew);
+                        if (pNew) {
+                            memcpy(pNew, pDIB, dib_size);
+                            ozos_watermark_bmp_buffer(pNew + header_sz, w, abs_h, row_stride, pk, 32);
+                            GlobalUnlock(hNew);
+                            GlobalUnlock(hDIB);
+                            pDIB = NULL;
+                            EmptyClipboard();
+                            if (SetClipboardData(CF_DIB, hNew)) {
+                                watermarked = true;
+                                if (out_w) *out_w = w;
+                                if (out_h) *out_h = abs_h;
+                            } else {
+                                GlobalFree(hNew);
+                            }
+                        } else {
+                            GlobalFree(hNew);
+                        }
+                    }
+                }
+            }
+            if (pDIB) {
+                GlobalUnlock(hDIB);
+            }
+        }
+    }
+
+    CloseClipboard();
+    *io_last_seq = GetClipboardSequenceNumber();
+    return watermarked;
 }
 #endif
 

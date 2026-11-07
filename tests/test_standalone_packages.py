@@ -183,6 +183,29 @@ def test_ozos_guard():
         assert os.path.exists(os.path.join(extract_dir, "doc1.txt"))
         print("  -> ozos-guard.exe XSalsa20-Poly1305 sealed vault: OK")
 
+        # 5. Headless 24/7 Sentinel lifecycle & autostart dry-run
+        guard_state = os.path.join(tmpdir, "guard_state")
+        dry_reg = os.path.join(tmpdir, "guard_autostart.reg")
+        env = os.environ.copy()
+        env["OZOS_GUARD_STATE_DIR"] = guard_state
+        env["OZOS_GUARD_AUTOSTART_DRYRUN"] = dry_reg
+
+        r_auto = subprocess.run([GUARD_BIN, "install-autostart"], capture_output=True, text=True, cwd=ROOT_DIR, env=env, encoding="utf-8", errors="replace")
+        assert r_auto.returncode == 0 and os.path.exists(dry_reg), f"install-autostart failed: {r_auto.stderr}"
+
+        r_start = subprocess.run([GUARD_BIN, "start"], capture_output=True, text=True, cwd=ROOT_DIR, env=env, encoding="utf-8", errors="replace")
+        assert r_start.returncode == 0 and "WORKSTATION SENTINEL STARTED" in r_start.stdout, f"start failed: {r_start.stderr}\n{r_start.stdout}"
+        try:
+            r_stat = subprocess.run([GUARD_BIN, "status"], capture_output=True, text=True, cwd=ROOT_DIR, env=env, encoding="utf-8", errors="replace")
+            assert r_stat.returncode == 0
+            assert "RUNNING IN BACKGROUND" in r_stat.stdout
+            assert "Boot Autostart      : ENABLED" in r_stat.stdout
+        finally:
+            r_stop = subprocess.run([GUARD_BIN, "stop"], capture_output=True, text=True, cwd=ROOT_DIR, env=env, encoding="utf-8", errors="replace")
+            assert r_stop.returncode == 0
+            subprocess.run([GUARD_BIN, "uninstall-autostart"], capture_output=True, text=True, cwd=ROOT_DIR, env=env, encoding="utf-8", errors="replace")
+        print("  -> ozos-guard.exe Headless 24/7 Sentinel & Autostart: OK")
+
     print("  [PASS] ozos-guard.exe verified 100% independent.")
 
 def main():
