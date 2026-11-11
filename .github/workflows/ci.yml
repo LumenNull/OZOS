@@ -1,0 +1,192 @@
+name: O.Z.O.S Sovereign CI
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  linux-build-and-test:
+    name: Linux GCC Bare-Metal Hardening
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install Python Dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install pillow numpy
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Compile Sovereign C99 Binaries
+        run: |
+          make all
+
+      - name: Run Native C99 Test Suites
+        run: |
+          make test
+
+      - name: Run Red Team Audit Verification Suite (79/79 Invariants)
+        run: |
+          python tests/test_redteam_fixes.py
+
+      - name: Run Headless & JavaScript Engine Verification
+        run: |
+          node tests/test_ozos_15_tiers.js
+          node tests/test_ozos_headless.js
+
+      - name: Run Empirical Mutation Testing Harness (Mull Parity)
+        run: |
+          python tests/mutation_test.py
+
+  windows-build-and-test:
+    name: Windows MSVC Sovereign Build
+    runs-on: windows-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Set up MSVC Developer Command Prompt
+        uses: ilammy/msvc-dev-cmd@v1
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install Python Dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install pillow numpy
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Compile and Run Native MSVC Test Suite
+        shell: cmd
+        run: |
+          call build.bat test
+
+      - name: Run Red Team Audit Verification Suite (79/79 Invariants)
+        shell: cmd
+        run: |
+          set PYTHONIOENCODING=utf-8
+          python tests/test_redteam_fixes.py
+
+      - name: Run Headless & JavaScript Engine Verification
+        shell: cmd
+        run: |
+          node tests/test_ozos_15_tiers.js
+          node tests/test_ozos_headless.js
+
+      - name: Run Empirical Mutation Testing Harness (Mull Parity)
+        shell: cmd
+        run: |
+          set PYTHONIOENCODING=utf-8
+          python tests/mutation_test.py
+
+      - name: Build Bare-Metal UEFI Enclave (BOOTX64.EFI)
+        shell: cmd
+        run: |
+          call ports\baremetal_uefi\build_uefi.bat
+          dumpbin /headers /imports ports\baremetal_uefi\EFI\BOOT\BOOTX64.EFI
+
+  baremetal-uefi-linux:
+    name: Linux Clang Cross-Compile Bare-Metal UEFI (BOOTX64.EFI)
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Install Clang, LLD, QEMU & OVMF
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y clang lld llvm binutils qemu-system-x86 ovmf
+
+      - name: Cross-Compile Standalone PE32+ EFI Kernel
+        run: |
+          sh ports/baremetal_uefi/build_uefi.sh
+          file ports/baremetal_uefi/EFI/BOOT/BOOTX64.EFI
+          llvm-objdump -p ports/baremetal_uefi/EFI/BOOT/BOOTX64.EFI | grep -E "Subsystem|DLL Name" || true
+          test -s ports/baremetal_uefi/EFI/BOOT/BOOTX64.EFI
+
+      - name: Boot-Test BOOTX64.EFI on Live QEMU + OVMF UEFI Firmware
+        run: |
+          python3 -X utf8 tests/test_uefi_qemu.py
+
+  clang-asan-ubsan-fuzzer:
+    name: Linux Clang ASan + UBSan + libFuzzer
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Install Clang & Sanitizer Runtime
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y clang
+          CLANG_MAJOR=$(clang --version | sed -n 's/.*clang version \([0-9]*\).*/\1/p' | head -n 1)
+          echo "Detected system Clang major version: $CLANG_MAJOR"
+          sudo apt-get install -y "libclang-rt-${CLANG_MAJOR}-dev" "libfuzzer-${CLANG_MAJOR}-dev"
+
+      - name: Build & Run C99 Suites Under ASan + UBSan
+        run: |
+          SAN="-O1 -g -fno-omit-frame-pointer -fsanitize=address,undefined -fno-sanitize-recover=all"
+          C99_FLAGS="$SAN -std=c99 -D_DEFAULT_SOURCE -D_POSIX_C_SOURCE=200809L -Icore -I."
+          clang++ $SAN -fno-exceptions -fno-rtti -Icore -I. -c core/ozos_hardened_core.cpp -o ozos_hardened_core_san.o
+          clang $C99_FLAGS -c core/tweetnacl.c -o tweetnacl_san.o
+          clang $C99_FLAGS -c tests/test_libozos.c -o test_libozos_san.o
+          clang $C99_FLAGS -c tests/test_audit_verify.c -o test_audit_verify_san.o
+          clang $C99_FLAGS -c tests/test_omni_phy.c -o test_omni_phy_san.o
+          clang $C99_FLAGS -c core/ozos_pqc_main.c -o ozos_pqc_san.o
+
+          clang++ $SAN test_libozos_san.o tweetnacl_san.o ozos_hardened_core_san.o -lm -lpthread -o test_libozos_san
+          clang++ $SAN test_audit_verify_san.o tweetnacl_san.o ozos_hardened_core_san.o -lm -lpthread -o test_audit_verify_san
+          clang $SAN test_omni_phy_san.o -lm -o test_omni_phy_san
+          clang++ $SAN ozos_pqc_san.o tweetnacl_san.o ozos_hardened_core_san.o -lm -lpthread -o ozos-pqc_san
+
+          ./test_libozos_san
+          ./test_audit_verify_san
+          ./test_omni_phy_san
+          ./ozos-pqc_san status
+          ./ozos-pqc_san test
+
+      - name: Build libFuzzer Parser Target
+        run: |
+          clang -O1 -g -fno-omit-frame-pointer -fsanitize=fuzzer-no-link,address,undefined -fno-sanitize-recover=all \
+            -std=c99 -D_DEFAULT_SOURCE -D_POSIX_C_SOURCE=200809L \
+            -Icore -I. -c tests/fuzz_ozos_parsers.c -o fuzz_ozos_parsers.o 2>fuzz_build.log || {
+              echo "::error::libFuzzer compile error: $(tail -c 700 fuzz_build.log | tr '\n' ' ')"
+              cat fuzz_build.log
+              exit 1
+            }
+          clang++ -O1 -g -fno-omit-frame-pointer -fsanitize=fuzzer,address,undefined -fno-sanitize-recover=all \
+            fuzz_ozos_parsers.o tweetnacl_san.o ozos_hardened_core_san.o \
+            -lm -lpthread -o fuzz_ozos_parsers 2>>fuzz_build.log || {
+              echo "::error::libFuzzer link error: $(tail -c 700 fuzz_build.log | tr '\n' ' ')"
+              cat fuzz_build.log
+              exit 1
+            }
+
+      - name: Run libFuzzer Parser & PQC Campaign (15s)
+        run: |
+          if ! ./fuzz_ozos_parsers -max_total_time=15 -rss_limit_mb=2048 >fuzz_run.log 2>&1; then
+            SUM=$(grep -A 10 -E "ERROR:|SUMMARY:|runtime error:" fuzz_run.log | head -n 12 | tr '\n' ' ')
+            echo "::error::libFuzzer crash: $SUM"
+            cat fuzz_run.log
+            exit 1
+          fi
+          tail -n 20 fuzz_run.log

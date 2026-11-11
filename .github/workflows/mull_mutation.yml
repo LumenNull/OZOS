@@ -1,0 +1,101 @@
+name: O.Z.O.S Mull Mutation Testing
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  mull-mutation-analysis:
+    name: Mull-19 LLVM IR Mutation Analysis (Official 0.37.0)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Install Clang-19 and Dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y lsb-release wget software-properties-common gnupg curl
+          wget https://apt.llvm.org/llvm.sh
+          chmod +x llvm.sh
+          sudo ./llvm.sh 19
+          sudo apt-get install -y clang-19 libclang-19-dev llvm-19 libclang-cpp19 libllvm19
+
+      - name: Install Official Mull-19 (0.37.0) from GitHub Releases
+        run: |
+          mkdir -p mutation_reports
+          curl -fSL -o mull.deb "https://github.com/mull-project/mull/releases/download/0.37.0/Mull-0.37.0-ubuntu-amd64-24.04.deb"
+          curl -fSL -o mull19.deb "https://github.com/mull-project/mull/releases/download/0.37.0/Mull-19-0.37.0-LLVM-19.1.1-ubuntu-amd64-24.04.deb"
+          sudo apt-get update
+          sudo apt-get install -y ./mull.deb ./mull19.deb
+          rm -f mull.deb mull19.deb
+
+      - name: Verify Genuine Mull-19 Toolchain
+        run: |
+          command -v mull-runner
+          mull-runner --version
+          MULL_PLUGIN=$(find /usr -name "*mull-ir-frontend*" 2>/dev/null | head -n 1)
+          echo "Detected Mull Frontend Plugin: $MULL_PLUGIN"
+          test -n "$MULL_PLUGIN"
+
+      - name: Mull-19 Mutation Analysis (test_libozos & test_omni_phy)
+        run: |
+          MULL_PLUGIN=$(find /usr -name "*mull-ir-frontend*" 2>/dev/null | head -n 1)
+          test -n "$MULL_PLUGIN"
+
+          # Keep third-party TweetNaCl uninstrumented so Mull focuses strictly on first-party O.Z.O.S logic
+          clang-19 -O2 -std=c99 -D_DEFAULT_SOURCE -D_POSIX_C_SOURCE=200809L -Icore -I. -c core/tweetnacl.c -o tweetnacl_nomull.o
+
+          clang++-19 -O1 -g -grecord-command-line -fno-exceptions -fno-rtti \
+            -fpass-plugin="$MULL_PLUGIN" \
+            -Icore -I. -c core/ozos_hardened_core.cpp -o ozos_hardened_core_mull.o
+
+          clang-19 -O1 -g -grecord-command-line -std=c99 -D_DEFAULT_SOURCE -D_POSIX_C_SOURCE=200809L \
+            -fpass-plugin="$MULL_PLUGIN" -Icore -I. -c tests/test_libozos.c -o test_libozos_mull.o
+          clang++-19 -O1 -g test_libozos_mull.o tweetnacl_nomull.o ozos_hardened_core_mull.o -lm -lpthread -o test_libozos_mull
+
+          mull-runner ./test_libozos_mull \
+            --workers=4 --timeout=3000 \
+            --reporters=IDE --reporters=Elements \
+            --report-name=libozos_mutation_report \
+            --report-dir=mutation_reports | tee mutation_reports/libozos_mull.log
+          echo "::notice::libozos Mull summary: $(tail -n 5 mutation_reports/libozos_mull.log | tr '\n' ' ')"
+
+          clang-19 -O1 -g -grecord-command-line -std=c99 -D_DEFAULT_SOURCE -D_POSIX_C_SOURCE=200809L \
+            -fpass-plugin="$MULL_PLUGIN" -Icore -I. -c tests/test_omni_phy.c -o test_omni_phy_mull.o
+          clang-19 -O1 -g test_omni_phy_mull.o -lm -o test_omni_phy_mull
+
+          mull-runner ./test_omni_phy_mull \
+            --workers=4 --timeout=3000 \
+            --reporters=IDE --reporters=Elements \
+            --report-name=omni_phy_mutation_report \
+            --report-dir=mutation_reports | tee mutation_reports/omni_phy_mull.log
+          echo "::notice::omni_phy Mull summary: $(tail -n 5 mutation_reports/omni_phy_mull.log | tr '\n' ' ')"
+
+      - name: Mull-19 Mutation Analysis (test_audit_verify FIPS 203 & 204)
+        run: |
+          MULL_PLUGIN=$(find /usr -name "*mull-ir-frontend*" 2>/dev/null | head -n 1)
+          test -n "$MULL_PLUGIN"
+
+          clang-19 -O1 -g -grecord-command-line -std=c99 -D_DEFAULT_SOURCE -D_POSIX_C_SOURCE=200809L \
+            -fpass-plugin="$MULL_PLUGIN" -Icore -I. -c tests/test_audit_verify.c -o test_audit_verify_mull.o
+          clang++-19 -O1 -g test_audit_verify_mull.o tweetnacl_nomull.o ozos_hardened_core_mull.o -lm -lpthread -o test_audit_verify_mull
+
+          mull-runner ./test_audit_verify_mull \
+            --workers=4 --timeout=5000 \
+            --reporters=IDE --reporters=Elements \
+            --report-name=audit_verify_mutation_report \
+            --report-dir=mutation_reports | tee mutation_reports/audit_verify_mull.log
+          echo "::notice::audit_verify Mull summary: $(tail -n 5 mutation_reports/audit_verify_mull.log | tr '\n' ' ')"
+
+      - name: Upload Mull Mutation Reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mull-mutation-reports
+          path: mutation_reports/
